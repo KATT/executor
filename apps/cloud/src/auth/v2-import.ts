@@ -14,7 +14,7 @@
 import { Effect } from "effect";
 
 import { parseV2Edge, type V2EdgeEnv } from "../edge/marketing";
-import { AutumnService } from "../extensions/billing/service";
+import { AutumnService, type AutumnSubscription } from "../extensions/billing/service";
 import { WorkOSClient } from "./workos";
 
 /** v2's import page, on v2's app host. */
@@ -36,7 +36,7 @@ export const v2ImportUrl = (env: V2EdgeEnv): URL | null => {
  *  `freePlans`). Every other plan, including one added later, is paid. */
 export const V2_IMPORT_FREE_PLAN_IDS: ReadonlyArray<string> = ["free", "free-pay-as-you-go"];
 
-export type V2ImportSubscription = { readonly planId: string; readonly status: string };
+export type V2ImportSubscription = AutumnSubscription;
 
 /** Whether v2 treats the organization as on a paid v1 plan. */
 export const isPaidForV2Import = (subscriptions: ReadonlyArray<V2ImportSubscription>): boolean =>
@@ -78,8 +78,9 @@ export const v2ImportEligible = (
   );
 
 /** The reads over v1's WorkOS (live, not the membership mirror, as v2 reads
- *  them) and Autumn. An organization Autumn has never seen is provisioned on
- *  the free plan, the same answer v2 gives for a missing customer. */
+ *  them) and Autumn. Billing is read without provisioning: an organization
+ *  Autumn has never seen has no subscriptions, so it is free, the same answer
+ *  v2 gives for a missing customer. */
 export const liveV2ImportSource = Effect.gen(function* () {
   const workos = yield* WorkOSClient;
   const autumn = yield* AutumnService;
@@ -98,7 +99,7 @@ export const liveV2ImportSource = Effect.gen(function* () {
         ),
     subscriptions: (organizationId) =>
       autumn
-        .use((client) => client.customers.getOrCreate({ customerId: organizationId }))
-        .pipe(Effect.map((customer) => customer.subscriptions)),
+        .findCustomer(organizationId)
+        .pipe(Effect.map((customer) => customer?.subscriptions ?? [])),
   } satisfies V2ImportSource;
 });
