@@ -39,9 +39,10 @@ import { appAddresses, hostedAppUi } from "@executor-js/hosted-server/app-ui";
 import { appSignInCallbackPath } from "apps/ui/auth";
 import { AppUiApi } from "apps/ui/contracts";
 import { HttpApiBuilder } from "effect/http-api";
-import { appUiBaseUrl } from "../contracts/config.ts";
+import { appUiBaseUrl, catalogFeedUrl } from "../contracts/config.ts";
 import { type HostEgress } from "@executor-js/utils/url-policy";
-import { Config, Effect, Layer, Option } from "effect";
+import { Config, Effect, Layer, Option, Scope } from "effect";
+import { catalogSource, keepCatalog } from "@executor-js/catalog";
 import { HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { withHostPipeline } from "@executor-js/dashboard-start/in-process";
 import { selfHostApi } from "./api.ts";
@@ -49,7 +50,7 @@ import { selfHostMcp } from "../mcp.ts";
 import { SelfHostAuth } from "../auth.ts";
 import { selfHostAnalytics } from "./product-analytics.ts";
 
-import type { SourceFile } from "@executor-js/sdk/core";
+import type { SourceTextFile as SourceFile } from "@executor-js/sdk/core";
 import type { selfHostExecutorServices } from "./executor-services.ts";
 /** Compose the self-host route map without opening a listener; shared by the process entry and HTTP tests. */
 export const selfHostRouteMap = <DashboardE, DashboardR>(options: {
@@ -102,13 +103,28 @@ export const selfHostRouteMap = <DashboardE, DashboardR>(options: {
     const appUi = hostedAppUi(addresses);
     const mcp = yield* selfHostMcp.pipe(Effect.provide(HttpServer.layerServices));
     const document = lazyHostedApiDocument(() => executorSelfHostApiDocument(auth.origin));
+    // One kept catalog serves every request; a stale copy refreshes on the server's own lifetime.
+    const catalog = keepCatalog(
+      catalogSource(egress.client, Option.getOrUndefined(yield* catalogFeedUrl)),
+    );
+    const server = yield* Scope.Scope;
+    const catalogRefresh = Effect.succeed((work: Effect.Effect<void>) =>
+      Effect.forkIn(work, server).pipe(Effect.as(true)),
+    );
     const api = selfHostApi(document).pipe(
       Layer.provide(frameworkDocumentation(Effect.succeed(skills))),
       HttpRouter.provideRequest(localSourceFormatter),
       Layer.provide(appUi.dashboard),
       HttpRouter.provideRequest(auth.appSessions),
       HttpRouter.provideRequest(
-        catalogLive(document.document, egress, clientMetadata, auth.origin),
+        catalogLive(
+          document.document,
+          egress,
+          clientMetadata,
+          auth.origin,
+          catalog,
+          catalogRefresh,
+        ),
       ),
       Layer.provide(hostedMiddlewareLive),
       // Organization middleware reads the product's removal tombstones when it is built.

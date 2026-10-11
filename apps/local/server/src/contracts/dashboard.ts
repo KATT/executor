@@ -22,6 +22,7 @@ import {
   AccountConnectionClosed,
   Account,
   AccountHealth,
+  AccountRevocation,
   CredentialCheck,
   AccountNotFound,
   AccountRequired,
@@ -56,8 +57,9 @@ import {
   DeploymentBuildFailed,
   BuildMemoryExceeded,
   SkillDefinitionInvalid,
-  OAuthClientInput,
-  OAuthClientSetup,
+  OAuthClientSelection,
+  OAuthClientNotFound,
+  OAuthConnectOptions,
   OAuthClientUnavailable,
   OAuthCompletionFailed,
   OAuthSetupFailed,
@@ -84,6 +86,7 @@ import {
 } from "@executor-js/sdk";
 import {
   CatalogEntry,
+  CatalogIcons,
   CatalogImportFailed,
   CatalogUnavailable,
   CatalogImport,
@@ -234,6 +237,8 @@ export const DashboardAccountDetail = Schema.Struct({
   apps: Schema.Array(App),
   /** The latest check by each app in `apps`; reading it never runs a check. */
   health: AccountHealth,
+  /** Whether deleting the account also asks its service to revoke access. */
+  revocation: AccountRevocation.fields.revocation,
   canManage: Schema.Boolean,
 });
 export type DashboardAccountDetail = typeof DashboardAccountDetail.Type;
@@ -542,6 +547,12 @@ export const DashboardApi = HttpApi.make("local-dashboard").add(
       }),
     )
     .add(
+      HttpApiEndpoint.get("catalogIcons", "/dashboard/api/catalog/icons", {
+        success: CatalogIcons,
+        error: CatalogUnavailable,
+      }),
+    )
+    .add(
       HttpApiEndpoint.post("importApp", "/dashboard/api/catalog/import", {
         payload: Schema.Struct({ ...CatalogImport.fields, name: Schema.NonEmptyString }),
         success: DeployedApp,
@@ -637,7 +648,7 @@ export const DashboardApi = HttpApi.make("local-dashboard").add(
     .add(
       HttpApiEndpoint.post("oauthSetup", "/dashboard/api/accounts/oauth/setup", {
         payload: Schema.Struct({ provider: ProviderId, method: AuthMethodName }),
-        success: OAuthClientSetup,
+        success: OAuthConnectOptions,
         error: [
           StorageError,
           CredentialsError,
@@ -667,10 +678,15 @@ export const DashboardApi = HttpApi.make("local-dashboard").add(
           ...AppAccountTarget.fields,
           method: AuthMethodName,
           label: Schema.optional(Schema.NonEmptyString),
-          client: Schema.optional(OAuthClientInput),
+          client: Schema.optional(OAuthClientSelection),
         }),
         success: ConnectionSignIn,
-        error: [...appConnectionErrors, OAuthClientUnavailable, OAuthSetupFailed],
+        error: [
+          ...appConnectionErrors,
+          OAuthClientUnavailable,
+          OAuthClientNotFound,
+          OAuthSetupFailed,
+        ],
       }),
     )
     .add(

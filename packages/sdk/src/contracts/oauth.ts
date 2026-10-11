@@ -31,20 +31,29 @@ export const OAuthSignIn = Schema.Struct({
 
 export type OAuthSignIn = typeof OAuthSignIn.Type;
 
+export const OAuthClientId = Schema.NonEmptyString.pipe(Schema.brand("OAuthClientId"));
+export type OAuthClientId = typeof OAuthClientId.Type;
+
 /** Authorization code needs a redirect; client credentials completes the same connection immediately. */
 export const OAuthStartResult = Schema.Union([
-  Schema.Struct({ status: Schema.Literal("redirect"), ...OAuthSignIn.fields }),
+  Schema.Struct({
+    status: Schema.Literal("redirect"),
+    ...OAuthSignIn.fields,
+    /** The stored client this sign-in uses, such as the automatic client it found or created. */
+    oauthClient: Schema.optional(OAuthClientId),
+  }),
   Schema.Struct({ status: Schema.Literal("completed"), account: Account }),
 ]);
 export type OAuthStartResult = typeof OAuthStartResult.Type;
 
 const clientSetup = {
-  mode: Schema.Literals(["automatic", "saved", "client-required"]),
+  /** `automatic`: a client metadata document or dynamic registration can supply a client. */
+  mode: Schema.Literals(["automatic", "client-required"]),
   scopes: Schema.Array(Schema.String),
   /** Signing in uses the instance's own OAuth client, named here; see `FirstPartyOAuthClient`. */
   firstParty: Schema.optionalKey(Schema.Struct({ label: Schema.NonEmptyString })),
 };
-/** Safe form metadata resolved from provider code and discovery. Never contains saved client IDs or secrets. */
+/** Safe form metadata resolved from provider code and discovery. Never contains client IDs or secrets. */
 export const OAuthClientSetup = Schema.Union([
   Schema.Struct({
     ...clientSetup,
@@ -64,7 +73,7 @@ export const OAuthClientSetup = Schema.Union([
   }),
 ]);
 export type OAuthClientSetup = typeof OAuthClientSetup.Type;
-/** Inspect the client configuration for one owner, provider, method, and callback. */
+/** Inspect the sign-in method for one provider and callback; stored clients are listed separately. */
 export const CheckOAuthSetup = Schema.Struct({
   owner: OwnerId,
   provider: ProviderId,
@@ -72,7 +81,7 @@ export const CheckOAuthSetup = Schema.Struct({
   redirectUri: Schema.optional(HttpUrl),
 });
 
-/** The host cannot resolve an approved OAuth client for this provider method. */
+/** No client was named and none can be created automatically for this provider method. */
 export const OAuthClientUnavailable = ApiError.define({
   tag: "OAuthClientUnavailable",
   status: 409,
@@ -654,6 +663,8 @@ export const OAuthCompletionReason = Schema.Literals([
   "sign_in_expired",
   "sign_in_used",
   "account_unavailable",
+  // The stored client the sign-in started with is no longer one the caller may use.
+  "client_unavailable",
   // The service's authorization response, validated before its `error` is read.
   "issuer_mismatch",
   "denied",
@@ -749,6 +760,17 @@ export const OAuthCompletionFailed = UserFacingError.define({
               action: "Open the app’s Accounts tab and reconnect the account again.",
               instructions:
                 "Check whether the reconnected account still exists with the same provider and sign-in method. Start a fresh connection for the intended account.",
+            },
+            agentFixable: false,
+          },
+          client_unavailable: {
+            title: "OAuth client no longer available",
+            description:
+              "The OAuth client this sign-in started with was removed, or you may no longer use it, so nothing was saved.",
+            recovery: {
+              action: "Connect again and choose an OAuth client you can use.",
+              instructions:
+                "The stored OAuth client the sign-in used was removed, or the product no longer lets this caller use it, before the sign-in finished, so the sign-in could not be completed and no account was saved. Start a fresh sign-in with a client listed in the connection's OAuth setup, or ask an administrator for access.",
             },
             agentFixable: false,
           },
@@ -921,6 +943,7 @@ export const oauthCompletionRecovery = {
   sign_in_expired: "restart",
   sign_in_used: "restart",
   account_unavailable: "account",
+  client_unavailable: "restart",
   issuer_mismatch: "configuration",
   denied: "cancelled",
   invalid_scope: "configuration",
@@ -1030,7 +1053,7 @@ export const OAuthRenewalFailed = UserFacingError.define({
           service_unavailable: {
             ...serviceUnavailable,
             description:
-              "Executor could not renew this account’s access because the service’s sign-in is down, busy, or unreachable. The saved sign-in is kept, so the account does not need to reconnect.",
+              "Executor could not renew this account’s access. The sign-in endpoint may be unavailable or unreachable. The saved sign-in is kept; this error does not require reconnecting.",
             recovery: {
               action: "Try again in a moment. If this continues, check the service’s status.",
               instructions:
@@ -1041,16 +1064,20 @@ export const OAuthRenewalFailed = UserFacingError.define({
             ...incompatibleResponse,
             description:
               "The service answered Executor’s request to renew this account’s access, but its response did not match what Executor expects. The saved sign-in is kept; this is a compatibility problem, not a problem with your account.",
+            recovery: {
+              ...incompatibleResponse.recovery,
+              action: "Investigate the incompatible response before retrying renewal.",
+            },
           },
           client_rejected: {
             title: "The service rejected Executor’s OAuth client",
             description:
-              "The service refused the OAuth client Executor uses to renew this account’s access. This is a problem with the client configuration, not with the account’s sign-in, which is kept.",
+              "The service rejected the OAuth client used for renewal. Check client configuration and how the renewal request authenticates. The account’s sign-in is kept.",
             recovery: {
               action:
                 "Check the OAuth client ID and secret at the service. If they changed, reconnect the account and enter the current client details.",
               instructions:
-                "The account’s saved OAuth grant is intact; do not delete or replace the account. Compare the client ID, secret and token endpoint authentication method recorded for this provider with the service’s client configuration. If the secret was rotated or the client removed, reconnect this same account with the current client details. If the configuration is correct, the fault is in how Executor authenticates the client; report it rather than reconnecting.",
+                "The account’s saved OAuth grant is intact; do not delete or replace the account. Compare the client ID, secret and token endpoint authentication method recorded for this provider with the service’s client configuration. If the secret was rotated or the client removed, reconnect this same account with the current client details. If the configuration is correct, investigate the client-authentication request.",
             },
           },
           renewal_rejected: {
@@ -1059,9 +1086,9 @@ export const OAuthRenewalFailed = UserFacingError.define({
               "The service refused Executor’s request to renew this account’s access without saying the sign-in has ended. The saved sign-in is kept, and Executor tries again the next time the account is used.",
             recovery: {
               action:
-                "Try again in a moment. If this continues, reconnect the account from the app’s Accounts tab.",
+                "Inspect the renewal refusal. Retry a temporary failure; reconnect only when the service’s response indicates that it is needed.",
               instructions:
-                "The account’s saved OAuth grant is intact. Inspect the recorded provider error code and HTTP status. Retry a temporary refusal. If the service keeps refusing, reconnect this same account; do not replace the account or change its authentication method.",
+                "The account’s saved OAuth grant is intact. Inspect the recorded provider error code and HTTP status. Retry a temporary refusal. A refusal that continues does not by itself show that the sign-in has ended: reconnect this same account only when the service’s response indicates that reconnecting is needed. Do not replace the account or change its authentication method.",
             },
             retryable: true,
           },
@@ -1074,8 +1101,6 @@ export const OAuthRenewalFailed = UserFacingError.define({
 export type OAuthRenewalFailed = typeof OAuthRenewalFailed.Type;
 
 /** Registration and attempt IDs also bind encrypted data to the record which owns it. */
-export const OAuthClientId = Schema.NonEmptyString.pipe(Schema.brand("OAuthClientId"));
-export type OAuthClientId = typeof OAuthClientId.Type;
 export const OAuthAttemptId = Schema.NonEmptyString.pipe(Schema.brand("OAuthAttemptId"));
 export type OAuthAttemptId = typeof OAuthAttemptId.Type;
 
@@ -1085,7 +1110,7 @@ export const OAuthTokenServer = Schema.Struct({
   issuer: HttpUrl,
   /**
    * The provider declared endpoints without an issuer. Executor derives `issuer` from the token
-   * URL to key saved clients, but it is not the service's identifier, so callbacks are not checked against it.
+   * URL to key automatic clients, but it is not the service's identifier, so callbacks are not checked against it.
    */
   issuer_derived: Schema.optional(Schema.Literal(true)),
   authorization_endpoint: Schema.optional(HttpUrl),
@@ -1199,27 +1224,25 @@ export const OAuthRegistration = Schema.Union([
 ]);
 export type OAuthRegistration = typeof OAuthRegistration.Type;
 /**
- * How a client came to exist. Only a `registered` client is Executor's to discard and replace;
- * saved records written before sources were recorded have none. A `metadata` client is the
- * host's client metadata document and is not saved; only earlier versions saved one.
+ * How a stored client came to exist. `manual` clients were entered by a person; `registered`
+ * clients were created by dynamic registration. Only a `registered` client is Executor's to
+ * discard and replace. A `metadata` client is the host's client metadata document; it is read
+ * again on each sign-in and never stored.
  */
 export const OAuthClientSource = Schema.Literals(["registered", "metadata", "manual"]);
 export type OAuthClientSource = typeof OAuthClientSource.Type;
-/** Read beside the registration from the same encrypted saved-client record. */
-export const OAuthSavedClientMetadata = Schema.Struct({
-  executor_source: Schema.optionalKey(OAuthClientSource),
-});
 /**
- * A saved client as one attempt used it. `version` is the stored ciphertext in base64; every
- * save re-encrypts, so a conditional delete removes only the record this attempt saw.
+ * A stored client as one attempt used it. `version` is the stored ciphertext in base64, so a
+ * conditional delete removes only the record this attempt saw.
  */
-export const OAuthSavedClientRef = Schema.Struct({
-  key: OAuthClientId,
+export const OAuthClientUse = Schema.Struct({
+  id: OAuthClientId,
   version: Schema.NonEmptyString,
-  source: Schema.optionalKey(OAuthClientSource),
-  /** Registered by this attempt's own start, rather than reused from an earlier one. */
+  source: OAuthClientSource,
+  /** No sign-in had completed with the client before this attempt. */
   fresh: Schema.Boolean,
 });
+export type OAuthClientUse = typeof OAuthClientUse.Type;
 /** What every sign-in attempt keeps, whichever client it uses. */
 const attemptFields = {
   connection: AccountConnectionId,
@@ -1240,10 +1263,10 @@ export const OAuthAttempt = Schema.Struct({
   ...attemptFields,
   server: OAuthServer,
   client: OAuthRegistration,
-  /** User-entered clients become reusable only when this attempt completes successfully. */
-  clientKey: Schema.optionalKey(OAuthClientId),
-  /** The saved client this attempt used, so a rejection can discard exactly that version. */
-  savedClient: Schema.optionalKey(OAuthSavedClientRef),
+  /** The stored client this attempt used, so a rejection can discard exactly that version. */
+  storedClient: Schema.optionalKey(OAuthClientUse),
+  /** An entered client registered under the attempt's owner once it completes. */
+  saveClient: Schema.optionalKey(Schema.Literal(true)),
   resource: Schema.optional(HttpUrl),
   /** Token request encoding and nested grant location, as the provider declared them. */
   tokenRequestFormat: Schema.optional(OAuthTokenRequestFormat),
@@ -1293,6 +1316,8 @@ export const OAuthGrant = Schema.Union([
     grant: Schema.optionalKey(Schema.Literal("authorization_code")),
     server: OAuthServer,
     client: OAuthRegistration,
+    /** The stored client signed in with. The grant keeps its own copy for renewal. */
+    oauthClient: Schema.optionalKey(OAuthClientId),
     refreshToken: Schema.optional(Schema.NonEmptyString),
     /** Nested grant location frozen at sign-in; renewals read the same member. */
     tokenResponse: Schema.optional(OAuthTokenResponse),

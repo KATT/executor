@@ -57,6 +57,8 @@ import { cloudSiteAssets } from "./infrastructure/site-assets.ts";
 import { retainedAssetFolders, retainedAssetPath } from "./contracts/retained-assets.ts";
 import * as Output from "alchemy/Output";
 import { AlchemyContext } from "alchemy/AlchemyContext";
+import { RuntimeContext } from "alchemy";
+import { catalogSource, keepCatalog } from "@executor-js/catalog";
 import { Config, Effect, Layer, Option, Path, Ref } from "effect";
 import { HttpRouter, HttpServer, HttpServerResponse } from "effect/http";
 import { cloudAuth } from "./infrastructure/auth.ts";
@@ -178,6 +180,9 @@ export default Api.make(
       // The database's cloud region is a proximity hint, not a Cloudflare data center or a
       // change to local development routing.
       ...(placement === undefined ? {} : { placement }),
+      // A deploy copies each changed ui/public/ file from Git into R2: a read and a write per
+      // file, up to `publicFileLimits.files` (10,000) of them, beyond the default 10,000.
+      limits: { subrequests: 50_000 },
       compatibility: {
         date: "2026-09-08",
         flags: ["nodejs_compat", "global_fetch_strictly_public", "enable_request_signal"],
@@ -390,6 +395,14 @@ export default Api.make(
     } satisfies Record<BackgroundJob, unknown>;
 
     const egress = yield* cloudEgress;
+    // Each isolate keeps one published catalog for all its requests. A request that finds the
+    // copy stale refreshes it within its own event lifetime, after its response.
+    const catalog = keepCatalog(catalogSource(egress.client));
+    const catalogRefresh = Effect.map(
+      Cloudflare.WorkerExecutionContext,
+      (execution) => (work: Effect.Effect<void>) =>
+        execution.waitUntil(work).pipe(Effect.provide(RuntimeContext.phantom), Effect.as(true)),
+    );
     const clientMetadata = yield* clientMetadataSetting(auth.origin).pipe(Effect.orDie);
     // Only /openapi.json and preparing the Executor catalog app read the document.
     // Clients and the Executor app call the API at its canonical origin.
@@ -404,7 +417,9 @@ export default Api.make(
       HttpRouter.provideRequest(yield* cloudSourceFormatter),
       Layer.provide(appUi.dashboard),
       Layer.provide(requestServices(auth.appSessions).layer),
-      HttpRouter.provideRequest(catalogLive(document.document, egress, clientMetadata, apiOrigin)),
+      HttpRouter.provideRequest(
+        catalogLive(document.document, egress, clientMetadata, apiOrigin, catalog, catalogRefresh),
+      ),
       Layer.provide(schedules.layer),
       Layer.provide(billing),
       Layer.provide(removals),

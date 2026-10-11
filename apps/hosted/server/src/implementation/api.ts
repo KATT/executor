@@ -7,6 +7,7 @@ import {
 import { HostedAppManagementApi, HostedFrameworkApi } from "../contracts/app-management.ts";
 import { hostedAppAccess } from "../app-management.ts";
 import { hostedResourceAccessHandlers } from "./resource-access.ts";
+import { hostedOAuthClientHandlers } from "./oauth-clients.ts";
 import { hostedScheduleHandlers } from "./schedules.ts";
 /** Shared hosted handlers. No Cloudflare, Node, or local-product dependencies. */
 import { Effect, Layer } from "effect";
@@ -33,7 +34,9 @@ const health = HttpApiBuilder.group(HostedApi, "health", (handlers) =>
 );
 
 const catalog = HttpApiBuilder.group(HostedApi, "catalog", (handlers) =>
-  handlers.handle("list", () => Effect.flatMap(HostedCatalog, (catalog) => catalog.list)),
+  handlers
+    .handle("list", () => Effect.flatMap(HostedCatalog, (catalog) => catalog.list))
+    .handle("icons", () => Effect.flatMap(HostedCatalog, (catalog) => catalog.icons)),
 );
 
 const apiContext = HttpApiBuilder.group(HostedApi, "context", (handlers) =>
@@ -74,6 +77,7 @@ export const hostedHandlers = Layer.mergeAll(
   hostedOrganizationHandlers,
   hostedGroupHandlers,
   hostedResourceAccessHandlers,
+  hostedOAuthClientHandlers,
   hostedWebhookSetupHandlers,
   hostedWebhookHandlers,
   hostedWorkflowHandlers,
