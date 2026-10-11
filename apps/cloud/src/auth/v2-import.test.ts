@@ -1,13 +1,17 @@
-import { describe, expect, it } from "@effect/vitest";
-import { Effect } from "effect";
+import { env } from "cloudflare:workers";
+import { afterEach, beforeEach, describe, expect, it } from "@effect/vitest";
+import { Effect, Layer } from "effect";
 
+import { AutumnService } from "../extensions/billing/service";
 import {
   isPaidForV2Import,
+  liveV2ImportSource,
   v2ImportEligible,
   v2ImportUrl,
   type V2ImportSource,
   type V2ImportSubscription,
 } from "./v2-import";
+import { WorkOSClient, type WorkOSClientService } from "./workos";
 
 const USER = "user_signed_in";
 const OTHER = "user_other";
@@ -101,6 +105,136 @@ describe("v2 import eligibility", () => {
         const { source } = sourceOf({ failing });
         expect(yield* v2ImportEligible(source, USER, ORG), failing).toBe(false);
       }
+    }),
+  );
+});
+
+describe("v2 import billing read", () => {
+  const AUTUMN_URL = "https://autumn.example.test";
+  interface AutumnRequest {
+    readonly url: string;
+    readonly method: string;
+    readonly body: string;
+  }
+
+  let requests: AutumnRequest[] = [];
+  const originalFetch = globalThis.fetch;
+  const { AUTUMN_SECRET_KEY, AUTUMN_API_URL } = env;
+
+  /** Autumn answering every request with `answer`, recording each request. */
+  const autumnAnswers = (answer: () => Response | Promise<Response>) => {
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push({
+        url: String(input),
+        method: init?.method ?? "GET",
+        body: String(init?.body),
+      });
+      return answer();
+    }) as typeof fetch;
+  };
+  const customer = (subscriptions: ReadonlyArray<{ plan_id: string; status: string }>) =>
+    Response.json({ id: ORG, name: null, balances: {}, subscriptions, purchases: [] });
+
+  beforeEach(() => {
+    requests = [];
+    env.AUTUMN_SECRET_KEY = "am_sk_test";
+    env.AUTUMN_API_URL = AUTUMN_URL;
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    env.AUTUMN_SECRET_KEY = AUTUMN_SECRET_KEY;
+    env.AUTUMN_API_URL = AUTUMN_API_URL;
+  });
+
+  // WorkOS is not read here: the user and member answers come from `sourceOf`.
+  const unreadWorkOS = Layer.succeed(
+    WorkOSClient,
+    new Proxy({} as WorkOSClientService, {
+      get: (_target, prop) => () => Effect.die(`unexpected WorkOSClient.${String(prop)} call`),
+    }),
+  );
+
+  /** The eligibility answer for a verified sole member, billing read from Autumn. */
+  const eligibleWithLiveBilling = Effect.gen(function* () {
+    const live = yield* liveV2ImportSource;
+    const source = { ...sourceOf({}).source, subscriptions: live.subscriptions };
+    return yield* v2ImportEligible(source, USER, ORG);
+  }).pipe(Effect.provide(Layer.merge(AutumnService.Default, unreadWorkOS)));
+
+  it.effect("looks the customer up read-only, so an org Autumn has never seen stays absent", () =>
+    Effect.gen(function* () {
+      autumnAnswers(() =>
+        Response.json(
+          { message: `Customer ${ORG} not found`, code: "customer_not_found" },
+          { status: 404 },
+        ),
+      );
+      expect(yield* eligibleWithLiveBilling, "no customer is free").toBe(true);
+      expect(requests).toEqual([
+        { url: `${AUTUMN_URL}/v1/customers.get`, method: "POST", body: `{"customer_id":"${ORG}"}` },
+      ]);
+    }),
+  );
+
+  it.effect("admits a customer on a free plan or with no subscription", () =>
+    Effect.gen(function* () {
+      for (const subscriptions of [
+        [{ plan_id: "free", status: "active" }],
+        [{ plan_id: "free-pay-as-you-go", status: "active" }],
+        [],
+      ]) {
+        autumnAnswers(() => customer(subscriptions));
+        expect(yield* eligibleWithLiveBilling, JSON.stringify(subscriptions)).toBe(true);
+      }
+    }),
+  );
+
+  it.effect("refuses a customer on a paid plan", () =>
+    Effect.gen(function* () {
+      autumnAnswers(() => customer([{ plan_id: "team", status: "active" }]));
+      expect(yield* eligibleWithLiveBilling).toBe(false);
+    }),
+  );
+
+  it.effect("admits a customer whose paid plan has expired", () =>
+    Effect.gen(function* () {
+      autumnAnswers(() =>
+        customer([
+          { plan_id: "free", status: "active" },
+          { plan_id: "team", status: "expired" },
+        ]),
+      );
+      expect(yield* eligibleWithLiveBilling).toBe(true);
+    }),
+  );
+
+  it.effect("refuses when the lookup fails or answers something unexpected", () =>
+    Effect.gen(function* () {
+      const failures: ReadonlyArray<readonly [string, () => Response | Promise<Response>]> = [
+        [
+          "network error",
+          // oxlint-disable-next-line executor/no-promise-reject, executor/no-error-constructor -- boundary: fetch rejects with a TypeError on a network failure; that rejection is the fixture
+          () => Promise.reject(new TypeError("fetch failed")),
+        ],
+        ["server error", () => Response.json({ message: "boom" }, { status: 500 })],
+        ["unauthorized", () => Response.json({ code: "invalid_secret_key" }, { status: 401 })],
+        ["404 without customer_not_found", () => new Response("Not Found", { status: 404 })],
+        ["body without subscriptions", () => Response.json({ id: ORG })],
+        ["body that is not JSON", () => new Response("<html>", { status: 200 })],
+      ];
+      for (const [name, answer] of failures) {
+        autumnAnswers(answer);
+        expect(yield* eligibleWithLiveBilling, name).toBe(false);
+      }
+    }),
+  );
+
+  it.effect("refuses without an Autumn secret, without calling Autumn", () =>
+    Effect.gen(function* () {
+      delete env.AUTUMN_SECRET_KEY;
+      autumnAnswers(() => customer([]));
+      expect(yield* eligibleWithLiveBilling).toBe(false);
+      expect(requests).toEqual([]);
     }),
   );
 });

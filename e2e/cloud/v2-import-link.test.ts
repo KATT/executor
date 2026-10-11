@@ -60,6 +60,52 @@ scenario(
 );
 
 scenario(
+  "v2 import · billing is read without creating a customer, and no customer is free",
+  { timeout: 180_000 },
+  Effect.gen(function* () {
+    yield* Billing;
+    const autumn = yield* Autumn;
+    const target = yield* Target;
+    const identity = yield* target.newIdentity();
+    const { id } = yield* activeOrg(target, identity);
+    const lookups = autumn
+      .ledgerFor("customers.get")
+      .pipe(Effect.map((entries) => entries.filter((entry) => entry.customerId === id)));
+
+    // The org's customer exists, so the read-only lookup answers it: free.
+    expect(
+      yield* v2ImportUrlOf(target, identity),
+      "a free customer is offered the import",
+    ).not.toBeNull();
+    const answered = yield* lookups;
+    expect(answered.length, "the billing read is Autumn's read-only customers.get").toBeGreaterThan(
+      0,
+    );
+    expect(answered.every((entry) => !entry.faulted)).toBe(true);
+
+    // Autumn answering that it has no such customer is an answer too: free.
+    yield* Effect.gen(function* () {
+      yield* autumn.armFault({
+        match: { operationId: "customers.get" },
+        response: {
+          status: 404,
+          body: { message: "Customer not found", code: "customer_not_found" },
+        },
+        times: 1,
+      });
+      expect(
+        yield* v2ImportUrlOf(target, identity),
+        "an org Autumn has no customer for is offered the import",
+      ).not.toBeNull();
+      expect(
+        (yield* lookups).some((entry) => entry.faulted),
+        "the lookup reached Autumn and was answered customer_not_found",
+      ).toBe(true);
+    }).pipe(Effect.ensuring(autumn.clearFaults().pipe(Effect.ignore)));
+  }),
+);
+
+scenario(
   "v2 import · members of a shared org do not see the link",
   { timeout: 180_000 },
   Effect.gen(function* () {
