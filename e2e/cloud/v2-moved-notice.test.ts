@@ -9,10 +9,12 @@
 // fixed by the typed catalog in `packages/react/src/api/analytics.tsx`.
 import { expect } from "@effect/vitest";
 import { Effect } from "effect";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Page } from "playwright";
 
 import { scenario } from "../src/scenario";
-import { Browser, Target } from "../src/services";
+import { Browser, Mcp, Target } from "../src/services";
 import { revisit, settle, visit } from "../src/surfaces/browser";
 import type { Identity, Target as TargetShape } from "../src/target";
 import { WORKOS_EMULATOR_PORT } from "../targets/cloud";
@@ -25,6 +27,8 @@ const V2_SLUG = "moved-example";
 // between UTC-11 and UTC+11.
 const MOVED_AT = "2026-10-09T12:00:00.000Z";
 const MOVED_BADGE = "Moved Oct 9, 2026";
+// v2's org-pinned MCP path, on the v2 MCP origin v1 is configured with.
+const V2_MCP_PATH = `/org/${V2_SLUG}/mcp`;
 
 interface V2ImportAnswer {
   readonly url: string | null;
@@ -32,6 +36,7 @@ interface V2ImportAnswer {
     readonly v2Url: string;
     readonly v2Slug: string;
     readonly movedAt: string;
+    readonly v2McpUrl?: string;
   } | null;
 }
 
@@ -103,6 +108,41 @@ const renameOrg = (target: TargetShape, identity: Identity, name: string): Effec
 
 const noticeOf = (page: Page) => page.getByRole("dialog");
 
+/** The answer's v2 MCP URL, checked to be the org's v2 MCP server. */
+const v2McpUrlOf = (target: TargetShape, answer: V2ImportAnswer): string => {
+  const raw = answer.moved?.v2McpUrl;
+  expect(raw, "the move answer carries the org's v2 MCP URL").toEqual(expect.any(String));
+  const url = new URL(raw!);
+  expect(url.pathname, "the org-pinned v2 MCP path").toBe(V2_MCP_PATH);
+  expect(url.origin, "v2's MCP host, not v1's").not.toBe(new URL(target.baseUrl).origin);
+  expect(url.origin, "v2's MCP host, not v2's app host").not.toBe(
+    new URL(answer.moved!.v2Url).origin,
+  );
+  return raw!;
+};
+
+const emailOf = (identity: Identity): string => identity.credentials?.email ?? identity.label;
+
+/** A real MCP client's handshake: the server's `initialize` instructions. */
+const initializeInstructions = (mcpUrl: string, bearer: string) =>
+  Effect.acquireUseRelease(
+    Effect.promise(async () => {
+      const client = new Client({ name: "executor-e2e-v2-moved", version: "0.0.1" });
+      await client.connect(
+        new StreamableHTTPClientTransport(new URL(mcpUrl), {
+          requestInit: { headers: { authorization: `Bearer ${bearer}` } },
+        }),
+      );
+      return client;
+    }),
+    (client) =>
+      Effect.promise(async () => ({
+        instructions: client.getInstructions(),
+        tools: (await client.listTools()).tools.map((tool) => tool.name),
+      })),
+    (client) => Effect.promise(() => client.close().catch(() => undefined)),
+  );
+
 /** Open the dashboard and wait for the v2 answer it renders the notice from. */
 const openDashboard = async (page: Page, slug: string) => {
   const answered = page.waitForResponse((response) => response.url().endsWith(V2_IMPORT_API));
@@ -131,6 +171,7 @@ scenario(
       new URL(target.baseUrl).origin,
     );
     expect(answer.moved!.movedAt).toBe(MOVED_AT);
+    const v2McpUrl = v2McpUrlOf(target, answer);
 
     yield* browser.session(identity, async ({ page, step }) => {
       await step("Open the moved org's dashboard", async () => {
@@ -149,6 +190,16 @@ scenario(
         expect(pair).toContain(`v2 · ${V2_SLUG}`);
         expect(await notice.getByText("Changes made here won't sync to v2.").count()).toBe(1);
 
+        const mcp = notice.getByRole("region", { name: "v2 MCP server URL" });
+        expect(await mcp.getByText("Connect your agents to v2 instead:").count()).toBe(1);
+        expect(
+          await mcp.getByTestId("mcp-server-url").textContent(),
+          "the notice shows the org's v2 MCP URL",
+        ).toBe(v2McpUrl);
+        expect(await mcp.getByRole("button", { name: "Copy" }).count(), "with a copy button").toBe(
+          1,
+        );
+
         const open = notice.getByRole("link", { name: "Open in v2", exact: true });
         expect(await open.getAttribute("href"), "the button opens the org in v2").toBe(
           answer.moved!.v2Url,
@@ -160,6 +211,26 @@ scenario(
       await step("Close it with ✕", async () => {
         await noticeOf(page).getByRole("button", { name: "Close" }).click();
         await noticeOf(page).waitFor({ state: "hidden" });
+      });
+
+      await step("See the Connect card lead with the v2 MCP server", async () => {
+        expect(
+          await page
+            .getByText("This organization moved to Executor v2. Connect your agents there instead:")
+            .count(),
+        ).toBe(1);
+        const next = page.getByRole("region", { name: "New MCP server" });
+        expect(await next.getByTestId("mcp-server-url").textContent()).toBe(v2McpUrl);
+        expect(await next.textContent(), "the install command targets v2").toContain(
+          `npx add-mcp ${v2McpUrl} --transport http --name executor`,
+        );
+        const old = page.getByRole("region", { name: "Old MCP server URL" });
+        expect(await old.getByText("Old v1 URL").count()).toBe(1);
+        expect(
+          await old.getByTestId("mcp-server-url").textContent(),
+          "v1's URL stays, labelled as the old one",
+        ).toBe(`${new URL(target.baseUrl).origin}/${org.slug}/mcp`);
+        expect(await old.getByText("Won't receive changes made in Executor v2.").count()).toBe(1);
       });
 
       await step(
@@ -179,6 +250,32 @@ scenario(
         await settle(page);
         await page.getByRole("link", { name: "Open in Executor v2" }).waitFor();
         expect(await noticeOf(page).count(), "✕ snoozes the notice in this browser").toBe(0);
+      });
+
+      await step("Open the MCP setup page and see it lead with the v2 MCP server", async () => {
+        await visit(page, "/setup-mcp");
+        const next = page.getByRole("region", { name: "New MCP server" });
+        await next.waitFor();
+        expect(
+          await page
+            .getByText("This organization moved to Executor v2. Connect your agents there instead:")
+            .count(),
+        ).toBe(1);
+        expect(await next.getByTestId("mcp-server-url").textContent()).toBe(v2McpUrl);
+        expect(await next.textContent(), "the install command targets v2").toContain(
+          `npx add-mcp ${v2McpUrl} --transport http --name executor`,
+        );
+        const old = page.getByRole("region", { name: "Old MCP server URL" });
+        expect(await old.getByText("Old v1 URL").count()).toBe(1);
+        // The page reads its own origin after hydration, then shows v1's URL.
+        await old
+          .getByTestId("mcp-server-url")
+          .getByText(`${new URL(target.baseUrl).origin}/${org.slug}/mcp`, { exact: true })
+          .waitFor();
+        expect(
+          await page.getByRole("region", { name: "MCP server URL", exact: true }).count(),
+          "v1's URL is not offered as the one to use",
+        ).toBe(0);
       });
     });
   }),
@@ -270,6 +367,10 @@ scenario(
       await step("See the import link and no notice", async () => {
         await page.getByRole("link", { name: "Move to Executor v2" }).waitFor();
         expect(await noticeOf(page).count()).toBe(0);
+        expect(
+          await page.getByRole("region", { name: "New MCP server" }).count(),
+          "the Connect card points nowhere else",
+        ).toBe(0);
       });
     });
   }),
@@ -298,13 +399,14 @@ scenario(
           .waitFor();
       });
 
-      await step("See the pair and both buttons inside the notice", async () => {
+      await step("See the pair, the v2 MCP URL and both buttons inside the notice", async () => {
         const notice = noticeOf(page);
         const box = await notice.boundingBox();
         if (box === null) throw new Error("the notice has no layout box");
         const right = box.x + box.width;
         for (const [label, part] of [
           ["the v1 → v2 pair", notice.getByTestId("v2-moved-pair")],
+          ["the v2 MCP URL", notice.getByRole("region", { name: "v2 MCP server URL" })],
           ["Keep using v1", notice.getByRole("button", { name: "Keep using v1" })],
           ["Open in v2", notice.getByRole("link", { name: "Open in v2", exact: true })],
         ] as const) {
@@ -317,5 +419,31 @@ scenario(
         }
       });
     });
+  }),
+);
+
+scenario(
+  "v2 moved · a moved org's MCP sessions tell the agent where to reconnect",
+  { timeout: 180_000 },
+  Effect.gen(function* () {
+    const target = yield* Target;
+    const mcp = yield* Mcp;
+    const identity = yield* target.newIdentity();
+    const org = yield* orgOf(target, identity);
+    const bearer = yield* mcp.mintBearer(emailOf(identity));
+
+    const before = yield* initializeInstructions(target.mcpUrl, bearer);
+    expect(before.instructions, "an org that has not moved gets no notice").toBeUndefined();
+
+    yield* markMoved(org.id);
+    const v2McpUrl = v2McpUrlOf(target, yield* v2ImportOf(target, identity));
+
+    const after = yield* initializeInstructions(target.mcpUrl, bearer);
+    expect(after.instructions, "the initialize result names the org's v2 MCP server").toBe(
+      "This organization moved to Executor v2 on October 9, 2026. " +
+        `Its MCP server is now ${v2McpUrl}; ask the user to reconnect their agent there. ` +
+        "Changes made through this server won't reach v2.",
+    );
+    expect(after.tools, "the tools are unchanged").toEqual(before.tools);
   }),
 );
