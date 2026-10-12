@@ -135,7 +135,9 @@ export function V2MovedNotice() {
 
             {moved.v2McpUrl !== undefined && (
               <section aria-label="v2 MCP server URL" className="grid gap-1.5">
-                <p className="text-sm text-muted-foreground">Connect your agents to v2 instead:</p>
+                <p className="text-sm text-muted-foreground">
+                  Connect your agents to v2 instead, and choose {moved.v2Slug} when you sign in:
+                </p>
                 <McpServerUrl url={moved.v2McpUrl} />
               </section>
             )}

@@ -31,9 +31,11 @@ export interface V2Moved {
   readonly v2Slug: string;
   /** When the import finished, normalized to `Date#toISOString`. */
   readonly movedAt: string;
-  /** The v2 organization's MCP server, `<v2 MCP origin>/org/<slug>/mcp`: the
-   *  org-pinned form, the one-to-one counterpart of v1's `/<slug>/mcp`. Absent
-   *  where v1 does not know v2's MCP origin (`V2_MCP_ORIGIN` unset). */
+  /** v2's MCP server, `<v2 MCP origin>/mcp`, for the moved org's agents. Not
+   *  the org-pinned `/org/<slug>/mcp`: that path only accepts personal access
+   *  tokens, since v2's OAuth resource is `/mcp` and the organization is chosen
+   *  on its consent screen (as `v2Slug`). Absent where v1 does not know v2's
+   *  MCP origin (`V2_MCP_ORIGIN` unset). */
   readonly v2McpUrl?: string;
 }
 
@@ -56,7 +58,7 @@ export const parseV2Moved = (
     v2Url: new URL(`/org/${slug}`, v2Origin).href,
     v2Slug: slug,
     movedAt: new Date(time).toISOString(),
-    ...(v2McpOrigin === null ? {} : { v2McpUrl: new URL(`/org/${slug}/mcp`, v2McpOrigin).href }),
+    ...(v2McpOrigin === null ? {} : { v2McpUrl: new URL("/mcp", v2McpOrigin).href }),
   };
 };
 

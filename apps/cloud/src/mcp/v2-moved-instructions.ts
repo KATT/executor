@@ -34,7 +34,8 @@ export const v2MovedInstructionsText = (moved: V2Moved): string | null =>
   moved.v2McpUrl === undefined
     ? null
     : `This organization moved to Executor v2 on ${movedDate(moved.movedAt)}. ` +
-      `Its MCP server is now ${moved.v2McpUrl}; ask the user to reconnect their agent there. ` +
+      `Its MCP server is now ${moved.v2McpUrl}; ask the user to reconnect their agent there ` +
+      `and choose the ${moved.v2Slug} organization when signing in. ` +
       "Changes made through this server won't reach v2.";
 
 /** The session's instructions when its organization has moved to v2 and v1

@@ -12,6 +12,9 @@ export interface McpServerMove {
   readonly destination: string;
   /** This deployment, as the user knows it (e.g. "v1"). */
   readonly previous: string;
+  /** The organization to choose when signing in to the new server, whose
+   *  OAuth sign-in picks the organization rather than the URL. */
+  readonly organization: string;
 }
 
 const McpServerMoveContext = React.createContext<McpServerMove | null>(null);

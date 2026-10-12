@@ -253,7 +253,8 @@ export function McpServerUrl(props: {
 
 /**
  * The connect body for an organization whose MCP server moved: the new URL and
- * command first, then this server's URL, labelled as the old one.
+ * command first, with the organization to choose at sign-in, then this
+ * server's URL, labelled as the old one.
  */
 export function McpServerMovedConnect(props: {
   readonly move: McpServerMove;
@@ -275,6 +276,9 @@ export function McpServerMovedConnect(props: {
           onCopy={props.onCopy}
           className="mt-1.5"
         />
+        <span className="text-xs text-muted-foreground">
+          Choose {move.organization} when you sign in.
+        </span>
       </section>
       <section
         aria-label="Old MCP server URL"
