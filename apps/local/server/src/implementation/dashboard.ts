@@ -6,7 +6,6 @@ import { appOrigin } from "../contracts/app-ui.ts";
 /** Product projections over the existing SDK and retained deployment storage. */
 import {
   StorageError,
-  OwnerId,
   AppNameTaken,
   HttpUrl,
   RequestInvalid,
@@ -33,7 +32,10 @@ import {
 import { HttpServerResponse } from "effect/http";
 import { HttpApiBuilder } from "effect/http-api";
 import { localRequest, requestOrigin, sessionCookie, type LocalAuth } from "./auth.ts";
-import type { Catalog } from "@executor-js/catalog";
+import { createCatalog } from "@executor-js/catalog";
+import type { LocalOwnerMigration } from "@executor-js/app-management/contracts/local-owners";
+import { connectForApp } from "./account-connections.ts";
+import { localOwner as owner, localOwners } from "./owners.ts";
 import type { HostEgress } from "@executor-js/utils/url-policy";
 import type { AuthStorageError } from "../contracts/auth.ts";
 import type { ServerConfig } from "../contracts/config.ts";
@@ -93,17 +95,24 @@ export const dashboard = (
   auth: LocalAuth,
   egress: HostEgress,
   {
-    catalog: appCatalog,
+    catalogFeedUrl,
     managedApp,
     managedAccount,
+    ownerMigration,
   }: {
-    /** One process-wide catalog, so every dashboard read shares its kept copy. */
-    readonly catalog: Catalog;
+    /** A mirror of the integrations.sh feed; the public feed by default. */
+    readonly catalogFeedUrl?: string | undefined;
     readonly managedApp?: AppId;
     readonly managedAccount?: AccountId;
+    /** Why this start did not move other owners' records to `local`, if it did not. */
+    readonly ownerMigration: Effect.Effect<LocalOwnerMigration | null>;
   },
 ) => {
-  const owner = OwnerId.make("local");
+  const appCatalog = createCatalog({
+    egress,
+    clientMetadataUrl: config.oauthClientMetadataUrl,
+    feedUrl: catalogFeedUrl,
+  });
   /** Only status and a non-refreshable expiry leave the trusted host. */
   const signIn = (account: AccountId) =>
     executor.accounts.signIn({ account }).pipe(
@@ -122,14 +131,12 @@ export const dashboard = (
    */
   const appConnection = (app: AppId, target: typeof AppAccountTarget.Type) =>
     target.account === undefined
-      ? executor.accountConnections.create({
-          owner,
+      ? connectForApp(executor, managedApp, {
           target: { app, profile: target.profile, requirement: target.requirement },
         })
       : manage(
           target.account,
-          executor.accountConnections.create({
-            owner,
+          connectForApp(executor, managedApp, {
             account: target.account,
             target: { app, profile: target.profile, requirement: target.requirement },
           }),
@@ -154,9 +161,13 @@ export const dashboard = (
     const { apps, accounts, health, providers } = yield* Effect.all(
       {
         apps: executor.apps.list(),
-        accounts: executor.accounts.list(),
+        accounts: Effect.forEach(localOwners, (each) =>
+          executor.accounts.list({ owner: each }),
+        ).pipe(Effect.map((lists) => lists.flat())),
         health: executor.accounts.listHealth(),
-        providers: executor.accounts.providers(),
+        providers: Effect.forEach(localOwners, (each) =>
+          executor.accounts.providers({ owner: each }),
+        ).pipe(Effect.map((lists) => lists.flat())),
       },
       { concurrency: 4 },
     );
@@ -399,6 +410,7 @@ export const dashboard = (
         ),
       )
       .handle("overview", () => overview)
+      .handle("ownerMigration", () => ownerMigration)
       .handle("app", ({ params }) => appDetail(params.app))
       .handle("renameApp", ({ params, payload }) =>
         params.app === managedApp
@@ -420,7 +432,6 @@ export const dashboard = (
           .pipe(Effect.flatMap((source) => sourceDisplayFile(source.files, query.path))),
       )
       .handle("catalog", () => appCatalog.list)
-      .handle("catalogIcons", () => appCatalog.icons)
       .handle("importApp", ({ payload }) =>
         Effect.gen(function* () {
           const existing = yield* executor.apps.list({ owner, name: payload.name });

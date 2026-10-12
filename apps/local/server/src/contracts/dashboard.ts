@@ -1,4 +1,8 @@
 import {
+  blockedRecovery,
+  LocalOwnerMigration,
+} from "@executor-js/app-management/contracts/local-owners";
+import {
   DeploymentDisplay,
   SourceDisplayFile,
   SourceDisplayFileQuery,
@@ -86,7 +90,6 @@ import {
 } from "@executor-js/sdk";
 import {
   CatalogEntry,
-  CatalogIcons,
   CatalogImportFailed,
   CatalogUnavailable,
   CatalogImport,
@@ -109,6 +112,9 @@ import {
   HttpApiMiddleware,
   HttpApiSchema,
 } from "effect/http-api";
+
+/** Why the last start did not move other owners' records to `local`; see data step 7. */
+export { blockedRecovery, LocalOwnerMigration };
 
 /** Same callback path as Executor local, cloud and self-host; the host supplies its origin. */
 export const OAuthCallbackPath = "/api/oauth/callback";
@@ -392,6 +398,12 @@ export const DashboardApi = HttpApi.make("local-dashboard").add(
       }),
     )
     .add(
+      // Set once at startup, by data step 7, only while other owners' records have not moved.
+      HttpApiEndpoint.get("ownerMigration", "/dashboard/api/owner-migration", {
+        success: Schema.NullOr(LocalOwnerMigration),
+      }),
+    )
+    .add(
       HttpApiEndpoint.get("app", "/dashboard/api/apps/:app", {
         params: { app: AppId },
         success: DashboardApp,
@@ -543,12 +555,6 @@ export const DashboardApi = HttpApi.make("local-dashboard").add(
     .add(
       HttpApiEndpoint.get("catalog", "/dashboard/api/catalog", {
         success: Schema.Array(CatalogEntry),
-        error: CatalogUnavailable,
-      }),
-    )
-    .add(
-      HttpApiEndpoint.get("catalogIcons", "/dashboard/api/catalog/icons", {
-        success: CatalogIcons,
         error: CatalogUnavailable,
       }),
     )

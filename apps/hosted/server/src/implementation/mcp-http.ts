@@ -123,13 +123,18 @@ const requestBackend: McpBackend<RequestError> = {
 };
 
 /** Build native MCP protocol state inside its host-owned scope, without a caller identity. */
-export const makeHostedMcp = (beforeExecute?: McpOptions["beforeExecute"]) =>
+export const makeHostedMcp = (
+  beforeExecute?: McpOptions["beforeExecute"],
+  limits: McpOptions["limits"] = defaultMcpLimits,
+  sessions?: McpOptions["sessions"],
+) =>
   makeMcp({
     backend: requestBackend,
     ...(beforeExecute === undefined ? {} : { beforeExecute }),
+    ...(sessions === undefined ? {} : { sessions }),
     caller: requestCaller,
     instructions: executorIntro,
-    limits: defaultMcpLimits,
+    limits,
     annotateSkillRead,
     browser: {
       url: (address) =>
