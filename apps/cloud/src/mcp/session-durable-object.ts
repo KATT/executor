@@ -65,6 +65,7 @@ import { acquireBuildSlot, type BuildSlotHandle } from "./session-build-semaphor
 import { CoreSharedServices } from "../auth/workos";
 import { UserStoreService } from "../auth/context";
 import { resolveSessionMetaForToken } from "./session-meta";
+import { v2MovedMcpInstructions } from "./v2-moved-instructions";
 import {
   DbService,
   combinedSchema,
@@ -344,23 +345,33 @@ export class McpSessionDOSqlite extends McpAgentSessionDOBase<Env, CloudSessionD
           >,
       );
 
-      const { executor, engine } = yield* makeExecutionStack(
-        sessionMeta.userId,
-        sessionMeta.organizationId,
-        sessionMeta.organizationName,
-        {
-          mcpResource: sessionMeta.resource,
-          orgWrites: "request",
-        },
-      ).pipe(
-        // The metered stack tracks each execution to Autumn. It requires
-        // `AutumnService | DbService`; `AutumnService.Default` is provided here
-        // (it only reads `env`, no further deps), and `DbService` flows from the
-        // outer `makeSessionServices`. When `AUTUMN_SECRET_KEY` is unset the
-        // billing service degrades to a no-op tracker, so this stays inert in
-        // cloud dev/preview environments that run without a billing backend.
-        Effect.provide(CloudMeteredExecutionStackLayer.pipe(Layer.provide(AutumnService.Default))),
-        Effect.withSpan("McpSessionDOSqlite.makeExecutionStack"),
+      // The org's move to v2, read beside the stack build so it adds no
+      // latency: a moved org's sessions tell the agent where to reconnect.
+      const [{ executor, engine }, hostInstructions] = yield* Effect.all(
+        [
+          makeExecutionStack(
+            sessionMeta.userId,
+            sessionMeta.organizationId,
+            sessionMeta.organizationName,
+            {
+              mcpResource: sessionMeta.resource,
+              orgWrites: "request",
+            },
+          ).pipe(
+            // The metered stack tracks each execution to Autumn. It requires
+            // `AutumnService | DbService`; `AutumnService.Default` is provided here
+            // (it only reads `env`, no further deps), and `DbService` flows from the
+            // outer `makeSessionServices`. When `AUTUMN_SECRET_KEY` is unset the
+            // billing service degrades to a no-op tracker, so this stays inert in
+            // cloud dev/preview environments that run without a billing backend.
+            Effect.provide(
+              CloudMeteredExecutionStackLayer.pipe(Layer.provide(AutumnService.Default)),
+            ),
+            Effect.withSpan("McpSessionDOSqlite.makeExecutionStack"),
+          ),
+          v2MovedMcpInstructions(env, sessionMeta.organizationId),
+        ],
+        { concurrency: 2 },
       );
       // Build the description here so `executor.connections.list()` stays under
       // the DO startup span and the MCP SDK receives a concrete string instead
@@ -401,6 +412,7 @@ export class McpSessionDOSqlite extends McpAgentSessionDOBase<Env, CloudSessionD
         // the negotiated apps support comes back from storage instead.
         restoredAppsEnabled: sessionMeta.appsEnabled ?? false,
         onAppsEnabledChange: (appsEnabled) => self.persistAppsEnabled(appsEnabled),
+        hostInstructions,
         loadAppShellHtml,
         smokeRenderArtifact: smokeRenderArtifactAfterQuickJsPreload,
         artifactUrl: artifactUrlFor(

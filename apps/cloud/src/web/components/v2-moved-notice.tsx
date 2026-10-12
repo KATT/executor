@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@executor-js/react/components/dialog";
 import { Label } from "@executor-js/react/components/label";
+import { McpServerUrl } from "@executor-js/react/components/mcp-install-card";
 import { Textarea } from "@executor-js/react/components/textarea";
 import { useAuth, v2ImportAtom } from "../auth";
 import {
@@ -28,7 +29,8 @@ import {
 // once per dashboard load unless snoozed for this org in this browser:
 //   - ✕ / Escape / opening v2   hidden for 7 days, nothing asked
 //   - "Keep using v1"           step 2 asks why; sending hides it for 30 days
-// v1 keeps working for a moved org; this only tells the user where it went.
+// v1 keeps working for a moved org; this only tells the user where it went,
+// and where its agents should connect (the org's v2 MCP URL, when known).
 // ---------------------------------------------------------------------------
 
 type Step = "notice" | "feedback";
@@ -130,6 +132,13 @@ export function V2MovedNotice() {
             <DialogDescription className="text-sm">
               Changes made here won't sync to v2.
             </DialogDescription>
+
+            {moved.v2McpUrl !== undefined && (
+              <section aria-label="v2 MCP server URL" className="grid gap-1.5">
+                <p className="text-sm text-muted-foreground">Connect your agents to v2 instead:</p>
+                <McpServerUrl url={moved.v2McpUrl} />
+              </section>
+            )}
 
             <DialogFooter>
               <Button

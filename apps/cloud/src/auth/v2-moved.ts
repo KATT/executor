@@ -31,6 +31,10 @@ export interface V2Moved {
   readonly v2Slug: string;
   /** When the import finished, normalized to `Date#toISOString`. */
   readonly movedAt: string;
+  /** The v2 organization's MCP server, `<v2 MCP origin>/org/<slug>/mcp`: the
+   *  org-pinned form, the one-to-one counterpart of v1's `/<slug>/mcp`. Absent
+   *  where v1 does not know v2's MCP origin (`V2_MCP_ORIGIN` unset). */
+  readonly v2McpUrl?: string;
 }
 
 /** The move recorded in an organization's metadata, or `null` when there is
@@ -38,6 +42,7 @@ export interface V2Moved {
 export const parseV2Moved = (
   metadata: Readonly<Record<string, unknown>>,
   v2Origin: URL,
+  v2McpOrigin: URL | null,
 ): V2Moved | null => {
   const slug = metadata[V2_MOVED_SLUG_KEY];
   const movedAt = metadata[V2_MOVED_AT_KEY];
@@ -51,6 +56,7 @@ export const parseV2Moved = (
     v2Url: new URL(`/org/${slug}`, v2Origin).href,
     v2Slug: slug,
     movedAt: new Date(time).toISOString(),
+    ...(v2McpOrigin === null ? {} : { v2McpUrl: new URL(`/org/${slug}/mcp`, v2McpOrigin).href }),
   };
 };
 
@@ -67,9 +73,10 @@ export const v2Moved = (
   source: V2MovedSource,
   organizationId: string,
   v2Origin: URL,
+  v2McpOrigin: URL | null,
 ): Effect.Effect<V2Moved | null> =>
   source.organizationMetadata(organizationId).pipe(
-    Effect.map((metadata) => parseV2Moved(metadata, v2Origin)),
+    Effect.map((metadata) => parseV2Moved(metadata, v2Origin, v2McpOrigin)),
     Effect.orElseSucceed(() => null),
     Effect.withSpan("v2Moved.read"),
   );
