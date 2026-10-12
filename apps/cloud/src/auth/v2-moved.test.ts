@@ -34,9 +34,9 @@ describe("v2 moved metadata", () => {
     });
   });
 
-  it("adds the org's v2 MCP server when v2's MCP origin is known", () => {
+  it("adds v2's OAuth MCP server, not the org-pinned path, when v2's MCP origin is known", () => {
     expect(parseV2Moved(movedMetadata(), V2_ORIGIN, V2_MCP_ORIGIN)?.v2McpUrl).toBe(
-      "https://mcp.example.test/org/example-team/mcp",
+      "https://mcp.example.test/mcp",
     );
   });
 
@@ -246,14 +246,14 @@ describe("v2 import answer", () => {
     }),
   );
 
-  it.effect("adds the org's v2 MCP server when V2_MCP_ORIGIN is set", () =>
+  it.effect("adds v2's MCP server when V2_MCP_ORIGIN is set", () =>
     Effect.gen(function* () {
       const result = yield* answer(
         { ...configured, V2_MCP_ORIGIN: "https://mcp.example.test" },
         movedSourceOf(movedMetadata()),
         importSourceOf(true),
       );
-      expect(result.moved?.v2McpUrl).toBe("https://mcp.example.test/org/example-team/mcp");
+      expect(result.moved?.v2McpUrl).toBe("https://mcp.example.test/mcp");
     }),
   );
 

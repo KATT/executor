@@ -27,8 +27,10 @@ const V2_SLUG = "moved-example";
 // between UTC-11 and UTC+11.
 const MOVED_AT = "2026-10-09T12:00:00.000Z";
 const MOVED_BADGE = "Moved Oct 9, 2026";
-// v2's org-pinned MCP path, on the v2 MCP origin v1 is configured with.
-const V2_MCP_PATH = `/org/${V2_SLUG}/mcp`;
+// v2's MCP path on the v2 MCP origin v1 is configured with. OAuth clients only
+// accept `/mcp` (v2's protected resource); they choose the org when signing in.
+const V2_MCP_PATH = "/mcp";
+const CHOOSE_ORG_HINT = `Choose ${V2_SLUG} when you sign in.`;
 
 interface V2ImportAnswer {
   readonly url: string | null;
@@ -108,12 +110,14 @@ const renameOrg = (target: TargetShape, identity: Identity, name: string): Effec
 
 const noticeOf = (page: Page) => page.getByRole("dialog");
 
-/** The answer's v2 MCP URL, checked to be the org's v2 MCP server. */
+/** The answer's v2 MCP URL, checked to be v2's OAuth MCP server. */
 const v2McpUrlOf = (target: TargetShape, answer: V2ImportAnswer): string => {
   const raw = answer.moved?.v2McpUrl;
   expect(raw, "the move answer carries the org's v2 MCP URL").toEqual(expect.any(String));
   const url = new URL(raw!);
-  expect(url.pathname, "the org-pinned v2 MCP path").toBe(V2_MCP_PATH);
+  expect(url.href, "v2's OAuth MCP resource, not an org-pinned path").toBe(
+    `${url.origin}${V2_MCP_PATH}`,
+  );
   expect(url.origin, "v2's MCP host, not v1's").not.toBe(new URL(target.baseUrl).origin);
   expect(url.origin, "v2's MCP host, not v2's app host").not.toBe(
     new URL(answer.moved!.v2Url).origin,
@@ -191,7 +195,15 @@ scenario(
         expect(await notice.getByText("Changes made here won't sync to v2.").count()).toBe(1);
 
         const mcp = notice.getByRole("region", { name: "v2 MCP server URL" });
-        expect(await mcp.getByText("Connect your agents to v2 instead:").count()).toBe(1);
+        expect(
+          await mcp
+            .getByText(
+              `Connect your agents to v2 instead, and choose ${V2_SLUG} when you sign in:`,
+              { exact: true },
+            )
+            .count(),
+          "the notice names the org to choose at sign-in",
+        ).toBe(1);
         expect(
           await mcp.getByTestId("mcp-server-url").textContent(),
           "the notice shows the org's v2 MCP URL",
@@ -224,6 +236,10 @@ scenario(
         expect(await next.textContent(), "the install command targets v2").toContain(
           `npx add-mcp ${v2McpUrl} --transport http --name executor`,
         );
+        expect(
+          await next.getByText(CHOOSE_ORG_HINT, { exact: true }).count(),
+          "it names the org to choose at sign-in",
+        ).toBe(1);
         const old = page.getByRole("region", { name: "Old MCP server URL" });
         expect(await old.getByText("Old v1 URL").count()).toBe(1);
         expect(
@@ -265,6 +281,10 @@ scenario(
         expect(await next.textContent(), "the install command targets v2").toContain(
           `npx add-mcp ${v2McpUrl} --transport http --name executor`,
         );
+        expect(
+          await next.getByText(CHOOSE_ORG_HINT, { exact: true }).count(),
+          "it names the org to choose at sign-in",
+        ).toBe(1);
         const old = page.getByRole("region", { name: "Old MCP server URL" });
         expect(await old.getByText("Old v1 URL").count()).toBe(1);
         // The page reads its own origin after hydration, then shows v1's URL.
@@ -441,7 +461,8 @@ scenario(
     const after = yield* initializeInstructions(target.mcpUrl, bearer);
     expect(after.instructions, "the initialize result names the org's v2 MCP server").toBe(
       "This organization moved to Executor v2 on October 9, 2026. " +
-        `Its MCP server is now ${v2McpUrl}; ask the user to reconnect their agent there. ` +
+        `Its MCP server is now ${v2McpUrl}; ask the user to reconnect their agent there ` +
+        `and choose the ${V2_SLUG} organization when signing in. ` +
         "Changes made through this server won't reach v2.",
     );
     expect(after.tools, "the tools are unchanged").toEqual(before.tools);

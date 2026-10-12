@@ -24,7 +24,8 @@ const env = {
 
 const EXPECTED =
   "This organization moved to Executor v2 on October 9, 2026. " +
-  "Its MCP server is now https://mcp.example.test/org/example-team/mcp; ask the user to reconnect their agent there. " +
+  "Its MCP server is now https://mcp.example.test/mcp; ask the user to reconnect their agent there " +
+  "and choose the example-team organization when signing in. " +
   "Changes made through this server won't reach v2.";
 
 const workosAnswering = (answer: () => Effect.Effect<unknown, unknown>) =>
@@ -52,7 +53,7 @@ describe("v2 moved MCP instructions", () => {
         v2Url: "https://app.example.test/org/example-team",
         v2Slug: "example-team",
         movedAt: "2026-10-09T12:00:00.000Z",
-        v2McpUrl: "https://mcp.example.test/org/example-team/mcp",
+        v2McpUrl: "https://mcp.example.test/mcp",
       }),
     ).toBe(EXPECTED);
   });
