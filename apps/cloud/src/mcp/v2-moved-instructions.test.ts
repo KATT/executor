@@ -7,6 +7,7 @@ import { WorkOSClient, type WorkOSClientService } from "../auth/workos";
 import { WorkOSError } from "../auth/errors";
 import {
   V2_MOVED_READ_TIMEOUT_MS,
+  mustReinitializeForV2Move,
   v2MovedInstructionsText,
   v2MovedMcpInstructions,
 } from "./v2-moved-instructions";
@@ -100,4 +101,25 @@ describe("v2 moved MCP instructions", () => {
       expect(yield* Fiber.join(read)).toBeUndefined();
     }).pipe(Effect.provide(workosAnswering(() => Effect.never))),
   );
+});
+
+describe("re-initializing a session for the v2 move", () => {
+  it("re-initializes a client that got no notice once the org has moved", () => {
+    expect(mustReinitializeForV2Move(undefined, EXPECTED)).toBe(true);
+  });
+
+  it("re-initializes a client whose notice is out of date", () => {
+    expect(
+      mustReinitializeForV2Move(EXPECTED.replace("example-team", "other-team"), EXPECTED),
+    ).toBe(true);
+  });
+
+  it("leaves a client that got the current notice alone", () => {
+    expect(mustReinitializeForV2Move(EXPECTED, EXPECTED)).toBe(false);
+  });
+
+  it("leaves a client alone when the org has not moved or the read failed", () => {
+    expect(mustReinitializeForV2Move(undefined, undefined)).toBe(false);
+    expect(mustReinitializeForV2Move(EXPECTED, undefined)).toBe(false);
+  });
 });
