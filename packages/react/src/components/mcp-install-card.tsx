@@ -276,7 +276,8 @@ export function McpServerMovedConnect(props: {
           onCopy={props.onCopy}
           className="mt-1.5"
         />
-        <span className="text-xs text-muted-foreground">
+        {/* The organization is a slug of up to 45 characters with no break opportunity. */}
+        <span className="min-w-0 text-xs wrap-anywhere text-muted-foreground">
           Choose {move.organization} when you sign in.
         </span>
       </section>

@@ -7,9 +7,15 @@
 // exactly as before.
 //
 // The move is read once per session build (an `initialize`, or a cold restore
-// of an evicted session), never per request, and in parallel with the
-// execution stack. The read is bounded: a slow or failing WorkOS answers "not
+// of an evicted session), in parallel with the execution stack, and again at
+// most once per `V2_MOVED_RECHECK_MS` while a runtime stays in memory. Never
+// per request. The read is bounded: a slow or failing WorkOS answers "not
 // moved", so it can neither fail nor stall a session.
+//
+// Instructions only reach a client in the `initialize` result, so a session
+// whose client was told something else (it initialized before the move) is
+// ended, and its client starts a new session that carries them. See
+// `mustReinitializeForV2Move`.
 // ---------------------------------------------------------------------------
 
 import { Effect } from "effect";
@@ -20,6 +26,11 @@ import type { WorkOSClient } from "../auth/workos";
 
 /** Longest the move read may add to a session build. */
 export const V2_MOVED_READ_TIMEOUT_MS = 1_000;
+
+/** How old a resident session's move read may get before a request re-reads
+ *  it. Bounds how long a session that is in constant use can go on without
+ *  learning its org moved. */
+export const V2_MOVED_RECHECK_MS = 5 * 60 * 1000;
 
 const movedDate = (movedAt: string): string =>
   new Intl.DateTimeFormat("en-US", {
@@ -57,3 +68,15 @@ export const v2MovedMcpInstructions = (
     }),
     Effect.withSpan("mcp.session.v2_moved_instructions"),
   );
+
+/**
+ * Whether a session's client must re-initialize to learn of the move: the org
+ * has moved (`current`), and the `initialize` its client got said something
+ * else (`delivered`, `undefined` for no notice). A session that already carries
+ * the current notice is left alone, so a reconnected client is never ended
+ * again, and an unknown or failed read (`current` undefined) never ends one.
+ */
+export const mustReinitializeForV2Move = (
+  delivered: string | undefined,
+  current: string | undefined,
+): boolean => current !== undefined && current !== delivered;

@@ -134,8 +134,9 @@ export function V2MovedNotice() {
             </DialogDescription>
 
             {moved.v2McpUrl !== undefined && (
-              <section aria-label="v2 MCP server URL" className="grid gap-1.5">
-                <p className="text-sm text-muted-foreground">
+              <section aria-label="v2 MCP server URL" className="grid min-w-0 gap-1.5">
+                {/* The slug can be 45 characters with no break opportunity. */}
+                <p className="min-w-0 text-sm wrap-anywhere text-muted-foreground">
                   Connect your agents to v2 instead, and choose {moved.v2Slug} when you sign in:
                 </p>
                 <McpServerUrl url={moved.v2McpUrl} />
