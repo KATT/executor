@@ -74,6 +74,9 @@ export const appWorkerIdleSeconds = 4;
 /** A relay callback in a valid form other than its serialization, which the SDK sends. */
 export const oauthRelayCallback =
   "https://Relay.Executor.example:443/api/oauth/callback?tenant=fixture";
+/** The same, on the origin of the client metadata document the scenarios publish. */
+export const oauthDocumentOriginCallback =
+  "https://Executor.example:443/api/oauth/callback?tenant=fixture";
 
 /**
  * Keeps each scenario name but gives every value the plan type. A literal type per scenario makes
@@ -754,6 +757,26 @@ export const scenarios = plan({
       local: na("Hosted deployment API scenario"),
     },
   },
+  mcpDirectCalls: {
+    fixtures: "actors",
+    file: "mcp-direct-calls.spec.ts",
+    title: "MCP search, describe and call reach app tools without an execute program",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Shared MCP path; covered on self-host"),
+      local: na("Hosted deployment API scenario"),
+    },
+  },
+  mcpNativeCallApproval: {
+    fixtures: "actors",
+    file: "mcp-direct-calls.spec.ts",
+    title: "Native MCP call leaves approval to the client's confirmation of the call",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Shared MCP path; covered on self-host"),
+      local: na("Hosted deployment API scenario"),
+    },
+  },
   mcpCatalogRefresh: {
     fixtures: "actors",
     file: "mcp-catalog.spec.ts",
@@ -784,6 +807,16 @@ export const scenarios = plan({
       local: na("Hosted deployment API scenario"),
     },
   },
+  liveOpenapiExampleIds: {
+    fixtures: "actors",
+    file: "live-openapi-example-ids.spec.ts",
+    title: "Live OpenAPI validates and calls tools whose schema examples repeat an id",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Loopback upstream fixture"),
+      local: na("Hosted deployment API scenario"),
+    },
+  },
   liveOpenapiDiagnostics: {
     fixtures: "actors",
     file: "live-openapi-import.spec.ts",
@@ -799,6 +832,17 @@ export const scenarios = plan({
     file: "live-openapi-import.spec.ts",
     title:
       "Live OpenAPI ignores security alternatives naming undeclared schemes and sends only the met one's credentials",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Loopback upstream fixture"),
+      local: na("Hosted deployment API scenario"),
+    },
+  },
+  liveOpenapiExtensions: {
+    fixtures: "actors",
+    file: "live-openapi-import.spec.ts",
+    title:
+      "Live OpenAPI lists and calls account tools whose schemas carry extensions holding references",
     targets: {
       "self-host": scheduled,
       cloud: na("Loopback upstream fixture"),
@@ -845,6 +889,16 @@ export const scenarios = plan({
       "self-host": scheduled,
       cloud: na("Loopback MCP fixture"),
       local: na("Hosted deployment API scenario"),
+    },
+  },
+  appIcons: {
+    fixtures: "actors",
+    file: "app-icons.spec.ts",
+    title: "Apps show the icons they declare on defineApp, in the light or dark variant",
+    targets: {
+      "self-host": scheduled,
+      cloud: scheduled,
+      local: na("Hosted deployment API scenario; the local overview carries the same requirements"),
     },
   },
   dynamicOnlyApp: {
@@ -2382,10 +2436,10 @@ export const scenarios = plan({
       local: na("Shared error views and SDK are exercised through hosted APIs."),
     },
   },
-  catalogAgentSetup: {
+  catalogOfficialApps: {
     fixtures: "actors",
-    file: "catalog-agent-setup.spec.ts",
-    title: "Catalog services without quick add copy an agent setup prompt",
+    file: "catalog-official-apps.spec.ts",
+    title: "Add app lists official apps and installs one's own source as a copy",
     targets: {
       "self-host": scheduled,
       cloud: na("The shared catalog view and install rule are exercised through self-host."),
@@ -4050,6 +4104,17 @@ export const scenarios = plan({
       local: na("Hosted account dialogs and saved-client management."),
     },
   },
+  oauthUserAgent: {
+    fixtures: "actors",
+    file: "oauth-user-agent.spec.ts",
+    title:
+      "OAuth discovery names Executor and sign-in completes against an authorization server that refuses requests without a User-Agent",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Uses a scoped loopback OAuth issuer."),
+      local: na("Exercises shared OAuth through the hosted API."),
+    },
+  },
   oauthAuthorizationParams: {
     fixtures: "actors",
     file: "oauth-authorization-params.spec.ts",
@@ -4068,12 +4133,30 @@ export const scenarios = plan({
       "a host with a client metadata document signs in without registering a client, and still registers where the server does not accept documents",
     serverEnvironment: {
       EXECUTOR_OAUTH_CLIENT_METADATA_URL: "https://executor.example/oauth/client-metadata.json",
-      EXECUTOR_OAUTH_CALLBACK_URL: oauthRelayCallback,
+      EXECUTOR_OAUTH_CALLBACK_URL: oauthDocumentOriginCallback,
     },
     targets: {
       "self-host": scheduled,
       cloud: na(
         "Managed Cloud runs on loopback without a public HTTPS origin; deployed stages serve the document.",
+      ),
+      local: na("Local's loopback callback has no public document; it registers dynamically."),
+    },
+  },
+  oauthClientMetadataDocumentOrigin: {
+    fixtures: "actors",
+    file: "oauth-client-metadata.spec.ts",
+    title:
+      "a host whose callback is on another origin than its client metadata document signs in where the server accepts redirect URIs only on the document's origin",
+    // Cloud's layout: the deployment serves the document while sign-ins return through the edge.
+    serverEnvironment: {
+      EXECUTOR_OAUTH_CLIENT_METADATA_URL: "https://executor.example/oauth/client-metadata.json",
+      EXECUTOR_OAUTH_CALLBACK_URL: oauthRelayCallback,
+    },
+    targets: {
+      "self-host": scheduled,
+      cloud: na(
+        "Managed Cloud runs on loopback without a public HTTPS origin; the same setting derives a deployed stage's document.",
       ),
       local: na("Local's loopback callback has no public document; it registers dynamically."),
     },
@@ -4829,6 +4912,30 @@ export const scenarios = plan({
     targets: {
       "self-host": scheduled,
       // Only a deployed compiler Worker has Cloudflare's memory limit.
+      cloud: { status: "scheduled", runtime: "attached" },
+      local: na("Local builds and runs apps through the same workerd compiler as self-host."),
+    },
+  },
+  largeOpenapiAsciiApp: {
+    fixtures: "actors",
+    file: "large-openapi-app.spec.ts",
+    title:
+      "an OpenAPI app with a 13.6 MB document whose prose goes beyond Latin-1, written as ASCII JSON as imported apps write it, builds and calls its API",
+    targets: {
+      "self-host": scheduled,
+      // Only deployed Workers have Cloudflare's memory limit.
+      cloud: { status: "scheduled", runtime: "attached" },
+      local: na("Local builds and runs apps through the same workerd compiler as self-host."),
+    },
+  },
+  largeOpenapiWideSourceApp: {
+    fixtures: "actors",
+    file: "large-openapi-app.spec.ts",
+    title:
+      "an OpenAPI app with a 13.6 MB ASCII document beside source files whose text goes beyond Latin-1, such as a provider's display name, builds, reads back its files exactly and calls its API",
+    targets: {
+      "self-host": scheduled,
+      // Only deployed Workers have Cloudflare's memory limit.
       cloud: { status: "scheduled", runtime: "attached" },
       local: na("Local builds and runs apps through the same workerd compiler as self-host."),
     },
@@ -6480,7 +6587,7 @@ export const scenarios = plan({
   },
   addAppRegistry: {
     file: "add-app-registry.spec.ts",
-    title: "Add app lists integration templates and never reads the public registry",
+    title: "Add app lists catalog apps and never reads the public registry",
     targets: {
       "self-host": scheduled,
       cloud: na("Cloud serves the registry from its own database instead of a remote origin."),
@@ -6577,7 +6684,7 @@ export const scenarios = plan({
   v1ImportRequests: {
     file: "cloud-v1-import.spec.ts",
     title:
-      "Cloud v1 import sends each OpenAPI request where v1 did, for YAML, public, unnamed-method and one service's multi-host APIs, refuses an API whose operations call several services or send an account's credentials to several hosts over plain HTTP, drops an account check whose server variable turns it to plain HTTP, and offers a fix prompt only when an item failed",
+      "Cloud v1 import sends each OpenAPI request where v1 did, for YAML, public, unnamed-method and one service's multi-host APIs and an operation server that uses the first document server's variable without declaring it, refuses an API whose operations call several services or send an account's credentials to several hosts over plain HTTP or use a server variable no server declares, drops an account check whose server variable turns it to plain HTTP, and offers a fix prompt only when an item failed",
     targets: { ...cloudOnboarding, cloud: managedCloud },
   },
   v1ImportOAuthRenewal: {
@@ -6591,6 +6698,25 @@ export const scenarios = plan({
     file: "cloud-v1-import.spec.ts",
     title:
       "Cloud v1 import moves connections that signed in through Executor's own apps to v2's operator client of the same name, including a GitHub-shaped MCP server that names the scopeless client's endpoints, which renews them with the granted scopes, sends the token to each of a service's hosts the client reaches, and refuses an app v2 does not offer, a scope it does not allow and a host its tokens never reach",
+    targets: { ...cloudOnboarding, cloud: managedCloud },
+  },
+  v1ImportBuilds: {
+    file: "cloud-v1-import.spec.ts",
+    title:
+      "Cloud v1 import writes an OpenAPI document with characters beyond ASCII as ASCII JSON that reads as v1's, also for a large API whose name and base URL path go beyond Latin-1, which builds and calls with its v1 key, builds OpenAPI and GraphQL apps whose v1 OAuth clients set scopes in their authorization URLs, which reconnect sending v1's authorization and token requests, refusing a client whose request v2 cannot send as v1 did, and says why and where a stored specification cannot be read",
+    targets: { ...cloudOnboarding, cloud: managedCloud },
+  },
+  v1ImportPlanOutage: {
+    file: "cloud-v1-import.spec.ts",
+    title:
+      "Cloud v1 import retries v1 plan reads that time out or fail, imports a started workspace's items without reading its plan again, and says it is unavailable while plan reads keep failing",
+    targets: { ...cloudOnboarding, cloud: managedCloud },
+  },
+  // Autumn faults match every caller of a route, so this runs on its own managed local Cloud.
+  slowAutumnDeadlines: {
+    file: "cloud-autumn-slow.spec.ts",
+    title:
+      "Cloud sign-in's v1 check and the billing overview each send one Autumn read while Autumn is slow, and say they are unavailable within their own deadlines",
     targets: { ...cloudOnboarding, cloud: managedCloud },
   },
   localSkills: {

@@ -48,7 +48,13 @@ import {
 const isFields = (value: unknown): value is Fields =>
   typeof value === "object" && value !== null && Object.values(value).every(isSchema);
 
-export { type JsonObject, type JsonValue, ValidationError } from "./contracts/schema.ts";
+export {
+  DeclarationInvalid,
+  type DeclarationIssue,
+  type JsonObject,
+  type JsonValue,
+  ValidationError,
+} from "./contracts/schema.ts";
 export {
   type Fields,
   type Infer,
@@ -109,6 +115,7 @@ export {
   type RouterOptions,
 } from "./implementation/router.ts";
 export type { RouterIcon } from "./contracts/router.ts";
+export type { AppIcon } from "./contracts/icons.ts";
 export { dynamicSkills } from "./implementation/dynamic-skills.ts";
 export type { HostedTool as OperationDescription } from "./contracts/host.ts";
 

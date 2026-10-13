@@ -9,11 +9,19 @@ import { createServer } from "node:http";
 import type { Page } from "playwright";
 import { expect, layer } from "@effect/vitest";
 import { Effect, FileSystem, Layer, Ref, Schema } from "effect";
-import { HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http";
+import {
+  FetchHttpClient,
+  HttpClient,
+  HttpRouter,
+  HttpServer,
+  HttpServerRequest,
+  HttpServerResponse,
+} from "effect/http";
 import { TestLive, withCase } from "../support/case.ts";
 import { Browser } from "../support/browser.ts";
 import { writeRows, type RowStatement } from "../support/cloud-rows.ts";
 import { credentialUpstream } from "../support/credential-upstream.ts";
+import { largeOpenapiDocument } from "../support/large-openapi.ts";
 import { Emulators } from "../support/emulators.ts";
 import { Onboarding } from "../support/onboarding.ts";
 import {
@@ -533,6 +541,29 @@ const googleSignIn = (email: string) =>
   });
 
 /** v1's Vault object name for an item id, with its 200-character rule. */
+/** An imported app's deployed source files. */
+const appSource = (organization: string, app: string | undefined) =>
+  call(
+    "Read the app's deployed source",
+    "GET",
+    `/api/organizations/${organization}/apps/${app}/source`,
+  ).pipe(
+    Effect.flatMap((response) => decode(Source, response)),
+    Effect.map((source) => source.files),
+  );
+
+/** The options of each `oauth2(...)` an imported app's provider declares, which it writes as JSON. */
+const oauthDeclarations = (organization: string, app: string | undefined) =>
+  appSource(organization, app).pipe(
+    Effect.map((files) =>
+      [
+        ...(files.find((file) => file.path === "provider.ts")?.content ?? "").matchAll(
+          /oauth2\((\{[\s\S]*?\n\})\)/gu,
+        ),
+      ].flatMap(([, options]): unknown[] => (options === undefined ? [] : [JSON.parse(options)])),
+    ),
+  );
+
 const vaultName = (scope: string, itemId: string) => {
   const name = `${scope}/secrets/${encodeURIComponent(itemId)}`;
   return name.length <= 200
@@ -580,8 +611,9 @@ const spec = {
 };
 
 /**
- * The same document as YAML, as v1 stored specifications it fetched. A flow sequence across lines
- * is valid YAML that only some parsers read.
+ * The same document as YAML, as v1 stored specifications it fetched, with a description on
+ * `deleteWidget`. A flow sequence across lines, and a kept block scalar whose only line is spaces
+ * just before a shallower key, are valid YAML that only some parsers read.
  */
 const specYaml = `openapi: 3.0.3
 info:
@@ -625,6 +657,8 @@ paths:
       responses:
         "204":
           description: gone
+      description: |+
+${" ".repeat(8)}
   /internal:
     get:
       operationId: internal
@@ -1034,8 +1068,11 @@ const serviceHosts = (port: number) => ({
  * OpenAPI integrations whose requests depend on how v1 read them, against a loopback service
  * that records what it receives: a YAML specification with a repeated key, operations that name
  * their own server, a webhook, a method without a name, a public API, one whose operations call
- * two hosts of one service, one whose operations call two services, and one on two HTTPS hosts of
- * one service whose account check picks a server variable that turns it to plain HTTP.
+ * two hosts of one service, one whose operations call two services, one on two HTTPS hosts of
+ * one service whose account check picks a server variable that turns it to plain HTTP, one whose
+ * operation names a server that uses the document server's variable without declaring it, one
+ * whose two document servers declare that variable differently, and one whose server uses a
+ * variable no server declares.
  */
 const seedRequests = (organization: string, user: string, slug: string, origin: string) =>
   Effect.gen(function* () {
@@ -1045,6 +1082,8 @@ const seedRequests = (organization: string, user: string, slug: string, origin: 
     const uploadsKeyItem = `connection:user:uploads_${suffix}:main:token`;
     const mixedKeyItem = `connection:user:mixed_${suffix}:main:token`;
     const downgradedKeyItem = `connection:user:downgraded_${suffix}:main:token`;
+    const regionalKeyItem = `connection:user:regional_${suffix}:main:token`;
+    const layeredKeyItem = `connection:user:layered_${suffix}:main:token`;
     const userScope = `executor/user/${encodeURIComponent(organization)}/${encodeURIComponent(user)}`;
     yield* emulators.v1VaultObject(vaultName(userScope, keyItem), "synthetic-requests-key");
     yield* emulators.v1VaultObject(vaultName(userScope, uploadsKeyItem), "synthetic-uploads-key");
@@ -1053,6 +1092,8 @@ const seedRequests = (organization: string, user: string, slug: string, origin: 
       vaultName(userScope, downgradedKeyItem),
       "synthetic-downgraded-key",
     );
+    yield* emulators.v1VaultObject(vaultName(userScope, regionalKeyItem), "synthetic-regional-key");
+    yield* emulators.v1VaultObject(vaultName(userScope, layeredKeyItem), "synthetic-layered-key");
     const hosts = serviceHosts(Number(new URL(origin).port));
     // js-yaml, which v1 parsed with, keeps the last of a repeated key.
     const requests = [
@@ -1178,6 +1219,59 @@ const seedRequests = (organization: string, user: string, slug: string, origin: 
         },
       },
     });
+    // Like Sentry's API: the document's server declares a region variable, and one operation names
+    // the same server URL without declaring it, so the operation uses the document's default.
+    const regionalServer = `http://{region}.synthetic-service.localhost:${new URL(origin).port}/regional`;
+    const regional = JSON.stringify({
+      openapi: "3.0.3",
+      info: { title: "Synthetic regional", version: "1" },
+      servers: [
+        {
+          url: regionalServer,
+          variables: { region: { default: "api", enum: ["api", "uploads"] } },
+        },
+      ],
+      paths: {
+        "/items": { get: { operationId: "list", tags: ["items"], responses: ok } },
+        "/models": {
+          get: {
+            operationId: "models",
+            tags: ["items"],
+            servers: [{ url: regionalServer }],
+            responses: ok,
+          },
+        },
+      },
+    });
+    // Two document servers declare the region with different defaults, and the first has no URL.
+    // An operation's server that omits the declaration takes the first document server's, as the
+    // app's router does, even though that server's empty URL is never called.
+    const layeredServer = `http://{region}.synthetic-service.localhost:${new URL(origin).port}/layered`;
+    const layered = JSON.stringify({
+      openapi: "3.0.3",
+      info: { title: "Synthetic layered", version: "1" },
+      servers: [
+        { url: "", variables: { region: { default: "api" } } },
+        { url: layeredServer, variables: { region: { default: "uploads" } } },
+      ],
+      paths: {
+        "/items": {
+          get: {
+            operationId: "list",
+            tags: ["items"],
+            servers: [{ url: layeredServer }],
+            responses: ok,
+          },
+        },
+      },
+    });
+    // No server declares the variable, so no host can be named.
+    const unresolved = JSON.stringify({
+      openapi: "3.0.3",
+      info: { title: "Synthetic unresolved", version: "1" },
+      servers: [{ url: "https://{tenant}.unresolved.example.com/api" }],
+      paths: { "/items": { get: { operationId: "list", tags: ["items"], responses: ok } } },
+    });
     const downgradedServer = {
       url: "{scheme}://uploads.downgraded.example.com/uploads",
       variables: { scheme: { default: "https" } },
@@ -1246,6 +1340,31 @@ const seedRequests = (organization: string, user: string, slug: string, origin: 
           args: { server: { url: downgradedServer.url, variables: { scheme: "http" } } },
         },
       },
+      {
+        slug: `regional_${suffix}`,
+        name: "Regional",
+        text: regional,
+        template: [
+          { slug: "", kind: "apikey", placements: [{ carrier: "header", name: "X-Api-Key" }] },
+        ],
+        operations: { "items.list": ["get", "/items"], "items.models": ["get", "/models"] },
+      },
+      {
+        slug: `layered_${suffix}`,
+        name: "Layered",
+        text: layered,
+        template: [
+          { slug: "", kind: "apikey", placements: [{ carrier: "header", name: "X-Api-Key" }] },
+        ],
+        operations: { "items.list": ["get", "/items"] },
+      },
+      {
+        slug: `unresolved_${suffix}`,
+        name: "Unresolved",
+        text: unresolved,
+        template: [],
+        operations: { "items.list": ["get", "/items"] },
+      },
     ];
     const row = (sql: string, ...params: string[]): RowStatement => ({ sql, params });
     yield* writeRows("v1-database.json", [
@@ -1298,6 +1417,8 @@ const seedRequests = (organization: string, user: string, slug: string, origin: 
         [`uploads_${suffix}`, uploadsKeyItem],
         [`mixed_${suffix}`, mixedKeyItem],
         [`downgraded_${suffix}`, downgradedKeyItem],
+        [`regional_${suffix}`, regionalKeyItem],
+        [`layered_${suffix}`, layeredKeyItem],
       ].map(([integration, item]) =>
         row(
           "insert into connection (tenant, owner, subject, integration, name, template, item_ids) values ($1, 'user', $2, $3, 'main', '', $4::json)",
@@ -1418,6 +1539,67 @@ const oauthService = Effect.gen(function* () {
     tokens: Ref.get(tokens),
     calls: Ref.get(calls),
   };
+});
+
+/** A request's query or form, as the ordered parameters a server reads. */
+type Parameters = ReadonlyArray<readonly [string, string]>;
+
+/**
+ * A synthetic authorization server at any path. `GET …/authorize` records the parameters the
+ * browser brought and returns to their `redirect_uri` with a code; `POST …/token` records the form
+ * and issues a token.
+ */
+const signInService = Effect.gen(function* () {
+  const authorizations = yield* Ref.make<ReadonlyArray<{ path: string; query: Parameters }>>([]);
+  const tokens = yield* Ref.make<ReadonlyArray<{ path: string; form: Parameters }>>([]);
+  const routes = HttpRouter.add(
+    "*",
+    "/*",
+    Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      const url = new URL(request.url, "http://sign-in");
+      if (request.method === "GET" && url.pathname.endsWith("/authorize")) {
+        yield* Ref.update(authorizations, (all) => [
+          ...all,
+          { path: url.pathname, query: [...url.searchParams] },
+        ]);
+        const callback = URL.parse(url.searchParams.get("redirect_uri") ?? "");
+        if (callback === null) return HttpServerResponse.empty({ status: 400 });
+        callback.searchParams.set("code", "synthetic-code");
+        callback.searchParams.set("state", url.searchParams.get("state") ?? "");
+        return HttpServerResponse.redirect(callback.href, { status: 302 });
+      }
+      if (request.method === "POST" && url.pathname.endsWith("/token")) {
+        const form = new URLSearchParams(yield* request.text.pipe(Effect.orElseSucceed(() => "")));
+        yield* Ref.update(tokens, (all) => [...all, { path: url.pathname, form: [...form] }]);
+        return yield* HttpServerResponse.json({
+          access_token: "synthetic-reconnected-access",
+          refresh_token: "synthetic-reconnected-refresh",
+          token_type: "Bearer",
+          expires_in: 3600,
+        });
+      }
+      return HttpServerResponse.empty({ status: 404 });
+    }),
+  );
+  const services = yield* Layer.build(
+    HttpRouter.serve(routes, { disableLogger: true, disableListenLog: true }).pipe(
+      Layer.provideMerge(NodeHttpServer.layer(createServer, { host: "127.0.0.1", port: 0 })),
+    ),
+  );
+  const server = yield* HttpServer.HttpServer.pipe(Effect.provideContext(services));
+  if (!("port" in server.address)) return yield* Effect.die("Fixture must listen on TCP");
+  return {
+    origin: `http://127.0.0.1:${server.address.port}`,
+    authorizations: Ref.get(authorizations),
+    tokens: Ref.get(tokens),
+  };
+});
+
+/** Each parameter by name, and how many times the request named each one. */
+const parameterRecord = (parameters: Parameters) => ({
+  values: Object.fromEntries(parameters),
+  names: parameters.map(([name]) => name).toSorted(),
 });
 
 /**
@@ -2058,6 +2240,324 @@ const seedFirstParty = (organization: string, user: string, slug: string, origin
       }),
     ]);
   });
+
+/** Text with Latin-1, punctuation, symbols and an emoji: everything an API's prose uses. */
+const wideText = "Returns the service’s “health” — café → ✅ or 🔴.";
+
+/** A display name and base URL path beyond Latin-1, which a JavaScript string stores two bytes wide. */
+const wideName = "Kanji 日本 API";
+const widePath = "/public/日本";
+
+/**
+ * An 81-byte YAML specification whose `version` is indented deeper than its sibling `title`. Its
+ * title holds a literal U+FFFD, which is valid UTF-8.
+ */
+const unreadableYaml = `openapi: 3.0.3
+info:
+  title: Synthetic \uFFFD unreadable
+   version: "1"
+paths: {}
+`;
+
+/**
+ * Four OpenAPI integrations and a GraphQL one. `Typography`'s document describes its one public
+ * operation in `wideText`. `Kanji 日本 API` has a document as large as the largest imported vendor
+ * API's, a base URL whose path goes beyond Latin-1 and an API key the user saved in v1. `Scoped`
+ * signs in through a v1 client whose authorization URL sets `scope` itself, which v2's OAuth
+ * declarations keep to the host. `Unreadable`'s stored specification is YAML no parser reads.
+ * `Synthetic GraphQL` is shaped like a Linear GraphQL integration: an OAuth method that names no
+ * endpoints and no scopes, so each connection signs in at its own client with the scopes that
+ * client's authorization URL sets, and an API key sent bare in `Authorization`. `main`'s client asks
+ * for comma-separated scopes, `tabbed`'s for a scope holding a tab, `blank`'s for an empty scope,
+ * `doubled`'s for two scopes two spaces apart, `nonced`'s also sets `nonce`, `repeated`'s sets
+ * `scope` twice and `targeted`'s sets a `resource` its client does not name; `key` holds the API
+ * key. Every client signs in at `signIn`.
+ */
+const seedBuilds = (
+  organization: string,
+  user: string,
+  slug: string,
+  origin: string,
+  signIn: string,
+) =>
+  Effect.gen(function* () {
+    const emulators = yield* Emulators;
+    const suffix = randomUUID().slice(0, 6);
+    const typography = `typography_${suffix}`;
+    const kanji = `kanji_${suffix}`;
+    const scoped = `scoped_${suffix}`;
+    const unreadable = `unreadable_${suffix}`;
+    const graphql = `graphql_${suffix}`;
+    const userScope = `executor/user/${encodeURIComponent(organization)}/${encodeURIComponent(user)}`;
+    const key = `connection:user:${kanji}:main:token`;
+    yield* emulators.v1VaultObject(vaultName(userScope, key), "synthetic-kanji-key");
+    const access = `oauth:user:${scoped}:main`;
+    yield* emulators.v1VaultObject(vaultName(userScope, access), "synthetic-scoped-access");
+    yield* emulators.v1VaultObject(
+      vaultName(userScope, `${access}:refresh`),
+      "synthetic-scoped-refresh",
+    );
+    const graphqlAccess = `oauth:user:${graphql}:main`;
+    const graphqlNonced = `oauth:user:${graphql}:nonced`;
+    const graphqlKey = `connection:user:${graphql}:key:token`;
+    for (const [item, value] of [
+      [graphqlAccess, "synthetic-graphql-access"],
+      [`${graphqlAccess}:refresh`, "synthetic-graphql-refresh"],
+      [graphqlNonced, "synthetic-graphql-nonced-access"],
+      [graphqlKey, "synthetic-graphql-key"],
+      ...["tabbed", "repeated", "blank", "doubled", "targeted"].map(
+        (name) => [`oauth:user:${graphql}:${name}`, `synthetic-graphql-${name}-access`] as const,
+      ),
+    ] as const)
+      yield* emulators.v1VaultObject(vaultName(userScope, item), value);
+    const document = (title: string, tag: string, path: string, description: string) =>
+      JSON.stringify({
+        openapi: "3.0.3",
+        info: { title, version: "1" },
+        servers: [{ url: `${origin}/public` }],
+        paths: {
+          [path]: {
+            get: {
+              operationId: "health",
+              tags: [tag],
+              description,
+              responses: { "200": { description: "ok" } },
+            },
+          },
+        },
+      });
+    const large = largeOpenapiDocument(origin, 1000, wideText);
+    const integrations: ReadonlyArray<{
+      readonly slug: string;
+      readonly name: string;
+      readonly text: string;
+      readonly config: Readonly<Record<string, string>>;
+      readonly template: ReadonlyArray<unknown>;
+      /** Each v1 tool: its name, method and path. */
+      readonly operations: ReadonlyArray<readonly [string, string, string]>;
+    }> = [
+      {
+        slug: typography,
+        name: "Typography",
+        text: document("Synthetic typography", "typography", "/health", wideText),
+        config: {},
+        template: [],
+        operations: [["typography.health", "get", "/health"]],
+      },
+      {
+        slug: kanji,
+        name: wideName,
+        text: JSON.stringify(large),
+        config: { baseUrl: `${origin}${widePath}` },
+        template: [
+          {
+            slug: "apikey-0",
+            kind: "apikey",
+            placements: [{ carrier: "header", name: "X-Api-Key" }],
+          },
+        ],
+        // v1 listed every operation, so the app keeps the whole document.
+        operations: Object.entries(large.paths).flatMap(([path, item]) =>
+          Object.entries(item).map(([method, operation]) => [
+            path === "/health" ? "service.health" : `large.${String(operation.operationId)}`,
+            method,
+            path,
+          ]),
+        ),
+      },
+      {
+        slug: scoped,
+        name: "Scoped",
+        text: document("Synthetic scoped", "scoped", "/me", "ok"),
+        config: {},
+        template: [
+          {
+            slug: "oauth2",
+            kind: "oauth2",
+            authorizationUrl: `${signIn}/authorize?scope=everything%20profile`,
+            tokenUrl: `${signIn}/token`,
+            scopes: [],
+          },
+        ],
+        operations: [["scoped.health", "get", "/me"]],
+      },
+      {
+        slug: unreadable,
+        name: "Unreadable",
+        text: unreadableYaml,
+        config: {},
+        template: [],
+        operations: [["unreadable.health", "get", "/health"]],
+      },
+    ];
+    const row = (sql: string, ...params: string[]): RowStatement => ({ sql, params });
+    yield* writeRows("v1-database.json", [
+      row(
+        "insert into organizations (id, name, slug) values ($1, $2, $3)",
+        organization,
+        "Synthetic builds workspace",
+        slug,
+      ),
+      ...integrations.flatMap((integration) => {
+        const hash = createHash("sha256").update(integration.text).digest("hex");
+        return [
+          row(
+            "insert into integration (tenant, slug, plugin_id, name, config) values ($1, $2, 'openapi', $3, $4::json)",
+            organization,
+            integration.slug,
+            integration.name,
+            JSON.stringify({
+              specHash: hash,
+              ...integration.config,
+              authenticationTemplate: integration.template,
+            }),
+          ),
+          row(
+            "insert into blob (namespace, key, value) values ($1, $2, $3)",
+            `o:${organization}/openapi`,
+            `spec/${hash}`,
+            integration.text,
+          ),
+          ...integration.operations.map(([tool, method, path]) =>
+            row(
+              "insert into plugin_storage (tenant, plugin_id, collection, key, data) values ($1, 'openapi', 'operation', $2, $3::json)",
+              organization,
+              `op.${integration.slug}.${tool}`,
+              JSON.stringify({
+                integration: integration.slug,
+                toolName: tool,
+                binding: { method, pathTemplate: path },
+              }),
+            ),
+          ),
+        ];
+      }),
+      row(
+        "insert into connection (tenant, owner, subject, integration, name, template, item_ids) values ($1, 'user', $2, $3, 'main', 'apikey-0', $4::json)",
+        organization,
+        user,
+        kanji,
+        JSON.stringify({ token: key }),
+      ),
+      row(
+        "insert into oauth_client (tenant, owner, subject, slug, authorization_url, token_url, \"grant\", client_id, token_endpoint_auth_method, origin_kind) values ($1, 'org', '', $2, $3, $4, 'authorization_code', 'synthetic-scoped-client', 'basic', 'manual')",
+        organization,
+        `${scoped}-client`,
+        `${signIn}/authorize?scope=everything%20profile`,
+        `${signIn}/token`,
+      ),
+      row(
+        "insert into connection (tenant, owner, subject, integration, name, template, item_ids, oauth_client, oauth_client_owner, refresh_item_id, expires_at) values ($1, 'user', $2, $3, 'main', 'oauth2', $4::json, $5, 'org', $6, $7::bigint)",
+        organization,
+        user,
+        scoped,
+        JSON.stringify({ token: access }),
+        `${scoped}-client`,
+        `${access}:refresh`,
+        String(Date.now() + 3_600_000),
+      ),
+      row(
+        "insert into integration (tenant, slug, plugin_id, name, config) values ($1, $2, 'graphql', $3, $4::json)",
+        organization,
+        graphql,
+        "Synthetic GraphQL",
+        JSON.stringify({
+          endpoint: `${origin}/graphql`,
+          name: "Synthetic GraphQL",
+          authenticationTemplate: [
+            { kind: "oauth2", slug: "oauth2" },
+            {
+              slug: "apiKey",
+              kind: "apikey",
+              label: "Synthetic API key",
+              placements: [{ carrier: "header", name: "Authorization" }],
+            },
+          ],
+        }),
+      ),
+      row(
+        "insert into oauth_client (tenant, owner, subject, slug, authorization_url, token_url, \"grant\", client_id, origin_kind) values ($1, 'org', '', 'graphql-oauth', $2, $3, 'authorization_code', 'synthetic-graphql-client', 'manual')",
+        organization,
+        `${signIn}/oauth/authorize?scope=read,write`,
+        `${signIn}/oauth/token`,
+      ),
+      row(
+        "insert into oauth_client (tenant, owner, subject, slug, authorization_url, token_url, \"grant\", client_id, origin_kind) values ($1, 'user', $2, 'graphql-oauth', $3, $4, 'authorization_code', 'synthetic-graphql-nonced-client', 'manual')",
+        organization,
+        user,
+        `${signIn}/oauth/authorize?scope=read&nonce=synthetic`,
+        `${signIn}/oauth/token`,
+      ),
+      ...(
+        [
+          ["tabbed", "scope=read%09write"],
+          ["repeated", "scope=read&scope=write"],
+          ["blank", "scope="],
+          ["doubled", "scope=read%20%20write"],
+          ["targeted", `scope=read&resource=${encodeURIComponent(`${signIn}/graphql`)}`],
+        ] as const
+      ).flatMap(([name, query]) => [
+        row(
+          "insert into oauth_client (tenant, owner, subject, slug, authorization_url, token_url, \"grant\", client_id, origin_kind) values ($1, 'user', $2, $3, $4, $5, 'authorization_code', $6, 'manual')",
+          organization,
+          user,
+          `graphql-${name}`,
+          `${signIn}/oauth/authorize?${query}`,
+          `${signIn}/oauth/token`,
+          `synthetic-graphql-${name}-client`,
+        ),
+        row(
+          "insert into connection (tenant, owner, subject, integration, name, template, item_ids, oauth_client, oauth_client_owner) values ($1, 'user', $2, $3, $4, 'oauth2', $5::json, $6, 'user')",
+          organization,
+          user,
+          graphql,
+          name,
+          JSON.stringify({ token: `oauth:user:${graphql}:${name}` }),
+          `graphql-${name}`,
+        ),
+      ]),
+      row(
+        "insert into connection (tenant, owner, subject, integration, name, template, item_ids, oauth_client, oauth_client_owner, refresh_item_id, expires_at, oauth_scope) values ($1, 'user', $2, $3, 'main', 'oauth2', $4::json, 'graphql-oauth', 'org', $5, $6::bigint, 'read,write')",
+        organization,
+        user,
+        graphql,
+        JSON.stringify({ token: graphqlAccess }),
+        `${graphqlAccess}:refresh`,
+        String(Date.now() + 3_600_000),
+      ),
+      row(
+        "insert into connection (tenant, owner, subject, integration, name, template, item_ids, oauth_client, oauth_client_owner) values ($1, 'user', $2, $3, 'nonced', 'oauth2', $4::json, 'graphql-oauth', 'user')",
+        organization,
+        user,
+        graphql,
+        JSON.stringify({ token: graphqlNonced }),
+      ),
+      row(
+        "insert into connection (tenant, owner, subject, integration, name, template, item_ids) values ($1, 'user', $2, $3, 'key', 'apiKey', $4::json)",
+        organization,
+        user,
+        graphql,
+        JSON.stringify({ token: graphqlKey }),
+      ),
+    ]);
+  });
+
+/** A workspace with one rule for a removed integration and one toolkit that grants nothing. */
+const seedPlainWorkspace = (organization: string, slug: string) =>
+  writeRows("v1-database.json", [
+    {
+      sql: "insert into organizations (id, name, slug) values ($1, $2, $3)",
+      params: [organization, "Synthetic plain workspace", slug],
+    },
+    {
+      sql: "insert into tool_policy (tenant, owner, subject, pattern, action) values ($1, 'org', '', 'removed_service.*', 'block')",
+      params: [organization],
+    },
+    {
+      sql: "insert into plugin_storage (tenant, plugin_id, collection, key, data) values ($1, 'toolkits', 'toolkits', 'tk_1', $2::json)",
+      params: [organization, JSON.stringify({ id: "tk_1", name: "Support", slug: "support" })],
+    },
+  ]);
 
 const status = (preview: typeof Preview.Type, kind: string, label: string) =>
   preview.items
@@ -2811,9 +3311,13 @@ layer(TestLive, { excludeTestServices: true })("Cloud v1 import", (it) => {
           "Status",
           "Uploads",
           "Downgraded",
+          "Regional",
+          "Layered",
           "main · Requests",
           "main · Uploads",
           "main · Downgraded",
+          "main · Regional",
+          "main · Layered",
         ])
           expect(results.get(name)?.status, results.get(name)?.reason).toBe("imported");
         // An account's credentials go to one service's hosts, so an API whose operations call
@@ -2828,6 +3332,11 @@ layer(TestLive, { excludeTestServices: true })("Cloud v1 import", (it) => {
           status: "failed",
           reason:
             "Its operations call uploads.mixed.example.com over plain HTTP, and an imported app sends an account's credentials to more than one host only over HTTPS.",
+        });
+        // A server URL whose variable no server declares names no host to send to.
+        expect(results.get("Unresolved")).toMatchObject({
+          status: "failed",
+          reason: "Its server URL uses {tenant}, which no server defines.",
         });
         expect(results.get("main · Mixed")).toMatchObject({
           status: "failed",
@@ -2924,6 +3433,71 @@ layer(TestLive, { excludeTestServices: true })("Cloud v1 import", (it) => {
           expect(reached?.url).toBe(path);
           expect(reached?.headers["x-api-key"]).toBe("synthetic-uploads-key");
         }
+
+        // An operation's server that uses the document server's variable without declaring it takes
+        // the document's default, so the app sends every operation to one host with the key.
+        const regionalSource = yield* call(
+          "Read the regional app's source",
+          "GET",
+          `/api/organizations/${target.id}/apps/${appId("Regional")}/source`,
+        );
+        expect(regionalSource.status, JSON.stringify(regionalSource.body)).toBe(200);
+        const regionalProvider = (yield* decode(Source, regionalSource)).files.find(
+          (file) => file.path === "provider.ts",
+        )?.content;
+        expect(regionalProvider).toContain(`hosts: [${JSON.stringify(hosts.api)}]`);
+        expect(regionalProvider).not.toContain("{region}");
+        for (const [tool, path] of [
+          ["items.list", "/regional/items"],
+          ["items.models", "/regional/models"],
+        ] as const) {
+          const sent = yield* call(
+            `Call the regional ${tool}`,
+            "POST",
+            `/api/organizations/${target.id}/apps/${appId("Regional")}/tools/call`,
+            {
+              profile: profileOf("Regional")?.id,
+              tool,
+              kind: "query",
+              input: { accountId: accountOf("Regional"), input: {} },
+            },
+          );
+          expect(sent.status, JSON.stringify(sent.body)).toBe(200);
+          const reached = (yield* upstream.received).at(-1);
+          expect(reached?.host).toBe(hosts.api);
+          expect(reached?.url).toBe(path);
+          expect(reached?.headers["x-api-key"]).toBe("synthetic-regional-key");
+        }
+
+        // With two document servers, the operation's server takes the first one's declaration,
+        // whose URL is empty, not the second's: the app names and calls only that host.
+        const layeredSource = yield* call(
+          "Read the layered app's source",
+          "GET",
+          `/api/organizations/${target.id}/apps/${appId("Layered")}/source`,
+        );
+        expect(layeredSource.status, JSON.stringify(layeredSource.body)).toBe(200);
+        const layeredProvider = (yield* decode(Source, layeredSource)).files.find(
+          (file) => file.path === "provider.ts",
+        )?.content;
+        expect(layeredProvider).toContain(`hosts: [${JSON.stringify(hosts.api)}]`);
+        expect(layeredProvider).not.toContain(hosts.uploads);
+        const layeredSent = yield* call(
+          "Call the layered items.list",
+          "POST",
+          `/api/organizations/${target.id}/apps/${appId("Layered")}/tools/call`,
+          {
+            profile: profileOf("Layered")?.id,
+            tool: "items.list",
+            kind: "query",
+            input: { accountId: accountOf("Layered"), input: {} },
+          },
+        );
+        expect(layeredSent.status, JSON.stringify(layeredSent.body)).toBe(200);
+        const layeredReached = (yield* upstream.received).at(-1);
+        expect(layeredReached?.host).toBe(hosts.api);
+        expect(layeredReached?.url).toBe("/layered/items");
+        expect(layeredReached?.headers["x-api-key"]).toBe("synthetic-layered-key");
 
         // An account check whose server variable turns one of the app's HTTPS hosts to plain HTTP
         // would carry the account's key there, so the app is imported without it: its provider
@@ -3391,6 +3965,421 @@ layer(TestLive, { excludeTestServices: true })("Cloud v1 import", (it) => {
             authorization: "Bearer synthetic-both-access",
           },
         ]);
+      }).pipe(Effect.provide(services)),
+    ),
+  );
+
+  it.effect(scenarios.v1ImportBuilds.title, (context) =>
+    withCase(
+      context,
+      Effect.gen(function* () {
+        const emulators = yield* Emulators;
+        const upstream = yield* credentialUpstream;
+        const signIn = yield* signInService;
+        const identity = yield* emulators.identity("google");
+        const own = yield* emulators.v1Workspace([identity.email]);
+        yield* seedBuilds(
+          own.organization,
+          own.user,
+          `v1-${randomUUID().slice(0, 8)}`,
+          upstream.origin,
+          signIn.origin,
+        );
+        yield* googleSignIn(identity.email);
+
+        const started = yield* call(
+          "Start the import",
+          "POST",
+          `/api/v1-import/${own.organization}/start`,
+          { target: { kind: "new" } },
+        ).pipe(Effect.flatMap((response) => decode(Preview, response)));
+        const target = started.target;
+        if (target === null) return yield* Effect.die("The import chose no organization");
+        // A connection whose v1 authorization request a v2 sign-in method cannot send as v1 sent
+        // it is refused, while its integration still imports: `nonce`, which v2 cannot send; a
+        // repeated `scope`, which v2 would join into one; and a `resource` v1 sent only to the
+        // authorization endpoint, which v2 would also send when exchanging and refreshing tokens.
+        for (const [label, reason] of [
+          [
+            "nonced",
+            "Its OAuth client's authorization URL sets nonce, which an Executor v2 sign-in method cannot send. Reconnect it in v2.",
+          ],
+          [
+            "repeated",
+            "Its OAuth client's authorization URL sets scope more than once, which an Executor v2 sign-in method cannot send as v1 did. Reconnect it in v2.",
+          ],
+          [
+            "targeted",
+            "Its OAuth client's authorization URL sets resource, which v1 sent only when signing in and an Executor v2 sign-in method would also send when exchanging and refreshing tokens. Reconnect it in v2.",
+          ],
+        ] as const)
+          expect(
+            started.items.find(
+              (item) => item.label === label && item.context === "Synthetic GraphQL",
+            )?.plan,
+            label,
+          ).toEqual({ status: "unsupported", reason });
+        const results = new Map<string, typeof ItemResult.Type>();
+        for (const item of started.items) {
+          if (item.plan.status !== "will_import") continue;
+          const result = yield* call(
+            `Import ${item.kind} ${item.label}`,
+            "POST",
+            `/api/v1-import/${own.organization}/items/${item.kind}/${item.id}`,
+          ).pipe(Effect.flatMap((response) => decode(ItemResult, response)));
+          results.set(
+            `${item.kind}:${item.label}${item.context === null ? "" : ` · ${item.context}`}`,
+            result,
+          );
+        }
+
+        // The document is ASCII JSON: each character beyond ASCII is a `\u` escape, and the
+        // document reads as v1's.
+        const typography = results.get("integration:Typography");
+        expect(typography?.status, typography?.reason).toBe("imported");
+        const source = yield* call(
+          "Read the Typography app's source",
+          "GET",
+          `/api/organizations/${target.id}/apps/${typography?.v2Id}/source`,
+        ).pipe(Effect.flatMap((response) => decode(Source, response)));
+        const configuration = source.files.find((file) => file.path === "openapi.json")?.content;
+        if (configuration === undefined) return yield* Effect.die("The app has no openapi.json");
+        expect(configuration).not.toMatch(/[\u0080-\uffff]/);
+        expect(configuration).toContain("\\u2019");
+        expect(
+          Schema.decodeUnknownSync(
+            Schema.Struct({
+              source: Schema.Struct({
+                document: Schema.Struct({
+                  paths: Schema.Struct({
+                    "/health": Schema.Struct({
+                      get: Schema.Struct({ description: Schema.String }),
+                    }),
+                  }),
+                }),
+              }),
+            }),
+          )(JSON.parse(configuration)).source.document.paths["/health"].get.description,
+        ).toBe(wideText);
+        const health = yield* call(
+          "Call the Typography API",
+          "POST",
+          `/api/organizations/${target.id}/apps/${typography?.v2Id}/tools/call`,
+          { tool: "typography.health", kind: "query", input: {} },
+        );
+        expect(health.status, JSON.stringify(health.body)).toBe(200);
+        expect((yield* upstream.received).at(-1)?.url).toBe("/public/health");
+
+        // A large app whose name and base URL go beyond Latin-1 writes its whole document file in
+        // ASCII, reads back the same base URL, keeps its name in its provider, builds and calls
+        // the API with the key saved in v1.
+        const kanji = results.get(`integration:${wideName}`);
+        expect(kanji?.status, kanji?.reason).toBe("imported");
+        expect(results.get(`connection:main · ${wideName}`)?.status).toBe("imported");
+        const kanjiSource = yield* call(
+          "Read the large app's source",
+          "GET",
+          `/api/organizations/${target.id}/apps/${kanji?.v2Id}/source`,
+        ).pipe(Effect.flatMap((response) => decode(Source, response)));
+        const kanjiConfiguration = kanjiSource.files.find(
+          (file) => file.path === "openapi.json",
+        )?.content;
+        if (kanjiConfiguration === undefined)
+          return yield* Effect.die("The large app has no openapi.json");
+        expect(kanjiConfiguration.length).toBeGreaterThan(13_600_000);
+        expect(kanjiConfiguration).not.toMatch(/[\u0080-\uffff]/);
+        expect(
+          Schema.decodeUnknownSync(Schema.Struct({ baseUrl: Schema.String }))(
+            JSON.parse(kanjiConfiguration),
+          ).baseUrl,
+        ).toBe(`${upstream.origin}${widePath}`);
+        expect(kanjiSource.files.find((file) => file.path === "provider.ts")?.content).toContain(
+          JSON.stringify(wideName),
+        );
+        const inventory = yield* call(
+          "Read the new organization",
+          "GET",
+          `/api/organizations/${target.id}/inventory`,
+        ).pipe(Effect.flatMap((response) => decode(MailInventory, response)));
+        const profile = inventory.profiles.find((entry) => entry.app === kanji?.v2Id);
+        const account = Object.values(profile?.accounts ?? {}).flat()[0];
+        expect(account).toBeDefined();
+        const kanjiHealth = yield* call(
+          "Call the large API",
+          "POST",
+          `/api/organizations/${target.id}/apps/${kanji?.v2Id}/tools/call`,
+          {
+            profile: profile?.id,
+            tool: "service.health",
+            kind: "query",
+            input: { accountId: account, input: {} },
+          },
+        );
+        expect(kanjiHealth.status, JSON.stringify(kanjiHealth.body)).toBe(200);
+        const received = (yield* upstream.received).at(-1);
+        expect(received?.url).toBe(`${encodeURI(widePath)}/health`);
+        expect(received?.headers["x-api-key"]).toBe("synthetic-kanji-key");
+
+        // A v1 client whose authorization URL sets `scope` signs in with those scopes, which a v2
+        // declaration leaves to the host, at the URL without it.
+        const scoped = results.get("integration:Scoped");
+        expect(scoped?.status, scoped?.reason).toBe("imported");
+        expect(results.get("connection:main · Scoped")?.status).toBe("imported");
+        expect(yield* oauthDeclarations(target.id, scoped?.v2Id)).toEqual([
+          {
+            authorizationUrl: `${signIn.origin}/authorize`,
+            tokenUrl: `${signIn.origin}/token`,
+            scopes: ["everything", "profile"],
+          },
+        ]);
+
+        // A GraphQL integration whose OAuth method names no endpoints signs each connection in at
+        // its client's, asking for the scope the client's URL asked for exactly as v1 sent it:
+        // comma-separated scopes as one value, a tab kept inside its value, an empty scope as one
+        // empty value and two spaces as an empty value between two others. Its bare API key
+        // imports beside it.
+        const linear = results.get("integration:Synthetic GraphQL");
+        expect(linear?.status, linear?.reason).toBe("imported");
+        for (const name of ["main", "tabbed", "blank", "doubled", "key"])
+          expect(results.get(`connection:${name} · Synthetic GraphQL`)?.status).toBe("imported");
+        const linearDeclarations = yield* oauthDeclarations(target.id, linear?.v2Id);
+        expect(linearDeclarations).toHaveLength(4);
+        expect(linearDeclarations).toEqual(
+          expect.arrayContaining(
+            [["read,write"], ["read\twrite"], [""], ["read", "", "write"]].map((scopes) => ({
+              authorizationUrl: `${signIn.origin}/oauth/authorize`,
+              tokenUrl: `${signIn.origin}/oauth/token`,
+              scopes,
+            })),
+          ),
+        );
+
+        // Reconnecting an imported account sends the authorization request v1 sent, with only the
+        // host's own parameters added, and exchanges its code with nothing v1 did not send.
+        const signInInventory = yield* call(
+          "Read the imported organization's accounts",
+          "GET",
+          `/api/organizations/${target.id}/inventory`,
+        ).pipe(Effect.flatMap((response) => decode(FirstPartyInventory, response)));
+        const reconnect = (app: string | undefined, label: string) =>
+          Effect.gen(function* () {
+            const [selected] = signInInventory.profiles.flatMap((profile) =>
+              profile.app !== app
+                ? []
+                : Object.entries(profile.accounts).flatMap(([requirement, ids]) =>
+                    [ids].flat().flatMap((id) => {
+                      const account = signInInventory.accounts.find(
+                        (entry) => entry.id === id && entry.label === label,
+                      );
+                      return account === undefined
+                        ? []
+                        : [{ profile: profile.id, requirement, account }];
+                    }),
+                  ),
+            );
+            if (selected === undefined) return yield* Effect.die(`No ${label} account`);
+            const connection = yield* call(
+              `Reconnect the ${label} account`,
+              "POST",
+              `/api/organizations/${target.id}/apps/${app}/connections`,
+              {
+                requirement: selected.requirement,
+                profile: selected.profile,
+                account: selected.account.id,
+              },
+            );
+            expect(connection.status, JSON.stringify(connection.body)).toBe(200);
+            const { id } = yield* decode(Schema.Struct({ id: Schema.String }), connection);
+            const started = yield* call(
+              `Start the ${label} account's sign-in`,
+              "POST",
+              `/api/organizations/${target.id}/connections/${id}/oauth/start`,
+              { method: selected.account.method },
+            );
+            expect(started.status, JSON.stringify(started.body)).toBe(200);
+            const { authorizationUrl } = yield* decode(
+              Schema.Struct({ authorizationUrl: Schema.String }),
+              started,
+            );
+            const consent = yield* HttpClient.get(authorizationUrl).pipe(
+              Effect.provide(FetchHttpClient.layer),
+              Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
+            );
+            expect(consent.status).toBe(302);
+            const callbackUrl = consent.headers.location;
+            if (callbackUrl === undefined) return yield* Effect.die("The sign-in did not return");
+            const completed = yield* call(
+              `Complete the ${label} account's sign-in`,
+              "POST",
+              `/api/organizations/${target.id}/connections/${id}/oauth/complete`,
+              { callbackUrl },
+            );
+            expect(completed.status, JSON.stringify(completed.body)).toBe(200);
+            const authorization = (yield* signIn.authorizations).at(-1);
+            const token = (yield* signIn.tokens).at(-1);
+            const redirect = new URL(authorizationUrl).searchParams.get("redirect_uri");
+            return { authorization, token, redirect };
+          });
+        for (const [app, label, prefix, client, scope] of [
+          [scoped?.v2Id, "main", "", "synthetic-scoped-client", "everything profile"],
+          [linear?.v2Id, "main", "/oauth", "synthetic-graphql-client", "read,write"],
+          [linear?.v2Id, "tabbed", "/oauth", "synthetic-graphql-tabbed-client", "read\twrite"],
+          [linear?.v2Id, "blank", "/oauth", "synthetic-graphql-blank-client", ""],
+          [linear?.v2Id, "doubled", "/oauth", "synthetic-graphql-doubled-client", "read  write"],
+        ] as const) {
+          const { authorization, token, redirect } = yield* reconnect(app, label);
+          expect(authorization?.path, label).toBe(`${prefix}/authorize`);
+          expect(parameterRecord(authorization?.query ?? []), label).toEqual({
+            values: {
+              response_type: "code",
+              client_id: client,
+              redirect_uri: redirect,
+              state: expect.any(String),
+              code_challenge: expect.any(String),
+              code_challenge_method: "S256",
+              scope,
+            },
+            names: [
+              "client_id",
+              "code_challenge",
+              "code_challenge_method",
+              "redirect_uri",
+              "response_type",
+              "scope",
+              "state",
+            ],
+          });
+          expect(token?.path, label).toBe(`${prefix}/token`);
+          expect(parameterRecord(token?.form ?? []), label).toEqual({
+            values: {
+              grant_type: "authorization_code",
+              code: "synthetic-code",
+              redirect_uri: redirect,
+              code_verifier: expect.any(String),
+              client_id: client,
+            },
+            names: ["client_id", "code", "code_verifier", "grant_type", "redirect_uri"],
+          });
+        }
+        const graphqlProvider = (yield* appSource(target.id, linear?.v2Id)).find(
+          (file) => file.path === "provider.ts",
+        )?.content;
+        expect(graphqlProvider).toContain('["Authorization"]: account.fields["token"]');
+
+        // A stored specification that cannot be read says why and where, without its contents.
+        expect(results.get("integration:Unreadable")).toMatchObject({
+          status: "failed",
+          reason:
+            "v1's stored specification could not be read: it is not JSON, and as YAML, bad indentation of a mapping entry at line 4, column 11 (81 bytes).",
+        });
+      }).pipe(Effect.provide(services)),
+    ),
+  );
+
+  it.effect(scenarios.v1ImportPlanOutage.title, (context) =>
+    withCase(
+      context,
+      Effect.gen(function* () {
+        const emulators = yield* Emulators;
+        const identity = yield* emulators.identity("google");
+        const own = yield* emulators.v1Workspace([identity.email]);
+        yield* seedPlainWorkspace(own.organization, `v1-${randomUUID().slice(0, 8)}`);
+        yield* googleSignIn(identity.email);
+
+        const armed: string[] = [];
+        /** Arm a plan-read fault, call, then check the call used it up and still succeeded. */
+        const through = (
+          fault: { status: number; delayMs?: number },
+          step: string,
+          method: "GET" | "POST",
+          path: string,
+          payload?: unknown,
+        ) =>
+          Effect.gen(function* () {
+            const id = yield* emulators.failAutumnReads("customers.get", { ...fault, times: 1 });
+            armed.push(id);
+            const response = yield* call(step, method, path, payload);
+            expect(response.status, JSON.stringify(response.body)).toBe(200);
+            expect((yield* emulators.autumnFaults).has(id)).toBe(false);
+            return response;
+          });
+
+        yield* Effect.gen(function* () {
+          // A plan read that never answers in time, then one that answers.
+          const choices = yield* through(
+            { status: 200, delayMs: 12_000 },
+            "List workspaces through a plan read that times out",
+            "GET",
+            "/api/v1-import",
+          ).pipe(Effect.flatMap((response) => decode(Choices, response)));
+          expect(
+            choices.organizations.find((organization) => organization.id === own.organization),
+          ).toMatchObject({ eligible: true, reason: null });
+
+          yield* through(
+            { status: 502 },
+            "Preview through a plan read that fails",
+            "GET",
+            `/api/v1-import/${own.organization}`,
+          );
+          const started = yield* through(
+            { status: 429 },
+            "Start through a rate-limited plan read",
+            "POST",
+            `/api/v1-import/${own.organization}/start`,
+            { target: { kind: "new" } },
+          ).pipe(Effect.flatMap((response) => decode(Preview, response)));
+          expect(started.target).not.toBeNull();
+
+          // Once started, items do not read the plan: they import while every plan read fails.
+          const down = yield* emulators.failAutumnReads("customers.get", {
+            status: 503,
+            times: 50,
+          });
+          armed.push(down);
+          const results = new Map<string, typeof ItemResult.Type>();
+          for (const item of started.items) {
+            const response = yield* call(
+              `Import ${item.kind} ${item.label} while plan reads fail`,
+              "POST",
+              `/api/v1-import/${own.organization}/items/${item.kind}/${item.id}`,
+            );
+            expect(response.status, JSON.stringify(response.body)).toBe(200);
+            results.set(item.label, yield* decode(ItemResult, response));
+          }
+          expect(results.get("removed_service.*")?.status).toBe("skipped");
+          expect(results.get("Support")).toMatchObject({
+            status: "imported",
+            note: grantsNoConnection,
+          });
+          const finished = yield* call(
+            "Finish while plan reads fail",
+            "POST",
+            `/api/v1-import/${own.organization}/finish`,
+          );
+          expect(finished.status, JSON.stringify(finished.body)).toBe(200);
+          expect((yield* emulators.autumnFaults).get(down)).toBe(50);
+
+          // Reads that keep failing make a plan check say so, after its retries.
+          for (const [step, path] of [
+            ["List workspaces while plan reads fail", "/api/v1-import"],
+            ["Preview while plan reads fail", `/api/v1-import/${own.organization}`],
+          ] as const) {
+            const refused = yield* call(step, "GET", path);
+            expect(refused.status).toBe(503);
+            expect(refused.body).toMatchObject({
+              _tag: "V1ImportUnavailable",
+              message: "Importing from Executor v1 is unavailable. Try again later.",
+            });
+          }
+          // Each refusal sent three plan reads: the first and two retries.
+          expect((yield* emulators.autumnFaults).get(down)).toBe(44);
+        }).pipe(
+          // The import's later scenarios read plans on this emulator too.
+          Effect.ensuring(
+            Effect.forEach(armed, emulators.clearAutumnFault, { discard: true }).pipe(Effect.orDie),
+          ),
+        );
       }).pipe(Effect.provide(services)),
     ),
   );

@@ -206,15 +206,15 @@ const plannedMethod = (plan: ConnectionPlan): PlannedMethod | undefined => {
       };
     }
     case "oauth": {
-      // v1 signed in at the connection's client's endpoints with the method's scopes, so a
-      // reconnect does too; connections whose clients differ get a method each. The account's
-      // grant renews as v1 did (`renewal`).
-      const { method, client, grant } = access;
+      // v1 signed in at the connection's client's endpoints with the method's scopes, or the ones
+      // its authorization URL set, so a reconnect does too; connections whose clients differ get a
+      // method each. The account's grant renews as v1 did (`renewal`).
+      const { method, client } = access;
       const scopes = [...method.scopes];
       const resource =
         client.resource === null || client.resource === "" ? {} : { resource: client.resource };
       const oauth =
-        grant === "client_credentials"
+        access.grant === "client_credentials"
           ? {
               grant: "client_credentials",
               tokenUrl: client.token_url,
@@ -222,15 +222,15 @@ const plannedMethod = (plan: ConnectionPlan): PlannedMethod | undefined => {
               tokenEndpointAuthMethod: access.authentication,
               ...resource,
             }
-          : plan.decoded.plugin === "mcp"
+          : access.authorization.kind === "discover"
             ? {
-                discover: plan.decoded.config.endpoint,
+                discover: access.authorization.url,
                 ...(scopes.length === 0 ? {} : { scopes }),
               }
             : {
-                authorizationUrl: client.authorization_url,
+                authorizationUrl: access.authorization.authorizationUrl,
                 tokenUrl: client.token_url,
-                scopes,
+                scopes: [...access.authorization.scopes],
                 ...resource,
               };
       // connectionPlan refuses an OAuth connection whose fixed credentials it would not replace.
@@ -563,11 +563,11 @@ export const generate = (
         } satisfies GeneratedApp;
       }
       case "openapi": {
-        const text = yield* context.source.blob(tenant, "openapi", `spec/${decoded.specHash}`);
-        if (Option.isNone(text)) return yield* fail(context.source.blobMissing);
-        const document = parseSpec(text.value);
-        if (document === undefined)
-          return yield* fail("v1's stored specification could not be read.");
+        const stored = yield* context.source.blob(tenant, "openapi", `spec/${decoded.specHash}`);
+        if (Option.isNone(stored)) return yield* fail(context.source.blobMissing);
+        const parsed = parseSpec(stored.value);
+        if (!parsed.ok) return yield* fail(parsed.reason);
+        const { document } = parsed;
         const operations = yield* context.source.openApiOperations(tenant, integration.slug);
         const tools = yield* context.source.tools(tenant, member, integration.slug);
         const prepared = importedDocument(
@@ -579,9 +579,8 @@ export const generate = (
         // account's credentials on every one. The app does the same when those servers are one
         // service's hosts, and declares each of them for the account's credentials.
         const servers = operationBaseUrls(decoded.config, prepared.document);
-        if (servers === undefined || servers.length === 0)
-          return yield* fail("Its API has no absolute base URL.");
-        const allowed = credentialOrigins(servers);
+        if (!servers.ok) return yield* fail(servers.reason);
+        const allowed = credentialOrigins(servers.urls);
         if (!allowed.ok)
           return yield* fail(
             `Its operations call hosts of different services (${allowed.hosts.join(", ")}), and an imported app sends an account's credentials only to one service's hosts.`,
@@ -699,7 +698,9 @@ export const importIntegration = (
     return imported("app", app.id, generated.note);
   }).pipe(
     Effect.catchTags({
-      DeploymentBuildFailed: () => fail("The generated app did not build."),
+      // The build's message names its stage and the failure in the generated source. Builds bind
+      // no accounts, so it holds no credentials.
+      DeploymentBuildFailed: (error) => fail(`The generated app did not build. ${error.message}`),
       BuildMemoryExceeded: () => fail("The generated app is too large to build."),
       AppNotFound: () => fail("Its imported app was removed."),
     }),

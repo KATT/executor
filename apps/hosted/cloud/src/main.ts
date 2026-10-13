@@ -41,7 +41,6 @@ import {
   browserTelemetry,
   clientMetadataDocument,
   clientMetadataDocumentPath,
-  clientMetadataSetting,
   hostedWebhookCallback,
   catalogLive,
   hostedMiddlewareLive,
@@ -64,6 +63,7 @@ import { cloudOnboarding, cloudV1Import } from "./infrastructure/onboarding.ts";
 import { Onboarding } from "./contracts/onboarding.ts";
 import { cloudMcp } from "./infrastructure/mcp.ts";
 import { cloudApi } from "./implementation/api.ts";
+import { cachedFeedClient } from "./implementation/catalog-feed-cache.ts";
 import { billingLive } from "./implementation/billing.ts";
 import {
   cloudSchedules,
@@ -119,12 +119,13 @@ import {
 import { roleHostRoutes } from "./infrastructure/role-hosts.ts";
 import { redirectTo, withRoleHosts } from "./implementation/host-roles.ts";
 import { hasSessionCookie } from "./contracts/browser.ts";
-import { clientMetadataBinding } from "./infrastructure/client-metadata.ts";
+import { clientMetadataBinding, cloudClientMetadata } from "./infrastructure/client-metadata.ts";
 import { appDataSupervisors } from "./infrastructure/app-data.ts";
 import { cloudDevelopment } from "./contracts/development.ts";
 import { requestServices } from "@executor-js/hosted-server";
 import { recordRequestRejections, requestTiming } from "@executor-js/telemetry/http";
 
+import { appCatalogBinding } from "./infrastructure/app-catalog.ts";
 import { Api } from "./infrastructure/api-worker.ts";
 import { Dashboard } from "./infrastructure/dashboard-worker.ts";
 import { cloudSourceFormatter } from "./infrastructure/source-formatter.ts";
@@ -169,6 +170,8 @@ export default Api.make(
         ...(yield* authRateLimitSwitchBindings),
         // A deployed stage identifies Executor to authorization servers by its own document.
         ...(origin === undefined ? {} : yield* clientMetadataBinding(origin)),
+        // Every deployed stage lists production's official app feed.
+        ...(origin === undefined ? {} : yield* appCatalogBinding),
       },
       build: workerBuild("api"),
       // Auth callbacks and the dashboard share the configured canonical origin.
@@ -394,7 +397,11 @@ export default Api.make(
     } satisfies Record<BackgroundJob, unknown>;
 
     const egress = yield* cloudEgress;
-    const clientMetadata = yield* clientMetadataSetting(auth.origin).pipe(Effect.orDie);
+    const clientMetadata = yield* cloudClientMetadata.pipe(Effect.orDie);
+    // The official app feed Add app lists; without it, only the built-in Executor app is listed.
+    const catalogFeedUrl = Option.getOrUndefined(
+      yield* Config.String("EXECUTOR_CATALOG_URL").pipe(Config.option),
+    );
     // Only /openapi.json and preparing the Executor catalog app read the document.
     // Clients and the Executor app call the API at its canonical origin.
     const apiOrigin = auth.resourceOrigins.api[0];
@@ -408,7 +415,17 @@ export default Api.make(
       HttpRouter.provideRequest(yield* cloudSourceFormatter),
       Layer.provide(appUi.dashboard),
       Layer.provide(requestServices(auth.appSessions).layer),
-      HttpRouter.provideRequest(catalogLive(document.document, egress, clientMetadata, apiOrigin)),
+      HttpRouter.provideRequest(
+        catalogLive(
+          document.document,
+          catalogFeedUrl === undefined
+            ? egress
+            : { ...egress, client: cachedFeedClient(apiOrigin, catalogFeedUrl, egress.client) },
+          clientMetadata,
+          apiOrigin,
+          catalogFeedUrl,
+        ),
+      ),
       Layer.provide(schedules.layer),
       Layer.provide(billing),
       Layer.provide(removals),
