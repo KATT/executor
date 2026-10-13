@@ -12,6 +12,7 @@
 // ---------------------------------------------------------------------------
 
 import { describe, expect, it } from "@effect/vitest";
+import { sql } from "drizzle-orm";
 import { Effect, Layer } from "effect";
 
 import { UserStoreService, makeUserStoreLayer } from "../auth/context";
@@ -107,7 +108,19 @@ describe("toolkit slug lookup", () => {
         "",
       );
       const created = yield* executor.toolkits.create({ owner, name: slug, slug });
-      return created.id;
+      // v2 keys an imported toolkit by its storage row id, which is not the toolkit's id.
+      const { db } = yield* DbService;
+      const rows = yield* Effect.promise(() =>
+        db.execute<{ row_id: string }>(sql`
+          select row_id from plugin_storage
+          where tenant = ${organizationId} and plugin_id = 'toolkits'
+            and collection = 'toolkits' and key = ${created.id}
+        `),
+      );
+      const rowId = [...rows][0]?.row_id;
+      expect(rowId).toBeDefined();
+      expect(rowId).not.toBe(created.id);
+      return rowId;
     }).pipe(
       Effect.provide(Layer.mergeAll(CloudDbProvider, toolkitsOnly, CloudHostConfig)),
       Effect.provide(makeDbLayer()),
