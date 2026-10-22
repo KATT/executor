@@ -273,7 +273,7 @@ const make = Effect.gen(function* () {
         const images = yield* holdQuery(screenshotPath, "continue", { allRequests: true });
         yield* shifts.phase("Choose Claude");
         yield* browser.use("Choose Claude", (page) =>
-          page.getByRole("button", { name: "Claude", exact: true }).click(),
+          page.getByRole("link", { name: "Claude", exact: true }).click(),
         );
         yield* browser.use("Claude's guide replaces the choices", (page) =>
           page.getByRole("heading", { name: "Add Executor to Claude", exact: true }).waitFor(),
@@ -438,7 +438,7 @@ const make = Effect.gen(function* () {
     expect(yield* setupSearch).toBe("");
     yield* shifts.phase("Choose Claude again");
     yield* browser.use("Choose Claude again", (page) =>
-      page.getByRole("button", { name: "Claude", exact: true }).click(),
+      page.getByRole("link", { name: "Claude", exact: true }).click(),
     );
     yield* browser.use("Setup waits for the new choice", (page) =>
       page.getByText("Waiting for Claude to connect…", { exact: true }).waitFor(),

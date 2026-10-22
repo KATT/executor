@@ -1,9 +1,11 @@
+import { useMemo } from "react";
 import { AppProviderFailed, type App } from "@executor-js/sdk";
 import { ProviderErrorNotice } from "@executor-js/ui/dashboard/provider-error-notice";
 import { Cause, Option, Schema } from "effect";
 import type { UserFacingError } from "@executor-js/utils/user-facing-error";
 import { undeclaredError } from "@executor-js/utils/connection-failure";
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
+import type { ToolLinkProps } from "@executor-js/ui/dashboard/tools";
 import { ToolBrowser } from "@executor-js/ui/dashboard/tools";
 import { runningAs, ToolRunner } from "@executor-js/ui/dashboard/tool-runner";
 import {
@@ -37,7 +39,19 @@ export function AppTools({
   readonly selected: string | undefined;
 }) {
   const { organization, slug: organizationSlug } = useOrganizationRoute();
-  const navigate = useNavigate();
+  const ToolLink = useMemo(() => {
+    const appId = app.id;
+    return function AppToolLink({ tool, ...props }: ToolLinkProps) {
+      return (
+        <Link
+          {...props}
+          to="/org/$organizationSlug/apps/$appId"
+          params={{ organizationSlug, appId }}
+          search={{ view: "tools", tool }}
+        />
+      );
+    };
+  }, [organizationSlug, app.id]);
   const readiness = appToolReadiness(app, requirements);
   const catalog = {
     organization,
@@ -75,13 +89,7 @@ export function AppTools({
           </Empty>
         ) : undefined
       }
-      onSelect={(tool) => {
-        void navigate({
-          to: "/org/$organizationSlug/apps/$appId",
-          params: { organizationSlug, appId: app.id },
-          search: { view: "tools", tool },
-        });
-      }}
+      ToolLink={ToolLink}
       renderAction={(tool) => (
         <ToolRunner
           key={tool.name}

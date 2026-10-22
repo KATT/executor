@@ -120,15 +120,15 @@ layer(HostedLive, { excludeTestServices: true })("Grouped accounts", (it) => {
         const catalogShows = (label: string, present: string, absent: string, size: number) =>
           Effect.gen(function* () {
             yield* browser.use(`${label} has its own full catalog`, (page) =>
-              page.getByRole("button", { name: present, exact: true }).waitFor(),
+              page.getByRole("link", { name: present, exact: true }).waitFor(),
             );
             expect(
               yield* browser.use(`${label} has its own full catalog`, (page) =>
                 Promise.all([
-                  page.getByRole("button", { name: absent, exact: true }).count(),
+                  page.getByRole("link", { name: absent, exact: true }).count(),
                   page
                     .getByRole("navigation", { name: "App tools", exact: true })
-                    .locator("button[aria-pressed]")
+                    .getByRole("link")
                     .count(),
                   page.getByRole("heading", { name: "Choose an account", exact: true }).count(),
                   page.getByRole("combobox", { name: "Grouped fixture account" }).count(),
@@ -140,7 +140,7 @@ layer(HostedLive, { excludeTestServices: true })("Grouped accounts", (it) => {
         const runIdentity = (label: string, expected: string, other: string) =>
           Effect.gen(function* () {
             yield* browser.use(`Run the same tool as ${label}`, (page) =>
-              page.getByRole("button", { name: "identity", exact: true }).click(),
+              page.getByRole("link", { name: "identity", exact: true }).click(),
             );
             const running = yield* browser.use(`The runner says it runs as ${label}`, (page) =>
               page
@@ -216,7 +216,7 @@ layer(HostedLive, { excludeTestServices: true })("Grouped accounts", (it) => {
         yield* held.requested;
         expect(
           yield* browser.use("Personal tools are not shown for the new link", (page) =>
-            page.getByRole("button", { name: "drafts", exact: true }).count(),
+            page.getByRole("link", { name: "drafts", exact: true }).count(),
           ),
         ).toBe(0);
         yield* held.release;

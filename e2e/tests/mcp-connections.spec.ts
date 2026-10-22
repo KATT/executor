@@ -666,8 +666,15 @@ return { first, second };`,
               ),
           ),
         ).toBe(`/account/tokens?organization=${actors.organization.slug}`);
+        expect(
+          yield* browser.use("Create a scoped connection is its own page", (page) =>
+            page
+              .getByRole("link", { name: "Create a scoped connection", exact: true })
+              .getAttribute("href"),
+          ),
+        ).toBe(`/org/${actors.organization.slug}/connect/new`);
         yield* browser.use("Start a new connection", (page) =>
-          page.getByRole("button", { name: "Create a scoped connection", exact: true }).click(),
+          page.getByRole("link", { name: "Create a scoped connection", exact: true }).click(),
         );
         yield* browser.use("Name the connection", (page) =>
           page.getByLabel("Name", { exact: true }).fill("Support assistant"),
@@ -703,6 +710,28 @@ return { first, second };`,
             .first()
             .waitFor({ state: "visible" }),
         );
+        expect(
+          yield* browser.use("The saved connection has its own address", (page) =>
+            Promise.resolve(new URL(page.url()).pathname),
+          ),
+        ).toBe(`/org/${actors.organization.slug}/connect/${saved?.id}`);
+        yield* browser.use("Return to the connection list", (page) =>
+          page.getByRole("main").getByRole("link", { name: "Connections", exact: true }).click(),
+        );
+        expect(
+          yield* browser.use("The connection row links to its page", (page) =>
+            page
+              .getByRole("region", { name: "Scoped connections" })
+              .getByRole("link", { name: /Support assistant/ })
+              .getAttribute("href"),
+          ),
+        ).toBe(`/org/${actors.organization.slug}/connect/${saved?.id}`);
+        yield* browser.use("Open the connection from the list", (page) =>
+          page
+            .getByRole("region", { name: "Scoped connections" })
+            .getByRole("link", { name: /Support assistant/ })
+            .click(),
+        );
         yield* browser.use("Choose Codex for the scoped connection", (page) =>
           page.getByRole("button", { name: "Codex", exact: true }).click(),
         );
@@ -725,7 +754,7 @@ return { first, second };`,
         );
         yield* browser.use("The page returns to agent setup", (page) =>
           page
-            .getByRole("button", { name: "Create a scoped connection", exact: true })
+            .getByRole("link", { name: "Create a scoped connection", exact: true })
             .waitFor({ state: "visible" }),
         );
         expect(yield* list).toEqual([]);

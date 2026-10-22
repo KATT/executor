@@ -1,6 +1,7 @@
 import { Fragment, Suspense, useEffect, useEffectEvent, useState, type ReactNode } from "react";
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
+import type { AssistantChoiceLinkProps } from "@executor-js/ui/dashboard/connect";
 import {
   ArrowLeft02Icon,
   ArrowReloadHorizontalIcon,
@@ -69,9 +70,12 @@ const focusHeading = (node: HTMLHeadingElement | null) => node?.focus({ preventS
  * state, so Back, Forward and reload compare with the same one. The first prompt confirms that the
  * member holds a usable MCP grant for its agent, so its URL alone never claims a connection.
  */
+function AssistantChoiceLink({ assistant, ...props }: AssistantChoiceLinkProps) {
+  return <Link {...props} to="." search={{ assistant }} />;
+}
+
 export function AgentSetupPage() {
   const endpoint = `${useMcpOrigin()}/mcp`;
-  const navigate = useNavigate();
   // The screen and its saved baseline come from one location. The matched route's search can
   // trail the location by a render, which would pair one entry's URL with another's state.
   const location = useLocation();
@@ -111,9 +115,7 @@ export function AgentSetupPage() {
               it.
             </p>
             <div className="mt-6">
-              <AssistantChoices
-                onSelect={(chosen) => void navigate({ to: ".", search: { assistant: chosen } })}
-              />
+              <AssistantChoices ChoiceLink={AssistantChoiceLink} />
             </div>
             <Link
               to="/"
