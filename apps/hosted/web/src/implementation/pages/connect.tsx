@@ -1,8 +1,13 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { Button } from "@executor-js/ui/components/button";
 import { Code } from "@executor-js/ui/dashboard/code";
 import { McpInstallInstructions } from "@executor-js/ui/dashboard/connect";
-import { ScopedConnectionsPage } from "@executor-js/ui/dashboard/scoped-connections";
+import {
+  ScopedConnectionsPage,
+  type ScopedConnectionLinkProps,
+  type ScopedConnectionScreen,
+  type ScopedConnectionTargetLinkProps,
+} from "@executor-js/ui/dashboard/scoped-connections";
 import { ConnectedAgents } from "@executor-js/ui/dashboard/connected-agents";
 import { ConnectionToolPicker } from "@executor-js/ui/dashboard/connection-tool-picker";
 import { useOrganizationRoute } from "../components/organization.tsx";
@@ -65,14 +70,67 @@ function PersonalTokenSetup({
   );
 }
 
+function ListLink(props: ScopedConnectionLinkProps) {
+  const { slug: organizationSlug } = useOrganizationRoute();
+  return <Link {...props} to="/org/$organizationSlug/connect" params={{ organizationSlug }} />;
+}
+
+function CreateLink(props: ScopedConnectionLinkProps) {
+  const { slug: organizationSlug } = useOrganizationRoute();
+  return <Link {...props} to="/org/$organizationSlug/connect/new" params={{ organizationSlug }} />;
+}
+
+function DetailLink({ connection, ...props }: ScopedConnectionTargetLinkProps) {
+  const { slug: organizationSlug } = useOrganizationRoute();
+  return (
+    <Link
+      {...props}
+      to="/org/$organizationSlug/connect/$connectionId"
+      params={{ organizationSlug, connectionId: connection }}
+    />
+  );
+}
+
+function EditLink({ connection, ...props }: ScopedConnectionTargetLinkProps) {
+  const { slug: organizationSlug } = useOrganizationRoute();
+  return (
+    <Link
+      {...props}
+      to="/org/$organizationSlug/connect/$connectionId/edit"
+      params={{ organizationSlug, connectionId: connection }}
+    />
+  );
+}
+
 /** The member's full-access URL, scoped connections and connected agents for this organization. */
-export function ConnectPage() {
+export function ConnectPage({
+  screen = { kind: "list" },
+}: {
+  readonly screen?: ScopedConnectionScreen;
+}) {
   const origins = useResourceOrigins();
   const mcpOrigin = origins.mcp[0];
-  const { organization } = useOrganizationRoute();
+  const { organization, slug: organizationSlug } = useOrganizationRoute();
+  const navigate = useNavigate();
   const docs = useDocumentationUrl();
   return (
     <ScopedConnectionsPage
+      screen={screen}
+      links={{ ListLink, CreateLink, DetailLink, EditLink }}
+      onSaved={(saved) => {
+        void navigate({
+          to: "/org/$organizationSlug/connect/$connectionId",
+          params: { organizationSlug, connectionId: saved.id },
+          replace: true,
+        });
+      }}
+      onRevoked={() => {
+        void navigate({
+          to: "/org/$organizationSlug/connect",
+          params: { organizationSlug },
+          replace: true,
+        });
+      }}
       key={organization}
       query={resourceInventoryAtom(organization)}
       connections={mcpConnectionsAtom(organization)}

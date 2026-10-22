@@ -13,6 +13,9 @@ import { Route as DashboardRouteImport } from './routes/_dashboard'
 import { Route as AppAuthRouteImport } from './routes/app-auth'
 import { Route as DashboardInventoryRouteImport } from './routes/_dashboard._inventory'
 import { Route as DashboardConnectRouteImport } from './routes/_dashboard.connect'
+import { Route as DashboardConnectNewRouteImport } from './routes/_dashboard.connect_.new'
+import { Route as DashboardConnectConnectionIdRouteImport } from './routes/_dashboard.connect_.$connectionId'
+import { Route as DashboardConnectConnectionIdEditRouteImport } from './routes/_dashboard.connect_.$connectionId_.edit'
 import { Route as AccountConnectConnectionIdRouteImport } from './routes/account-connect.$connectionId'
 import { Route as McpAuthorizeRouteImport } from './routes/mcp.authorize'
 import { Route as DashboardInventoryIndexRouteImport } from './routes/_dashboard._inventory.index'
@@ -48,6 +51,23 @@ const DashboardConnectRoute = DashboardConnectRouteImport.update({
   path: '/connect',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardConnectNewRoute = DashboardConnectNewRouteImport.update({
+  id: '/connect_/new',
+  path: '/connect/new',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardConnectConnectionIdRoute =
+  DashboardConnectConnectionIdRouteImport.update({
+    id: '/connect_/$connectionId',
+    path: '/connect/$connectionId',
+    getParentRoute: () => DashboardRoute,
+  } as any)
+const DashboardConnectConnectionIdEditRoute =
+  DashboardConnectConnectionIdEditRouteImport.update({
+    id: '/connect_/$connectionId_/edit',
+    path: '/connect/$connectionId/edit',
+    getParentRoute: () => DashboardRoute,
+  } as any)
 const AccountConnectConnectionIdRoute =
   AccountConnectConnectionIdRouteImport.update({
     id: '/account-connect/$connectionId',
@@ -143,6 +163,9 @@ export interface FileRoutesByFullPath {
   '/': typeof DashboardInventoryIndexRoute
   '/app-auth': typeof AppAuthRoute
   '/connect': typeof DashboardConnectRoute
+  '/connect/new': typeof DashboardConnectNewRoute
+  '/connect/$connectionId': typeof DashboardConnectConnectionIdRoute
+  '/connect/$connectionId/edit': typeof DashboardConnectConnectionIdEditRoute
   '/account-connect/$connectionId': typeof AccountConnectConnectionIdRoute
   '/mcp/authorize': typeof McpAuthorizeRoute
   '/$': typeof DashboardInventorySplatRoute
@@ -163,6 +186,9 @@ export interface FileRoutesByTo {
   '/': typeof DashboardInventoryIndexRoute
   '/app-auth': typeof AppAuthRoute
   '/connect': typeof DashboardConnectRoute
+  '/connect/new': typeof DashboardConnectNewRoute
+  '/connect/$connectionId': typeof DashboardConnectConnectionIdRoute
+  '/connect/$connectionId/edit': typeof DashboardConnectConnectionIdEditRoute
   '/account-connect/$connectionId': typeof AccountConnectConnectionIdRoute
   '/mcp/authorize': typeof McpAuthorizeRoute
   '/$': typeof DashboardInventorySplatRoute
@@ -185,6 +211,9 @@ export interface FileRoutesById {
   '/app-auth': typeof AppAuthRoute
   '/_dashboard/_inventory': typeof DashboardInventoryRouteWithChildren
   '/_dashboard/connect': typeof DashboardConnectRoute
+  '/_dashboard/connect_/new': typeof DashboardConnectNewRoute
+  '/_dashboard/connect_/$connectionId': typeof DashboardConnectConnectionIdRoute
+  '/_dashboard/connect_/$connectionId_/edit': typeof DashboardConnectConnectionIdEditRoute
   '/account-connect/$connectionId': typeof AccountConnectConnectionIdRoute
   '/mcp/authorize': typeof McpAuthorizeRoute
   '/_dashboard/_inventory/$': typeof DashboardInventorySplatRoute
@@ -208,6 +237,9 @@ export interface FileRouteTypes {
     | '/'
     | '/app-auth'
     | '/connect'
+    | '/connect/new'
+    | '/connect/$connectionId'
+    | '/connect/$connectionId/edit'
     | '/account-connect/$connectionId'
     | '/mcp/authorize'
     | '/$'
@@ -228,6 +260,9 @@ export interface FileRouteTypes {
     | '/'
     | '/app-auth'
     | '/connect'
+    | '/connect/new'
+    | '/connect/$connectionId'
+    | '/connect/$connectionId/edit'
     | '/account-connect/$connectionId'
     | '/mcp/authorize'
     | '/$'
@@ -249,6 +284,9 @@ export interface FileRouteTypes {
     | '/app-auth'
     | '/_dashboard/_inventory'
     | '/_dashboard/connect'
+    | '/_dashboard/connect_/new'
+    | '/_dashboard/connect_/$connectionId'
+    | '/_dashboard/connect_/$connectionId_/edit'
     | '/account-connect/$connectionId'
     | '/mcp/authorize'
     | '/_dashboard/_inventory/$'
@@ -303,6 +341,27 @@ declare module '@tanstack/react-router' {
       path: '/connect'
       fullPath: '/connect'
       preLoaderRoute: typeof DashboardConnectRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/_dashboard/connect_/new': {
+      id: '/_dashboard/connect_/new'
+      path: '/connect/new'
+      fullPath: '/connect/new'
+      preLoaderRoute: typeof DashboardConnectNewRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/_dashboard/connect_/$connectionId': {
+      id: '/_dashboard/connect_/$connectionId'
+      path: '/connect/$connectionId'
+      fullPath: '/connect/$connectionId'
+      preLoaderRoute: typeof DashboardConnectConnectionIdRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/_dashboard/connect_/$connectionId_/edit': {
+      id: '/_dashboard/connect_/$connectionId_/edit'
+      path: '/connect/$connectionId/edit'
+      fullPath: '/connect/$connectionId/edit'
+      preLoaderRoute: typeof DashboardConnectConnectionIdEditRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/account-connect/$connectionId': {
@@ -454,6 +513,9 @@ const DashboardInventoryRouteWithChildren =
 interface DashboardRouteChildren {
   DashboardInventoryRoute: typeof DashboardInventoryRouteWithChildren
   DashboardConnectRoute: typeof DashboardConnectRoute
+  DashboardConnectNewRoute: typeof DashboardConnectNewRoute
+  DashboardConnectConnectionIdRoute: typeof DashboardConnectConnectionIdRoute
+  DashboardConnectConnectionIdEditRoute: typeof DashboardConnectConnectionIdEditRoute
   DashboardApprovalsRunIdRoute: typeof DashboardApprovalsRunIdRoute
   DashboardApprovalsIndexRoute: typeof DashboardApprovalsIndexRoute
   DashboardWebhooksAppIdSubscriptionIdRoute: typeof DashboardWebhooksAppIdSubscriptionIdRoute
@@ -462,6 +524,9 @@ interface DashboardRouteChildren {
 const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardInventoryRoute: DashboardInventoryRouteWithChildren,
   DashboardConnectRoute: DashboardConnectRoute,
+  DashboardConnectNewRoute: DashboardConnectNewRoute,
+  DashboardConnectConnectionIdRoute: DashboardConnectConnectionIdRoute,
+  DashboardConnectConnectionIdEditRoute: DashboardConnectConnectionIdEditRoute,
   DashboardApprovalsRunIdRoute: DashboardApprovalsRunIdRoute,
   DashboardApprovalsIndexRoute: DashboardApprovalsIndexRoute,
   DashboardWebhooksAppIdSubscriptionIdRoute:

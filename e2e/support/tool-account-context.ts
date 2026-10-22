@@ -36,14 +36,14 @@ export const checkToolAccountContext = <E, R>(input: {
     yield* browser.use("Work account exposes its own tools", (page) =>
       page
         .getByRole("navigation", { name: "App tools" })
-        .getByRole("button", { name: "work", exact: true })
+        .getByRole("link", { name: "work", exact: true })
         .waitFor({ state: "visible" }),
     );
     expect(
       yield* browser.use("Personal tools are absent from the work catalog", (page) =>
         page
           .getByRole("navigation", { name: "App tools" })
-          .getByRole("button", { name: "personal", exact: true })
+          .getByRole("link", { name: "personal", exact: true })
           .count(),
       ),
     ).toBe(0);
@@ -63,7 +63,7 @@ export const checkToolAccountContext = <E, R>(input: {
           yield* browser.use("Old tools are not labeled as belonging to the new account", (page) =>
             page
               .getByRole("navigation", { name: "App tools" })
-              .getByRole("button", { name: "work", exact: true })
+              .getByRole("link", { name: "work", exact: true })
               .count(),
           ),
         ).toBe(0);
@@ -71,7 +71,7 @@ export const checkToolAccountContext = <E, R>(input: {
         yield* browser.use("Personal account discovers a different tool", (page) =>
           page
             .getByRole("navigation", { name: "App tools" })
-            .getByRole("button", { name: "personal", exact: true })
+            .getByRole("link", { name: "personal", exact: true })
             .waitFor({ state: "visible" }),
         );
       }),
@@ -129,7 +129,7 @@ export const checkToolAccountContext = <E, R>(input: {
       yield* browser.use(`Combined catalog includes ${name}`, (page) =>
         page
           .getByRole("navigation", { name: "App tools" })
-          .getByRole("button", { name, exact: true })
+          .getByRole("link", { name, exact: true })
           .waitFor({ state: "visible" }),
       );
     yield* browser.checkpoint("Combined account tool catalog");

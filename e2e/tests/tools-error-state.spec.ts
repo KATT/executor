@@ -180,7 +180,7 @@ export default defineApp({}, async () => ({
         yield* browser.use("The real tool catalog returns after retry", (page) =>
           page
             .getByRole("navigation", { name: "App tools", exact: true })
-            .getByRole("button", { name: "status", exact: true })
+            .getByRole("link", { name: "status", exact: true })
             .waitFor(),
         );
         yield* browser.use("The error clears after recovery", (page) =>
