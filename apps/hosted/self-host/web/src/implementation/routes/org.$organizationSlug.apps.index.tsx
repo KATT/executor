@@ -1,12 +1,24 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { prefetchAfterAccess } from "@executor-js/hosted-web/contracts/guarded-read";
-import { AppsPage, appsPageReads } from "@executor-js/hosted-web/pages/apps";
+import { parseAppsSearch } from "@executor-js/hosted-web/contracts/navigation";
+import { AppsPage, loadApps } from "@executor-js/hosted-web/pages/apps";
+import { startAfterAccess } from "@executor-js/hosted-web/contracts/guarded-read";
 
-/** Hosted app inventory placeholder. */
 export const Route = createFileRoute("/org/$organizationSlug/apps/")({
-  loader: ({ context, params }) =>
-    prefetchAfterAccess(context.atoms, params.organizationSlug, (organization) =>
-      appsPageReads(organization, {}),
+  validateSearch: parseAppsSearch,
+  loaderDeps: ({ search }) => ({
+    view: search.view ?? "available",
+    group: search.group ?? "all",
+  }),
+  loader: ({ context, params, deps }) =>
+    startAfterAccess(context.atoms, params.organizationSlug, (organization) =>
+      loadApps(context.atoms, organization, deps),
     ),
-  component: AppsPage,
+  component: AppsRoute,
 });
+
+function AppsRoute() {
+  const { view, group } = Route.useSearch();
+  return (
+    <AppsPage view={view ?? "available"} group={group ?? "all"} reads={Route.useLoaderData()} />
+  );
+}

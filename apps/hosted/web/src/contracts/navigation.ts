@@ -121,6 +121,22 @@ export function parseAppSearch(search: Record<string, unknown>): ReturnType<
   };
 }
 
+const appListView = Schema.Literals(["available", "managed"]);
+
+/** The apps list's group and access filters. */
+export function parseAppsSearch(search: Record<string, unknown>): {
+  readonly view?: "available" | "managed" | undefined;
+  readonly group?: string | undefined;
+} {
+  const group = Option.getOrUndefined(
+    Schema.decodeUnknownOption(Schema.NonEmptyString)(search.group),
+  );
+  return {
+    view: Option.getOrUndefined(Schema.decodeUnknownOption(appListView)(search.view)),
+    ...(group !== undefined && group !== "all" ? { group } : {}),
+  };
+}
+
 /** The connection editor's open tool list. The version is the app's active version. */
 export function parseConnectSearch(search: Record<string, unknown>): {
   readonly app?: AppId | undefined;

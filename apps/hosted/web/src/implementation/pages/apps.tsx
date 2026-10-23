@@ -1,9 +1,10 @@
-import { useMemo } from "react";
-import { useAtom } from "@effect/atom-react";
-import { Option } from "effect";
+import { Suspense } from "react";
+import { Option, Schema } from "effect";
+import { Loader } from "raf-effect-atom";
+import { OrganizationReference } from "@executor-js/hosted-server/organization";
 import { HostedFailure } from "../components/dashboard-bindings.tsx";
 import { AppsPage as SharedPage } from "@executor-js/ui/dashboard/apps";
-import { AppCardSkeleton } from "@executor-js/ui/dashboard/loading";
+import { AppCardSkeleton, AppCardsSkeleton } from "@executor-js/ui/dashboard/loading";
 import { Button } from "@executor-js/ui/components/button";
 import { EmptyState } from "@executor-js/ui/dashboard/empty-state";
 import { Popover, PopoverContent, PopoverTrigger } from "@executor-js/ui/components/popover";
@@ -16,31 +17,101 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@executor-js/ui/components/select";
-import { useQuery } from "@executor-js/ui/dashboard/context";
-import { Link } from "@tanstack/react-router";
-import { type OrganizationPageReads, useOrganizationRoute } from "../components/organization.tsx";
-import { createAppListAtoms, resourceInventoryAtom } from "../../contracts/resource-access.ts";
+import { useStartedQuery } from "@executor-js/ui/dashboard/context";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { useOrganizationRoute } from "../components/organization.tsx";
+import { resourceInventoryAtom } from "../../contracts/resource-access.ts";
 import { groupsAtom } from "../../contracts/groups.ts";
-import { usePreload } from "@executor-js/ui/dashboard/context";
+import {
+  AccessBoundary,
+  AvailabilityBoundary,
+  SessionBoundary,
+  useAccessBoundary,
+} from "../components/read-boundaries.tsx";
 
-/** The groups and the unfiltered list the page opens with. */
-export const appsPageReads: OrganizationPageReads = (organization) => [
-  groupsAtom(organization),
-  resourceInventoryAtom(organization),
-];
+const organizationFromSlug = (slug: string) =>
+  Schema.decodeUnknownSync(OrganizationReference)(slug);
 
-/** One authorized list, with independent group and explicit management filters. */
-export function AppsPage() {
-  const { organization, slug: organizationSlug } = useOrganizationRoute();
-  const atoms = useMemo(() => createAppListAtoms(organization), [organization]);
-  const [{ view, group }, setFilters] = useAtom(atoms.filters);
-  usePreload(...appsPageReads(organization, {}), atoms.query);
-  const groups = useQuery(groupsAtom(organization));
-  const { data } = useQuery(atoms.query);
+export type AppsListSearch = {
+  readonly view: "available" | "managed";
+  readonly group: string;
+};
+
+/** Start the filtered inventory and the groups that name the filter. */
+export function loadApps(
+  atoms: Loader.Loader,
+  organization: OrganizationReference,
+  search: AppsListSearch,
+) {
+  return {
+    groups: atoms.prefetch(groupsAtom(organization)),
+    inventory: atoms.prefetch(resourceInventoryAtom(organization, search.view, search.group)),
+  };
+}
+
+export type AppsReads = ReturnType<typeof loadApps>;
+
+/** One authorized list. Group and access filters are search params. */
+export function AppsPage({
+  view,
+  group,
+  reads,
+}: {
+  readonly view: "available" | "managed";
+  readonly group: string;
+  readonly reads: AppsReads | undefined;
+}) {
+  if (reads === undefined) return null;
+  return (
+    <SessionBoundary>
+      <AvailabilityBoundary>
+        <AccessBoundary>
+          <Suspense fallback={<AppCardsSkeleton />}>
+            <Apps view={view} group={group} reads={reads} />
+          </Suspense>
+        </AccessBoundary>
+      </AvailabilityBoundary>
+    </SessionBoundary>
+  );
+}
+
+function Apps({
+  view,
+  group,
+  reads,
+}: {
+  readonly view: "available" | "managed";
+  readonly group: string;
+  readonly reads: AppsReads;
+}) {
+  const { slug: organizationSlug } = useOrganizationRoute();
+  const organization = organizationFromSlug(organizationSlug);
+  const navigate = useNavigate();
+  const claims = useAccessBoundary();
+  const groups = useStartedQuery({
+    source: claims.wrap(groupsAtom(organization)),
+    handle: reads.groups,
+  });
+  const inventory = resourceInventoryAtom(organization, view, group);
+  const { data } = useStartedQuery({
+    source: claims.wrap(inventory),
+    handle: reads.inventory,
+  });
+  const apply = (next: AppsListSearch) => {
+    void navigate({
+      to: "/org/$organizationSlug/apps",
+      params: { organizationSlug },
+      search: {
+        ...(next.view === "available" ? {} : { view: next.view }),
+        ...(next.group === "all" ? {} : { group: next.group }),
+      },
+    });
+  };
   const activeFilters = Number(group !== "all") + Number(view !== "available");
   return (
     <SharedPage
-      query={atoms.query}
+      query={inventory}
+      read={{ source: claims.wrap(inventory), handle: reads.inventory }}
       Failure={HostedFailure}
       pending={
         Option.isSome(data) && data.value.pendingApp ? (
@@ -68,7 +139,7 @@ export function AppsPage() {
               <Button
                 variant="outline"
                 onClick={() => {
-                  setFilters({ group: "all", view: "available" });
+                  apply({ group: "all", view: "available" });
                 }}
               >
                 Clear filters
@@ -116,7 +187,7 @@ export function AppsPage() {
                   variant="ghost"
                   size="sm"
                   onClick={() => {
-                    setFilters({ group: "all", view: "available" });
+                    apply({ group: "all", view: "available" });
                   }}
                 >
                   Reset
@@ -125,10 +196,7 @@ export function AppsPage() {
             </div>
             <div className="space-y-2">
               <p className="text-xs font-medium text-muted-foreground">Group</p>
-              <Select
-                value={group}
-                onValueChange={(group) => setFilters((current) => ({ ...current, group }))}
-              >
+              <Select value={group} onValueChange={(group) => apply({ view, group })}>
                 <SelectTrigger aria-label="Filter apps by group" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
@@ -149,8 +217,7 @@ export function AppsPage() {
               <Select
                 value={view}
                 onValueChange={(value) => {
-                  if (value === "available" || value === "managed")
-                    setFilters((current) => ({ ...current, view: value }));
+                  if (value === "available" || value === "managed") apply({ view: value, group });
                 }}
               >
                 <SelectTrigger aria-label="App list" className="w-full">
