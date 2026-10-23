@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import type { AppId } from "@executor-js/sdk";
 import { AsyncResult } from "effect/reactivity";
 import { Failure } from "../components/common.tsx";
@@ -20,7 +21,8 @@ import {
 } from "../../contracts/api.ts";
 import { appToolReadiness, accountSetupFailure } from "../../contracts/dashboard.ts";
 import { Button } from "@executor-js/ui/components/button";
-import { Link, useNavigate } from "@tanstack/react-router";
+import type { ToolLinkProps } from "@executor-js/ui/dashboard/tools";
+import { Link } from "@tanstack/react-router";
 
 interface AppToolsProps {
   readonly app: App;
@@ -129,8 +131,15 @@ function AccountReconnect({
 
 /** Browse the complete live tool catalog with a stable, separate schema inspector. */
 function LiveAppTools({ app, requirements, selected }: AppToolsProps) {
-  const navigate = useNavigate();
   const catalog = { app: app.id, version: app.activeVersion };
+  const ToolLink = useMemo(() => {
+    const appId = app.id;
+    return function AppToolLink({ tool, ...props }: ToolLinkProps) {
+      return (
+        <Link {...props} to="/apps/$appId" params={{ appId }} search={{ view: "tools", tool }} />
+      );
+    };
+  }, [app.id]);
   const atom = toolsAtom(catalog);
   const result = useAtomValue(atom);
   const setup = AsyncResult.isFailure(result) ? accountSetupFailure(result.cause) : Option.none();
@@ -161,13 +170,7 @@ function LiveAppTools({ app, requirements, selected }: AppToolsProps) {
           <AccountSetup app={app} disconnected={false} />
         ) : undefined
       }
-      onSelect={(tool) => {
-        void navigate({
-          to: "/apps/$appId",
-          params: { appId: app.id },
-          search: { view: "tools", tool },
-        });
-      }}
+      ToolLink={ToolLink}
       renderAction={(tool) => (
         <ToolRunner
           key={tool.name}

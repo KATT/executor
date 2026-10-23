@@ -52,7 +52,7 @@ layer(HostedLive, { excludeTestServices: true })("Tool tree prefixes", (it) => {
         yield* browser.use("The prefixed tools load", (page) =>
           page
             .getByRole("navigation", { name: nav, exact: true })
-            .getByRole("button", { name: "planetscale.planetscale_list_databases", exact: true })
+            .getByRole("link", { name: "planetscale.planetscale_list_databases", exact: true })
             .waitFor(),
         );
         const groups = yield* browser.use("Read the group headings", (page) =>
@@ -71,7 +71,7 @@ layer(HostedLive, { excludeTestServices: true })("Tool tree prefixes", (it) => {
         const label = yield* browser.use("Read the ungrouped tool's label", (page) =>
           page
             .getByRole("navigation", { name: nav, exact: true })
-            .getByRole("button", { name: "planetscale.planetscale_search_documentation" })
+            .getByRole("link", { name: "planetscale.planetscale_search_documentation" })
             .innerText(),
         );
         expect(label.trim()).toBe("Search documentation");

@@ -276,7 +276,7 @@ layer(TestLive, { excludeTestServices: true })("Local tool runner", (it) => {
         );
         yield* browser.use("Open a tool with mixed inputs", (page) =>
           page
-            .getByRole("button", { name: "compose", exact: true })
+            .getByRole("link", { name: "compose", exact: true })
             .click()
             .then(() => page.getByLabel("Title", { exact: true }).waitFor()),
         );
@@ -464,7 +464,7 @@ layer(TestLive, { excludeTestServices: true })("Local tool runner", (it) => {
         );
         yield* browser.use("Open a tool with a union field", (page) =>
           page
-            .getByRole("button", { name: "pick", exact: true })
+            .getByRole("link", { name: "pick", exact: true })
             .click()
             .then(() => page.getByLabel("Target", { exact: true }).waitFor()),
         );
@@ -538,7 +538,7 @@ layer(TestLive, { excludeTestServices: true })("Local tool runner", (it) => {
         expect(calls).toHaveLength(2);
         yield* browser.use("Open a tool whose input is a union", (page) =>
           page
-            .getByRole("button", { name: "either", exact: true })
+            .getByRole("link", { name: "either", exact: true })
             .click()
             .then(() => page.getByRole("textbox", { name: "Input", exact: true }).waitFor()),
         );
@@ -549,7 +549,7 @@ layer(TestLive, { excludeTestServices: true })("Local tool runner", (it) => {
         ).toBe(0);
         yield* browser.checkpoint("Union input uses JSON");
         yield* browser.use("Open a tool that needs approval", (page) =>
-          page.getByRole("button", { name: "guarded", exact: true }).click(),
+          page.getByRole("link", { name: "guarded", exact: true }).click(),
         );
         yield* browser.use("Run the tool that needs approval", (page) =>
           page.getByRole("button", { name: "Run tool", exact: true }).click(),
@@ -606,7 +606,7 @@ layer(TestLive, { excludeTestServices: true })("Local tool runner", (it) => {
         ).toContain('"ran"');
         yield* browser.checkpoint("Approved tool result");
         yield* browser.use("Open a tool whose approval policy denies it", (page) =>
-          page.getByRole("button", { name: "blocked", exact: true }).click(),
+          page.getByRole("link", { name: "blocked", exact: true }).click(),
         );
         yield* browser.use("Run the denied tool", (page) =>
           page.getByRole("button", { name: "Run tool", exact: true }).click(),

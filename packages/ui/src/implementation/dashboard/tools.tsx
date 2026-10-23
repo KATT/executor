@@ -1,6 +1,6 @@
 import { EmptyState } from "./empty-state.tsx";
 import { AppSectionHeader, AppSectionTitle } from "./app-section-header.tsx";
-import { useState, type ReactNode } from "react";
+import { useState, type ComponentType, type MouseEvent, type ReactNode } from "react";
 import type { Tool, ToolRouter, ToolSummary } from "@executor-js/sdk";
 import { Option } from "effect";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -22,6 +22,17 @@ import { Empty, SearchInput } from "./common.tsx";
 import { Skeleton } from "../components/skeleton.tsx";
 import { cn } from "../lib/utils.ts";
 
+/** A tool row is an address on the app, so it can be opened in another tab. */
+export interface ToolLinkProps {
+  readonly tool: string;
+  readonly className?: string | undefined;
+  readonly title?: string | undefined;
+  readonly children?: ReactNode;
+  readonly onClick?: ((event: MouseEvent<HTMLAnchorElement>) => void) | undefined;
+  readonly "aria-label"?: string | undefined;
+  readonly "aria-current"?: "page" | undefined;
+}
+
 /**
  * Stable list/inspector layout. Hosts choose navigation and any tool execution controls.
  * The list carries no schemas; the selected tool's schemas are read through detail.
@@ -33,14 +44,15 @@ export function ToolBrowser<E>({
   detail,
   Failure,
   selected,
-  onSelect,
+  ToolLink,
   renderAction,
   empty,
 }: QueryProps<ToolCatalog, E> & {
   /** Undefined when the tool left the catalog after the list was read. */
   readonly detail: (tool: ToolSummary) => Query<Tool | undefined, E>;
   readonly selected: string | undefined;
-  readonly onSelect: (tool: string) => void;
+  /** Each tool name links to that tool on this app. */
+  readonly ToolLink: ComponentType<ToolLinkProps>;
   readonly renderAction?: (tool: ToolSummary) => ReactNode;
   /** Replaces the empty catalog message when the host knows why the app listed nothing. */
   readonly empty?: ReactNode;
@@ -117,10 +129,8 @@ export function ToolBrowser<E>({
                 return next;
               })
             }
-            onSelect={(name) => {
-              setListOpen(false);
-              onSelect(name);
-            }}
+            ToolLink={ToolLink}
+            onActivate={() => setListOpen(false)}
           />
         )}
       </nav>
@@ -516,14 +526,17 @@ function ToolTree({
   current,
   collapsed,
   onToggle,
-  onSelect,
+  ToolLink,
+  onActivate,
 }: {
   readonly nodes: readonly ToolNode[];
   readonly depth: number;
   readonly current: string | undefined;
   readonly collapsed: ReadonlySet<string>;
   readonly onToggle: (key: string) => void;
-  readonly onSelect: (tool: string) => void;
+  readonly ToolLink: ComponentType<ToolLinkProps>;
+  /** Closes the phone list. The link itself changes the address. */
+  readonly onActivate: () => void;
 }) {
   return (
     <ul className={cn("space-y-px", depth > 0 && "ml-[15px] border-l pl-1.5")}>
@@ -565,18 +578,19 @@ function ToolTree({
                 current={current}
                 collapsed={collapsed}
                 onToggle={onToggle}
-                onSelect={onSelect}
+                ToolLink={ToolLink}
+                onActivate={onActivate}
               />
             )}
           </li>
         ) : (
           <li key={`tool:${node.tool.name}`}>
-            <button
-              type="button"
+            <ToolLink
+              tool={node.tool.name}
               title={node.tool.name}
               aria-label={node.tool.name}
-              aria-pressed={current === node.tool.name}
-              onClick={() => onSelect(node.tool.name)}
+              aria-current={current === node.tool.name ? "page" : undefined}
+              onClick={onActivate}
               className={cn(
                 "flex min-h-7.5 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-ring max-[740px]:min-h-11",
                 current === node.tool.name && "bg-muted font-medium text-foreground",
@@ -590,7 +604,7 @@ function ToolTree({
                 aria-hidden
               />
               <span className="truncate">{node.label}</span>
-            </button>
+            </ToolLink>
           </li>
         ),
       )}
