@@ -51,7 +51,11 @@ export function localPageTitle(pathname: string): string {
   if (section === "mcp" && item === "approve") return "Review request";
   if (section === "app-auth") return "Sign in to app";
   if (section === "approvals") return item ? "Review request" : "Approvals";
-  if (section === "connect") return "Connections";
+  if (section === "connect") {
+    if (item === "new") return "New connection";
+    if (action === "edit") return "Edit connection";
+    return item ? "Connection" : "Connections";
+  }
   if (section === "account-connect") return "Connect account";
   if (section === "api" && item === "oauth") return "Connecting account";
   if (section === "apps") {
