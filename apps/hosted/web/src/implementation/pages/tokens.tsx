@@ -1,8 +1,10 @@
 import { LocalTime } from "@executor-js/ui/components/local-time";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { EmptyState } from "@executor-js/ui/dashboard/empty-state";
 import { PageFrame, PageHeader } from "@executor-js/ui/dashboard/page";
 import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
+import { Loader } from "raf-effect-atom";
+import { useStartedQuery } from "@executor-js/ui/dashboard/context";
 import { Cause, Exit, Redacted } from "effect";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useState } from "react";
@@ -52,14 +54,25 @@ const errorMessage = (cause: Cause.Cause<ApiKeyFailed>) => {
   return error instanceof ApiKeyFailed ? error.message : "Could not update API keys. Try again.";
 };
 
+/** Start one page of tokens. The page index is `offset` in the URL. */
+export function loadTokens(atoms: Loader.Loader, offset: number) {
+  return { keys: atoms.prefetch(apiKeysAtom(offset)) };
+}
+
+export type TokensReads = ReturnType<typeof loadTokens>;
+
 /**
  * Every token the signed-in user owns, across organizations. The organization a visitor came
  * from only preselects the scope of a new token.
  */
 export function TokensPage({
   organization: reference,
+  offset,
+  reads,
 }: {
   readonly organization?: string | undefined;
+  readonly offset: number;
+  readonly reads: TokensReads;
 }) {
   const date = (value: string | null) => (value === null ? "Never" : <LocalTime value={value} />);
   const { organizations, memberships, selected } = useAccountOrganization(reference);
@@ -74,10 +87,20 @@ export function TokensPage({
           logo: null,
         });
   useDocumentTitle(productTitle(tokensTitle));
-  const [offset, setOffset] = useState(0);
-  const query = apiKeysAtom(offset);
-  const keys = useAtomValue(query);
-  const refresh = useAtomRefresh(query);
+  const navigate = useNavigate();
+  const showPage = (next: number) => {
+    void navigate({
+      to: "/account/tokens",
+      search: {
+        ...(reference === undefined ? {} : { organization: reference }),
+        ...(next === 0 ? {} : { offset: next }),
+      },
+    });
+  };
+  const { result: keys, refresh } = useStartedQuery({
+    source: apiKeysAtom(offset),
+    handle: reads.keys,
+  });
   const createAtom = createApiKeyAtom;
   const create = useAtomSet(createAtom, { mode: "promiseExit" });
   const reset = useAtomSet(createAtom);
@@ -244,14 +267,14 @@ export function TokensPage({
               <Button
                 variant="outline"
                 disabled={offset === 0}
-                onClick={() => setOffset(offset - 50)}
+                onClick={() => showPage(offset - 50)}
               >
                 Previous
               </Button>
               <Button
                 variant="outline"
                 disabled={offset + 50 >= keys.value.total}
-                onClick={() => setOffset(offset + 50)}
+                onClick={() => showPage(offset + 50)}
               >
                 Next
               </Button>
@@ -314,7 +337,7 @@ export function TokensPage({
                 setName("");
                 setExpiry("");
                 setScope(undefined);
-                setOffset(0);
+                showPage(0);
                 refresh();
               }
               reset(Atom.Reset);

@@ -195,10 +195,13 @@ export const signInCallback = (redirect: string): string =>
 /** Account pages can carry the organization a visitor came from; it only preselects choices. */
 export function parseAccountSearch(search: Record<string, unknown>): {
   readonly organization?: string | undefined;
+  readonly offset?: number | undefined;
 } {
+  const offset = Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Int)(search.offset));
   return {
     organization: Option.getOrUndefined(
       Schema.decodeUnknownOption(Schema.NonEmptyString)(search.organization),
     ),
+    ...(offset !== undefined && offset >= 0 && offset % 50 === 0 ? { offset } : {}),
   };
 }
