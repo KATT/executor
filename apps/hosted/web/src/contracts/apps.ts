@@ -527,6 +527,17 @@ export const toolCatalogAtom = (key: ConstructorParameters<typeof ToolKey>[0]) =
 class ToolDetailKey extends Data.Class<
   ConstructorParameters<typeof ToolKey>[0] & { readonly tool: ToolName }
 > {}
+type WithoutToolNotFound<E> = E extends { readonly _tag: "ToolNotFound" } ? never : E;
+const absentTool = <A, E extends { readonly _tag: string }>(
+  result: AsyncResult.AsyncResult<A, E>,
+): AsyncResult.AsyncResult<A | undefined, WithoutToolNotFound<E>> => {
+  if (AsyncResult.isFailure(result)) {
+    const error = Cause.findErrorOption(result.cause);
+    if (Option.isSome(error) && error.value._tag === "ToolNotFound")
+      return AsyncResult.success(undefined);
+  }
+  return result as AsyncResult.AsyncResult<A | undefined, WithoutToolNotFound<E>>;
+};
 const toolDetailQueries = Atom.family((key: ToolDetailKey) =>
   HostedClient.query(
     "tools",
@@ -537,14 +548,14 @@ const toolDetailQueries = Atom.family((key: ToolDetailKey) =>
     }),
   ).pipe(revalidated),
 );
-const toolDetails = Atom.family((key: ToolDetailKey) =>
-  HostedClient.runtime.atom((get) =>
-    get
-      .result(toolDetailQueries(key))
-      // A tool that left the catalog since the list was read is not a failure.
-      .pipe(Effect.catchTag("ToolNotFound", () => Effect.succeed(undefined))),
-  ),
-);
+const toolDetails = Atom.family((key: ToolDetailKey) => {
+  const query = toolDetailQueries(key);
+  // A tool that left the catalog is an empty schema, not a page failure.
+  const mapped = Atom.map(query, (result) => absentTool(result));
+  // The property keeps the serializable query for the loader. Typing it as the
+  // query would put ToolNotFound back on the atom the page reads.
+  return Object.assign(mapped, { initialValueTarget: query }) as typeof mapped;
+});
 /** One tool's schemas for the same catalog identity as the list. */
 export const toolDetailAtom = (key: ConstructorParameters<typeof ToolDetailKey>[0]) =>
   toolDetails(new ToolDetailKey(key));

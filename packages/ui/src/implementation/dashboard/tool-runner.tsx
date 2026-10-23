@@ -11,6 +11,8 @@ import { Cause, Exit, Match, Option, Schema } from "effect";
 import { AsyncResult, type Atom } from "effect/reactivity";
 import { useCallback, useState, type ComponentType } from "react";
 import type { ToolRunApprovalAtoms } from "../../contracts/browser-approval.ts";
+import type { StartedRead } from "../../contracts/started-read.ts";
+import { useStartedQuery } from "./context.tsx";
 import type { AccountSummary, FailureProps, Query } from "../../contracts/dashboard.ts";
 import type { RequirementAccounts } from "../../contracts/app-accounts.ts";
 import { BrowserApprovalCard } from "./browser-approval.tsx";
@@ -165,26 +167,52 @@ function ToolRunReview({ atoms }: { readonly atoms: ToolRunApprovalAtoms }) {
  * version, and renders its own failures; the call runs with the accounts the caller linked to
  * the app. Provider failures keep the shared account recovery. A call that needs approval waits for the person's review of the saved call.
  */
-export function ToolRunner<E>({
-  tool,
-  call,
-  approval,
-  detail,
-  Failure,
-  accounts,
-}: {
+interface ToolRunnerProps<E> {
   readonly tool: string;
   readonly call: Atom.AtomResultFn<Json, BrowserToolRun, E>;
   /** The product's review of one pending call, read from the server rather than the draft. */
   readonly approval: (requestId: ApprovalRequestId) => ToolRunApprovalAtoms;
   /** The selected tool's schemas seed the draft with its required inputs. */
   readonly detail: Query<Tool | undefined, unknown>;
+  /** Present when the route loader started this tool's schema. */
+  readonly detailRead?: StartedRead<Tool | undefined, unknown> | undefined;
   readonly Failure: ComponentType<FailureProps<NoInfer<E>>>;
   /** The accounts the call runs with, from `runningAs`. */
   readonly accounts?: readonly string[] | undefined;
+}
+
+/** Run one tool with a form or JSON draft. */
+export function ToolRunner<E>(props: ToolRunnerProps<E>) {
+  return props.detailRead === undefined ? (
+    <ToolRunnerQuery {...props} />
+  ) : (
+    <ToolRunnerRead {...props} detailRead={props.detailRead} />
+  );
+}
+
+function ToolRunnerQuery<E>(props: ToolRunnerProps<E>) {
+  const schema = useAtomValue(props.detail);
+  return <ToolRunnerBody {...props} schema={schema} />;
+}
+
+function ToolRunnerRead<E>(
+  props: ToolRunnerProps<E> & { readonly detailRead: StartedRead<Tool | undefined, unknown> },
+) {
+  const schema = useStartedQuery(props.detailRead).result;
+  return <ToolRunnerBody {...props} schema={schema} />;
+}
+
+function ToolRunnerBody<E>({
+  tool,
+  call,
+  approval,
+  schema,
+  Failure,
+  accounts,
+}: ToolRunnerProps<E> & {
+  readonly schema: AsyncResult.AsyncResult<Tool | undefined, unknown>;
 }) {
   const run = useAtomSet(call, { mode: "promiseExit" });
-  const schema = useAtomValue(detail);
   const [draft, setDraft] = useState<Draft>();
   const [pending, setPending] = useState(false);
   // Set by a blocked run or tab switch; the form then marks its missing and invalid fields.

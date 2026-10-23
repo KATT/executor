@@ -266,30 +266,43 @@ export const toolListAtom = (key: ConstructorParameters<typeof ToolKey>[0]) =>
 export const toolCatalogAtom = (key: ConstructorParameters<typeof ToolKey>[0]) =>
   toolQueries(new ToolKey(key));
 class ToolDetailKey extends Data.Class<
-  ConstructorParameters<typeof ToolKey>[0] & { readonly tool: string }
+  ConstructorParameters<typeof ToolKey>[0] & { readonly tool: ToolName }
 > {}
+type WithoutToolNotFound<E> = E extends { readonly _tag: "ToolNotFound" } ? never : E;
+const absentTool = <A, E extends { readonly _tag: string }>(
+  result: AsyncResult.AsyncResult<A, E>,
+): AsyncResult.AsyncResult<A | undefined, WithoutToolNotFound<E>> => {
+  if (AsyncResult.isFailure(result)) {
+    const error = Cause.findErrorOption(result.cause);
+    if (Option.isSome(error) && error.value._tag === "ToolNotFound")
+      return AsyncResult.success(undefined);
+  }
+  return result as AsyncResult.AsyncResult<A | undefined, WithoutToolNotFound<E>>;
+};
 /**
  * One tool's schemas, read again with each snapshot of the live catalog, such as after an account
  * changes. A tool the catalog does not list, or that left it since, has none.
  */
-const toolDetails = Atom.family(({ tool, ...key }: ToolDetailKey) =>
-  DashboardClient.runtime.atom((get) =>
-    Effect.gen(function* () {
-      const listed = (yield* get.result(toolLists(new ToolKey(key)))).find(
-        (candidate) => candidate.name === tool,
-      );
-      if (listed === undefined) return undefined;
-      const client = yield* DashboardClient;
-      return yield* client.dashboard
-        .tool({
-          // The version the catalog listed it in.
-          params: { app: key.app, tool: listed.name },
-          query: { version: listed.version },
-        })
-        .pipe(Effect.catchTag("ToolNotFound", () => Effect.succeed(undefined)));
+const toolDetailQueries = Atom.family((key: ToolDetailKey) =>
+  DashboardClient.query(
+    "dashboard",
+    "tool",
+    hydrated({
+      params: { app: key.app, tool: key.tool },
+      query: key.version == null ? {} : { version: key.version },
     }),
   ),
 );
+const toolDetails = Atom.family((key: ToolDetailKey) => {
+  const query = toolDetailQueries(key);
+  // A tool the catalog does not list is an empty schema, not a page failure.
+  return Object.assign(
+    Atom.map(query, (result) => absentTool(result)),
+    {
+      initialValueTarget: query,
+    },
+  );
+});
 export const toolDetailAtom = (key: ConstructorParameters<typeof ToolDetailKey>[0]) =>
   toolDetails(new ToolDetailKey(key));
 

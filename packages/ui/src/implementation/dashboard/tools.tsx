@@ -52,6 +52,8 @@ export function ToolBrowser<E>(
     readonly empty?: ReactNode;
     /** Present when the route loader started this catalog. */
     readonly read?: StartedRead<ToolCatalog, E>;
+    /** Present when the route loader started the selected tool's schema. */
+    readonly detailRead?: StartedRead<Tool | undefined, E> | undefined;
   },
 ) {
   return props.read === undefined ? (
@@ -77,6 +79,7 @@ function ToolBrowserFromRead<E>(
 
 type ToolBrowserExtras<E> = {
   readonly detail: (tool: ToolSummary) => Query<Tool | undefined, E>;
+  readonly detailRead?: StartedRead<Tool | undefined, E> | undefined;
   readonly selected: string | undefined;
   readonly ToolLink: ComponentType<ToolLinkProps>;
   readonly renderAction?: (tool: ToolSummary) => ReactNode;
@@ -85,6 +88,7 @@ type ToolBrowserExtras<E> = {
 
 function ToolBrowserView<E>({
   detail,
+  detailRead,
   Failure,
   selected,
   ToolLink,
@@ -252,7 +256,11 @@ function ToolBrowserView<E>({
                           current.description,
                           toolTitle(current, leafLabels.get(current.name)),
                         ) && <ToolDescription description={current.description} />}
-                        <ToolSchemas query={detail(current)} Failure={Failure} />
+                        {detailRead !== undefined && current.name === selected ? (
+                          <ToolSchemasFromRead read={detailRead} Failure={Failure} />
+                        ) : (
+                          <ToolSchemas query={detail(current)} Failure={Failure} />
+                        )}
                         {renderAction?.(current)}
                       </div>
                     </div>
@@ -274,6 +282,29 @@ function ToolBrowserView<E>({
 /** The selected tool's schemas, read on selection rather than with the list. */
 function ToolSchemas<E>({ query, Failure }: QueryProps<Tool | undefined, E>) {
   const { result, refresh } = useQuery(query);
+  return <ToolSchemaResult result={result} refresh={refresh} Failure={Failure} />;
+}
+
+function ToolSchemasFromRead<E>({
+  read,
+  Failure,
+}: {
+  readonly read: StartedRead<Tool | undefined, E>;
+  readonly Failure: QueryProps<Tool | undefined, E>["Failure"];
+}) {
+  const { result, refresh } = useStartedQuery(read);
+  return <ToolSchemaResult result={result} refresh={refresh} Failure={Failure} />;
+}
+
+function ToolSchemaResult<E>({
+  result,
+  refresh,
+  Failure,
+}: {
+  readonly result: ReturnType<typeof useQuery<Tool | undefined, E>>["result"];
+  readonly refresh: () => void;
+  readonly Failure: QueryProps<Tool | undefined, E>["Failure"];
+}) {
   return (
     <QueryResult
       result={result}

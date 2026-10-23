@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { AppProviderFailed, type App } from "@executor-js/sdk";
+import type { Handle } from "raf-effect-atom";
+import { AppProviderFailed, ToolName, type App, type VersionId } from "@executor-js/sdk";
 import { ProviderErrorNotice } from "@executor-js/ui/dashboard/provider-error-notice";
 import { Cause, Option, Schema } from "effect";
 import type { UserFacingError } from "@executor-js/utils/user-facing-error";
@@ -27,14 +28,21 @@ import {
 } from "../../contracts/apps.ts";
 import type { HostedError } from "../../contracts/errors.ts";
 import { useOrganizationRoute } from "../components/organization.tsx";
+import { useAccessBoundary } from "../components/read-boundaries.tsx";
 
 /** Discover and run tools with the accounts linked to the app. */
 export function AppTools({
   app,
+  version,
+  tools,
+  detail,
   requirements,
   selected,
 }: {
   readonly app: App;
+  readonly version: VersionId;
+  readonly tools: Handle<ReturnType<typeof toolCatalogAtom>>;
+  readonly detail: Handle<ReturnType<typeof toolDetailAtom>> | undefined;
   readonly requirements: readonly RequirementAccounts<AccountSummary>[];
   readonly selected: string | undefined;
 }) {
@@ -47,17 +55,23 @@ export function AppTools({
           {...props}
           to="/org/$organizationSlug/apps/$appId"
           params={{ organizationSlug, appId }}
-          search={{ view: "tools", tool }}
+          search={{ view: "tools", tool, version }}
         />
       );
     };
-  }, [organizationSlug, app.id]);
+  }, [organizationSlug, app.id, version]);
   const readiness = appToolReadiness(app, requirements);
-  const catalog = {
-    organization,
-    app: app.id,
-    version: app.activeVersion ?? undefined,
-  };
+  const catalog = { organization, app: app.id, version };
+  const claims = useAccessBoundary();
+  const read = { source: claims.wrap(toolCatalogAtom(catalog)), handle: tools };
+  const named =
+    selected === undefined
+      ? undefined
+      : Option.getOrUndefined(Schema.decodeUnknownOption(ToolName)(selected));
+  const detailRead =
+    detail === undefined || named === undefined
+      ? undefined
+      : { source: toolDetailAtom({ ...catalog, tool: named }), handle: detail };
   if (readiness.state === "not-deployed")
     return <p className="p-5 text-sm text-muted-foreground">Deploy this app to load its tools.</p>;
   const accountsLink = (
@@ -77,9 +91,11 @@ export function AppTools({
     );
   return (
     <ToolBrowser
-      key={`${app.id}:${app.activeVersion}`}
+      key={`${app.id}:${version}`}
       query={toolCatalogAtom(catalog)}
+      read={read}
       detail={(tool) => toolDetailAtom({ ...catalog, tool: tool.name })}
+      detailRead={detailRead}
       Failure={ToolsFailure}
       selected={selected}
       empty={
@@ -97,12 +113,13 @@ export function AppTools({
           call={callToolAtom({
             organization,
             app: app.id,
-            version: app.activeVersion ?? undefined,
+            version,
             tool: tool.name,
             kind: tool.readOnly === true ? "query" : "mutation",
           })}
           approval={(requestId) => toolRunApprovalAtoms({ organization, app: app.id, requestId })}
           detail={toolDetailAtom({ ...catalog, tool: tool.name })}
+          detailRead={tool.name === selected ? detailRead : undefined}
           Failure={ToolCallFailure}
           accounts={runningAs(requirements)}
         />

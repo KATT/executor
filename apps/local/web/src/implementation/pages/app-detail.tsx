@@ -22,17 +22,23 @@ import {
   type RequirementLink,
 } from "@executor-js/ui/contracts/app-accounts";
 import { useAtomSet } from "@effect/atom-react";
-import type { App, AppId, VersionId } from "@executor-js/sdk";
+import { ToolName, type App, type AppId, type VersionId } from "@executor-js/sdk";
 import type {
   AppAccountLink,
   DashboardAccount,
   DashboardOverview,
 } from "@executor-js/local-server/contracts";
 import { Atom, AsyncResult } from "effect/reactivity";
-import { Data, Option } from "effect";
+import { Data, Option, Schema } from "effect";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft02Icon, ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
-import { appAtom, sourceAtom, toolCatalogAtom, toolsAtom } from "../../contracts/api.ts";
+import {
+  appAtom,
+  sourceAtom,
+  toolCatalogAtom,
+  toolDetailAtom,
+  toolsAtom,
+} from "../../contracts/api.ts";
 import { appLinksAtom, userLinksAtom } from "../../contracts/app-accounts.ts";
 import { renameAppAtom, acknowledgeApp } from "../../contracts/apps.ts";
 import { Link, useBlocker, useNavigate } from "@tanstack/react-router";
@@ -79,12 +85,18 @@ const listedVersion = async (atoms: Loader.Loader, app: AppId, version: VersionI
 export async function loadLocalApp(
   atoms: Loader.Loader,
   app: AppId,
-  search: { readonly version?: VersionId | undefined },
+  search: { readonly version?: VersionId | undefined; readonly tool?: string | undefined },
 ) {
   const record = atoms.prefetch(appAtom(app));
   const appLinks = atoms.prefetch(appLinksAtom(app));
   const userLinks = atoms.prefetch(userLinksAtom(app));
   const known = search.version;
+  const tool =
+    search.tool === undefined
+      ? undefined
+      : Option.getOrUndefined(Schema.decodeUnknownOption(ToolName)(search.tool));
+  const detailFor = (version: VersionId) =>
+    tool === undefined ? undefined : atoms.prefetch(toolDetailAtom({ app, version, tool }));
   const listed =
     known === undefined
       ? undefined
@@ -92,6 +104,7 @@ export async function loadLocalApp(
           version: known,
           tools: atoms.prefetch(toolCatalogAtom({ app, version: known })),
           source: atoms.prefetch(sourceAtom({ app, version: known })),
+          detail: detailFor(known),
         };
   const version =
     listed === undefined ? await listedVersion(atoms, app, undefined) : listed.version;
@@ -106,6 +119,7 @@ export async function loadLocalApp(
     source:
       listed?.source ??
       (version === undefined ? undefined : atoms.prefetch(sourceAtom({ app, version }))),
+    detail: listed?.detail ?? (version === undefined ? undefined : detailFor(version)),
   };
 }
 
@@ -338,6 +352,7 @@ export function AppDetailPage({
                     app={current.app}
                     version={selectedVersion}
                     tools={reads.tools}
+                    detail={reads.detail}
                     requirements={requirements}
                     selected={tool}
                   />

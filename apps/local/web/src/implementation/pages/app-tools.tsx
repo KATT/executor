@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { Handle } from "raf-effect-atom";
-import type { AppId, VersionId } from "@executor-js/sdk";
+import { ToolName, type AppId, type VersionId } from "@executor-js/sdk";
 import { useStartedQuery } from "@executor-js/ui/dashboard/context";
 import { useMissingBoundary } from "../components/read-boundaries.tsx";
 import { AsyncResult } from "effect/reactivity";
@@ -31,6 +31,8 @@ interface AppToolsProps {
   readonly version: VersionId;
   /** Handle started by the route loader for this version. */
   readonly tools: Handle<ReturnType<typeof toolCatalogAtom>>;
+  /** Handle started for the tool named in the URL. */
+  readonly detail: Handle<ReturnType<typeof toolDetailAtom>> | undefined;
   /** The app's requirements with their linked accounts. */
   readonly requirements: readonly RequirementAccounts<DashboardAccount>[];
   readonly selected: string | undefined;
@@ -135,10 +137,18 @@ function AccountReconnect({
 }
 
 /** Browse the complete live tool catalog with a stable, separate schema inspector. */
-function LiveAppTools({ app, version, tools, requirements, selected }: AppToolsProps) {
+function LiveAppTools({ app, version, tools, detail, requirements, selected }: AppToolsProps) {
   const catalog = { app: app.id, version };
   const claims = useMissingBoundary();
   const read = { source: claims.wrap(toolCatalogAtom(catalog)), handle: tools };
+  const named =
+    selected === undefined
+      ? undefined
+      : Option.getOrUndefined(Schema.decodeUnknownOption(ToolName)(selected));
+  const detailRead =
+    detail === undefined || named === undefined
+      ? undefined
+      : { source: toolDetailAtom({ ...catalog, tool: named }), handle: detail };
   const ToolLink = useMemo(() => {
     const appId = app.id;
     return function AppToolLink({ tool, ...props }: ToolLinkProps) {
@@ -176,6 +186,7 @@ function LiveAppTools({ app, version, tools, requirements, selected }: AppToolsP
       query={toolCatalogAtom(catalog)}
       read={read}
       detail={(tool) => toolDetailAtom({ ...catalog, tool: tool.name })}
+      detailRead={detailRead}
       selected={selected}
       empty={
         emptyManyRequirements(requirements).length > 0 ? (
@@ -195,6 +206,7 @@ function LiveAppTools({ app, version, tools, requirements, selected }: AppToolsP
           })}
           approval={(requestId) => toolRunApprovalAtoms({ app: app.id, requestId })}
           detail={toolDetailAtom({ ...catalog, tool: tool.name })}
+          detailRead={tool.name === selected ? detailRead : undefined}
           Failure={Failure}
           accounts={runningAs(requirements)}
         />

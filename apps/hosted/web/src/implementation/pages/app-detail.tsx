@@ -1,4 +1,3 @@
-import { usePreload } from "@executor-js/ui/dashboard/context";
 import { AppResources } from "./app-resources.tsx";
 import { AppAccounts } from "./app-accounts.tsx";
 import { AppSkills } from "@executor-js/ui/dashboard/app-skills";
@@ -23,15 +22,18 @@ import {
 import { AppSchedules, AppSchedulesLoading } from "@executor-js/ui/dashboard/schedules";
 import { scheduleBindings } from "../../contracts/schedules.ts";
 import { sessionAtom } from "../../contracts/auth.ts";
+import { groupsAtom } from "../../contracts/groups.ts";
 import { AppDetailLoading, OverviewCardLoading } from "@executor-js/ui/dashboard/app-loading";
 import { Exit, Option, Schema } from "effect";
 import { AsyncResult } from "effect/reactivity";
+import { Loader } from "raf-effect-atom";
+import type { OrganizationReference } from "@executor-js/hosted-server/organization";
 import { HostedFailure, useDashboardAtoms } from "../components/dashboard-bindings.tsx";
 import { dashboardAtoms } from "../../contracts/dashboard-bindings.ts";
-import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import { AppId, type App } from "@executor-js/sdk";
+import { useAtomSet } from "@effect/atom-react";
+import { AppId, ToolName, VersionId, type App } from "@executor-js/sdk";
 import { Link, useBlocker, useNavigate } from "@tanstack/react-router";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
 import { Button } from "@executor-js/ui/components/button";
@@ -57,31 +59,96 @@ import {
   AppOverviewSource,
 } from "@executor-js/ui/dashboard/app-overview";
 import { appManagement } from "../../contracts/app-management.ts";
-import { allResults, QueryView, QueryResult, useQuery } from "@executor-js/ui/dashboard/context";
+import {
+  allResults,
+  QueryView,
+  QueryResult,
+  useStartedQuery,
+} from "@executor-js/ui/dashboard/context";
 import {
   toolsAtom,
   liveAppAtom,
+  sourceAtom,
+  toolCatalogAtom,
+  toolDetailAtom,
+  versionsAtom,
   acknowledgeApp,
   appError,
   removeAppAtom,
   renameAppAtom,
 } from "../../contracts/apps.ts";
-import { type OrganizationPageReads, useOrganizationRoute } from "../components/organization.tsx";
+import { useOrganizationRoute } from "../components/organization.tsx";
+import {
+  AccessBoundary,
+  AvailabilityBoundary,
+  SessionBoundary,
+  useAccessBoundary,
+} from "../components/read-boundaries.tsx";
 import { AppTools } from "./app-tools.tsx";
 import { AppSource, AppVersions } from "./app-source.tsx";
 
-/** The organization's inventory and the app, its linked accounts and its access, keyed by the URL. */
-export const appDetailPageReads: OrganizationPageReads = (organization, params) =>
-  Option.match(Schema.decodeUnknownOption(AppId)(params.appId), {
-    onNone: () => [],
-    onSome: (app) => [
-      dashboardAtoms(organization).inventory,
-      liveAppAtom({ organization, app }),
-      appLinksAtom({ organization, app }),
-      userLinksAtom({ organization, app }),
-      appAccessAtom({ organization, app }),
-    ],
+const namedTool = (tool: string | undefined) =>
+  tool === undefined
+    ? undefined
+    : Option.getOrUndefined(Schema.decodeUnknownOption(ToolName)(tool));
+
+/** Start the app page's reads after this organization's access check succeeded. */
+export async function loadHostedApp(
+  atoms: Loader.Loader,
+  organization: OrganizationReference,
+  app: AppId,
+  search: { readonly version?: VersionId | undefined; readonly tool?: string | undefined },
+) {
+  const key = { organization, app };
+  const record = atoms.prefetch(liveAppAtom(key));
+  const inventory = atoms.prefetch(dashboardAtoms(organization).inventory);
+  const appLinks = atoms.prefetch(appLinksAtom(key));
+  const userLinks = atoms.prefetch(userLinksAtom(key));
+  const access = atoms.prefetch(appAccessAtom(key));
+  const session = atoms.prefetch(sessionAtom);
+  const versions = atoms.prefetch(versionsAtom(key));
+  const groups = atoms.prefetch(groupsAtom(organization));
+  const tool = namedTool(search.tool);
+  const known = search.version;
+  const started = (version: VersionId) => ({
+    version,
+    tools: atoms.prefetch(toolCatalogAtom({ ...key, version })),
+    source: atoms.prefetch(sourceAtom({ ...key, version })),
+    detail:
+      tool === undefined ? undefined : atoms.prefetch(toolDetailAtom({ ...key, version, tool })),
   });
+  if (known !== undefined) {
+    return {
+      record,
+      inventory,
+      appLinks,
+      userLinks,
+      access,
+      session,
+      versions,
+      groups,
+      ...started(known),
+    };
+  }
+  const loaded = await atoms.ensure(liveAppAtom(key));
+  const result = Loader.result(loaded);
+  const active = AsyncResult.isSuccess(result) ? result.value.activeVersion : undefined;
+  return {
+    record,
+    inventory,
+    appLinks,
+    userLinks,
+    access,
+    session,
+    versions,
+    groups,
+    ...(active == null
+      ? { version: undefined, tools: undefined, source: undefined, detail: undefined }
+      : started(active)),
+  };
+}
+
+export type HostedAppReads = Awaited<ReturnType<typeof loadHostedApp>>;
 
 /** Views that read only the app. The others also read the inventory and the app's links. */
 const appWideViews: ReadonlySet<AppView> = new Set(["settings", "versions", "source", "history"]);
@@ -109,35 +176,96 @@ export function AppDetailPage({
   appId,
   view,
   tool,
+  version,
+  reads,
   openApp,
 }: {
   readonly appId: AppId;
   readonly view?: AppView | undefined;
   readonly tool?: string | undefined;
-  readonly openApp?: (app: App) => ReactNode;
+  readonly version?: VersionId | undefined;
+  readonly reads: HostedAppReads | undefined;
+  readonly openApp?: ((app: App) => ReactNode) | undefined;
+}) {
+  if (reads === undefined) return null;
+  return (
+    <SessionBoundary>
+      <AvailabilityBoundary>
+        <AccessBoundary>
+          <AppDetail
+            appId={appId}
+            view={view}
+            tool={tool}
+            version={version}
+            reads={reads}
+            openApp={openApp}
+          />
+        </AccessBoundary>
+      </AvailabilityBoundary>
+    </SessionBoundary>
+  );
+}
+
+function AppDetail({
+  appId,
+  view,
+  tool,
+  version,
+  reads,
+  openApp,
+}: {
+  readonly appId: AppId;
+  readonly view?: AppView | undefined;
+  readonly tool?: string | undefined;
+  readonly version?: VersionId | undefined;
+  readonly reads: HostedAppReads;
+  readonly openApp?: ((app: App) => ReactNode) | undefined;
 }) {
   const { organization, role, slug: organizationSlug } = useOrganizationRoute();
   const navigate = useNavigate();
+  const claims = useAccessBoundary();
   const [skillDirty, setSkillDirty] = useState(false);
   useBlocker({
     shouldBlockFn: () => skillDirty && !window.confirm("Discard your unsaved changes?"),
     enableBeforeUnload: skillDirty,
   });
   const atoms = useDashboardAtoms();
-  usePreload(...appDetailPageReads(organization, { appId }));
-  const inventory = useQuery(atoms.inventory);
-  const query = useQuery(liveAppAtom({ organization, app: appId }));
+  const key = { organization, app: appId };
+  const inventory = useStartedQuery({
+    source: claims.wrap(atoms.inventory),
+    handle: reads.inventory,
+  });
+  const query = useStartedQuery({ source: claims.wrap(liveAppAtom(key)), handle: reads.record });
   const app = Option.isSome(query.data)
     ? query.data.value
     : Option.isSome(inventory.data)
       ? inventory.data.value.apps.find((item) => item.id === appId)
       : undefined;
   const selectedView = view ?? (tool === undefined ? "overview" : "tools");
-  const appLinks = useQuery(appLinksAtom({ organization, app: appId }));
-  const userLinks = useQuery(userLinksAtom({ organization, app: appId }));
-  const session = useAtomValue(sessionAtom);
-  const userId = AsyncResult.isSuccess(session) ? session.value?.user.id : undefined;
-  const authority = useQuery(appAccessAtom({ organization, app: appId }));
+  const appLinks = useStartedQuery({
+    source: claims.wrap(appLinksAtom(key)),
+    handle: reads.appLinks,
+  });
+  const userLinks = useStartedQuery({
+    source: claims.wrap(userLinksAtom(key)),
+    handle: reads.userLinks,
+  });
+  const session = useStartedQuery({ source: claims.wrap(sessionAtom), handle: reads.session });
+  const userId = AsyncResult.isSuccess(session.result) ? session.result.value?.user.id : undefined;
+  const authority = useStartedQuery({
+    source: claims.wrap(appAccessAtom(key)),
+    handle: reads.access,
+  });
+  const activeVersion = app?.activeVersion;
+  useEffect(() => {
+    if (version !== undefined || activeVersion == null) return;
+    void navigate({
+      to: "/org/$organizationSlug/apps/$appId",
+      params: { organizationSlug, appId },
+      search: { view, tool, version: activeVersion },
+      replace: true,
+    });
+  }, [activeVersion, appId, navigate, organizationSlug, tool, version, view]);
   const access = Option.getOrUndefined(authority.data);
   const canManage = access?.canManage === true,
     canUse = access?.canUse === true;
@@ -356,8 +484,23 @@ export function AppDetailPage({
                   }
                 />,
               );
-            if (selectedView === "tools")
-              return gate(<AppTools app={current} requirements={requirements} selected={tool} />);
+            if (selectedView === "tools") {
+              const selectedVersion = version ?? reads.version;
+              return gate(
+                reads.tools === undefined || selectedVersion === undefined ? (
+                  pending
+                ) : (
+                  <AppTools
+                    app={current}
+                    version={selectedVersion}
+                    tools={reads.tools}
+                    detail={reads.detail}
+                    requirements={requirements}
+                    selected={tool}
+                  />
+                ),
+              );
+            }
             if (selectedView === "workflows")
               return gate(<AppResources app={current} view="workflows" />);
             if (selectedView === "webhooks") return <AppResources app={current} view="webhooks" />;
