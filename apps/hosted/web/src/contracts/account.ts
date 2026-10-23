@@ -1,6 +1,7 @@
 import { Effect, Schema } from "effect";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { acknowledge, acknowledgedQuery } from "@executor-js/ui/contracts/mutations";
+import { hydratedResult } from "@executor-js/ui/contracts/http";
 import { revalidated } from "@executor-js/ui/contracts/refresh";
 import { observeBrowserUsage } from "./product-analytics.ts";
 import { accountOperations, authCallOptions, sessionAtom, type AuthCallOptions } from "./auth.ts";
@@ -103,7 +104,14 @@ const sessionsQuery = BrowserAtoms.atom((get) => {
     })),
     Effect.withSpan("ui.account.sessions"),
   );
-}).pipe(revalidated);
+}).pipe(
+  hydratedResult({
+    key: "hosted:account-sessions",
+    success: Sessions,
+    error: AccountFailed,
+  }),
+  revalidated,
+);
 export const sessionsAtom = acknowledgedQuery(sessionsQuery);
 
 /** Sign one other device out; its row leaves the list once the server confirms. */
