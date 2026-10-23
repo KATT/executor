@@ -1,7 +1,12 @@
 import { Suspense } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { OrganizationPage, type MemberLimit } from "@executor-js/hosted-web/pages/organization";
+import { startAfterAccess } from "@executor-js/hosted-web/contracts/guarded-read";
+import {
+  loadMembers,
+  OrganizationPage,
+  type MemberLimit,
+} from "@executor-js/hosted-web/pages/organization";
 import { useOrganizationRoute } from "@executor-js/hosted-web/organization";
 import { Button } from "@executor-js/ui/components/button";
 import { Option } from "effect";
@@ -45,6 +50,7 @@ function CloudOrganizationPage() {
     <OrganizationPage
       emailInvitations
       memberLimit={useMemberLimit()}
+      reads={Route.useLoaderData()}
       footer={<DeleteOrganization />}
     >
       <BillingSettings />
@@ -60,5 +66,9 @@ function CloudOrganizationPage() {
 
 /** Cloud adds billing settings, the member limit and owner-only removal to the shared organization page. */
 export const Route = createFileRoute("/org/$organizationSlug/organization")({
+  loader: ({ context, params }) =>
+    startAfterAccess(context.atoms, params.organizationSlug, (organization) =>
+      loadMembers(context.atoms, organization),
+    ),
   component: CloudOrganizationPage,
 });

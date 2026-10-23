@@ -33,7 +33,16 @@ import {
   useOrganization,
   OrganizationDetailsBoundary,
 } from "../components/organization.tsx";
-import { OrganizationMembers, type MemberLimit } from "../components/organization-members.tsx";
+import {
+  loadMembers,
+  OrganizationMembers,
+  OrganizationMembersPending,
+  type MemberLimit,
+  type MembersReads,
+} from "../components/organization-members.tsx";
+
+export { loadMembers };
+export type { MembersReads };
 import { productTitle, useDocumentTitle } from "@executor-js/ui/hooks/document-title";
 import { organizationSlugMaxLength } from "@executor-js/hosted-server/organization";
 
@@ -45,11 +54,13 @@ export function OrganizationPage({
   memberLimit,
   children,
   footer,
+  reads,
 }: {
   readonly emailInvitations?: boolean;
   readonly memberLimit?: MemberLimit | undefined;
   readonly children?: ReactNode;
   readonly footer?: ReactNode;
+  readonly reads: MembersReads | undefined;
 }) {
   return (
     <OrganizationDetailsBoundary
@@ -59,6 +70,7 @@ export function OrganizationPage({
         emailInvitations={emailInvitations}
         memberLimit={memberLimit}
         footer={footer}
+        reads={reads}
       >
         {children}
       </OrganizationSettings>
@@ -70,11 +82,13 @@ function OrganizationSettings({
   memberLimit,
   children,
   footer,
+  reads,
 }: {
   readonly emailInvitations: boolean;
   readonly memberLimit: MemberLimit | undefined;
   readonly children?: ReactNode;
   readonly footer?: ReactNode;
+  readonly reads: MembersReads | undefined;
 }) {
   const organization = useOrganization();
   const renaming = useAtomValue(renameOrganizationAtom(organization.organization));
@@ -92,7 +106,15 @@ function OrganizationSettings({
         <OrganizationUrl disabled={pending} />
         {children}
       </div>
-      <OrganizationMembers emailInvitations={emailInvitations} memberLimit={memberLimit} />
+      {reads === undefined ? (
+        <OrganizationMembersPending />
+      ) : (
+        <OrganizationMembers
+          emailInvitations={emailInvitations}
+          memberLimit={memberLimit}
+          members={reads.members}
+        />
+      )}
       {footer && <div className="mt-6">{footer}</div>}
     </PageFrame>
   );
