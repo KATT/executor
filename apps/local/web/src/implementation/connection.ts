@@ -1,9 +1,9 @@
 /** Browser-only bootstrap edge. The one-use token is removed from history before any API call. */
 import { BootstrapToken } from "@executor-js/local-server/auth";
-import { useAtomSet } from "@effect/atom-react";
+import { useAtomRefresh } from "@effect/atom-react";
 import { Effect, Option, Schema } from "effect";
 import { useEffect } from "react";
-import { pairingTokenAtom } from "../contracts/connection.ts";
+import { bootstrapAtom, stashPairingToken } from "../contracts/connection.ts";
 
 /** Read one startup token and erase its fragment; remove the obsolete manually pasted key. */
 export const readPairingToken = Effect.gen(function* () {
@@ -16,20 +16,22 @@ export const readPairingToken = Effect.gen(function* () {
     );
   yield* Effect.try(() => sessionStorage.removeItem("executor.local.api-key")).pipe(Effect.ignore);
   if (input === null) return undefined;
-  return Option.getOrUndefined(Schema.decodeUnknownOption(BootstrapToken)(input));
+  const token = Option.getOrUndefined(Schema.decodeUnknownOption(BootstrapToken)(input));
+  if (token !== undefined) stashPairingToken(token);
+  return token;
 });
 
 /** A link can reach an existing tab without reloading its document. */
 export function usePairingLinks() {
-  const setToken = useAtomSet(pairingTokenAtom);
+  const refresh = useAtomRefresh(bootstrapAtom);
   useEffect(() => {
     const receive = () => {
       const token = Effect.runSync(readPairingToken);
-      if (token !== undefined) setToken(token);
+      if (token !== undefined) refresh();
     };
     window.addEventListener("hashchange", receive);
-    // Also cover a link arriving between the entry-point read and this listener.
+    // Cover a fragment that arrived after the router stashed the first one.
     receive();
     return () => window.removeEventListener("hashchange", receive);
-  }, [setToken]);
+  }, [refresh]);
 }

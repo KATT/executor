@@ -2,6 +2,7 @@ import { useHydrated } from "@executor-js/ui/hooks/hydrated";
 import { Suspense, type ReactNode } from "react";
 import { DashboardUnauthorized } from "@executor-js/local-server/contracts";
 import { useAtomValue } from "@effect/atom-react";
+import { useAtomResult } from "raf-effect-atom";
 import { useStartedQuery } from "@executor-js/ui/dashboard/context";
 import { Cause, Option, Schema } from "effect";
 import { AsyncResult } from "effect/reactivity";
@@ -16,6 +17,7 @@ import {
 import { overviewAtom } from "../contracts/api.ts";
 import { bootstrapAtom, sessionAtom } from "../contracts/connection.ts";
 import { Link, Outlet, useLoaderData, useMatches } from "@tanstack/react-router";
+import { Route as RootRoute } from "./routes/__root.tsx";
 import { usePairingLinks } from "./connection.ts";
 import { cn } from "@executor-js/ui/lib/utils";
 import { Button } from "@executor-js/ui/components/button";
@@ -34,10 +36,28 @@ export function AuthenticationGate({
   readonly children: ReactNode;
   readonly loading?: ReactNode;
 }) {
+  const { bootstrap } = useLoaderData({ from: RootRoute.id });
+  return (
+    <Suspense fallback={loading}>
+      <Bootstrapped bootstrap={bootstrap} loading={loading}>
+        {children}
+      </Bootstrapped>
+    </Suspense>
+  );
+}
+
+function Bootstrapped({
+  bootstrap,
+  children,
+  loading,
+}: {
+  readonly bootstrap: ReturnType<typeof RootRoute.useLoaderData>["bootstrap"];
+  readonly children: ReactNode;
+  readonly loading: ReactNode;
+}) {
   usePairingLinks();
-  const bootstrap = useAtomValue(bootstrapAtom);
-  if (AsyncResult.isFailure(bootstrap)) return <Connect expired />;
-  if (!AsyncResult.isSuccess(bootstrap)) return loading;
+  const result = useAtomResult(bootstrapAtom, bootstrap);
+  if (AsyncResult.isFailure(result)) return <Connect expired />;
   return <SessionGate loading={loading}>{children}</SessionGate>;
 }
 
