@@ -433,7 +433,7 @@ layer(TestLive, { excludeTestServices: true })("Self-host onboarding", (it) => {
           ),
         ).toBe(`${origin}/mcp`);
         yield* browser.use("Choose Claude", (page) =>
-          page.getByRole("button", { name: "Claude", exact: true }).click(),
+          page.getByRole("link", { name: "Claude", exact: true }).click(),
         );
         yield* browser.use("Claude's guide replaces the choices", (page) =>
           page.getByRole("heading", { name: "Add Executor to Claude", exact: true }).waitFor(),

@@ -486,15 +486,30 @@ const assistantGuides = (endpoint: string): Record<AssistantId, AssistantGuide> 
 export const assistantName = (assistant: AssistantId): string =>
   assistantGuides("")[assistant].name;
 
+/** Anchor props for an assistant whose setup is its own address. */
+export interface AssistantChoiceLinkProps {
+  readonly assistant: AssistantId;
+  readonly className?: string | undefined;
+  readonly children?: ReactNode;
+  readonly "aria-current"?: "page" | undefined;
+}
+
 /** Assistant logos as a grid of choices; `selected` marks the current one when the choice persists. */
-export function AssistantChoices({
-  selected,
-  onSelect,
-}: {
-  readonly selected?: AssistantId;
-  readonly onSelect: (assistant: AssistantId) => void;
-}) {
+export function AssistantChoices(
+  props: {
+    readonly selected?: AssistantId;
+  } & (
+    | { readonly onSelect: (assistant: AssistantId) => void; readonly ChoiceLink?: undefined }
+    | {
+        readonly ChoiceLink: ComponentType<AssistantChoiceLinkProps>;
+        readonly onSelect?: undefined;
+      }
+  ),
+) {
+  const { selected } = props;
   const guides = assistantGuides("");
+  const className =
+    "flex min-w-0 items-center gap-2 rounded-lg border py-1 pr-3 pl-1 text-[13px] leading-4 @md:flex-col @md:gap-1.5 @md:not-aria-pressed:border-transparent @md:px-1 @md:pt-2.5 @md:pb-2 @md:text-[12px] text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-pressed:border-foreground/20 aria-pressed:bg-muted aria-pressed:text-foreground aria-[current=page]:border-foreground/20 aria-[current=page]:bg-muted aria-[current=page]:text-foreground max-[740px]:min-h-11";
   return (
     <div
       className="flex flex-wrap gap-1.5 @md:grid @md:grid-cols-5"
@@ -504,18 +519,36 @@ export function AssistantChoices({
       {AssistantId.literals.map((id) => {
         const item = guides[id];
         const ItemLogo = item.logo;
+        const content = (
+          <>
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md border bg-background shadow-xs @md:size-8">
+              <ItemLogo className="size-4 @md:size-4.5" />
+            </span>
+            <span className="truncate @md:w-full @md:text-center">{item.name}</span>
+          </>
+        );
+        if (props.ChoiceLink !== undefined) {
+          const ChoiceLink = props.ChoiceLink;
+          return (
+            <ChoiceLink
+              key={id}
+              assistant={id}
+              aria-current={selected === id ? "page" : undefined}
+              className={className}
+            >
+              {content}
+            </ChoiceLink>
+          );
+        }
         return (
           <button
             key={id}
             type="button"
             aria-pressed={selected === undefined ? undefined : selected === id}
-            onClick={() => onSelect(id)}
-            className="flex min-w-0 items-center gap-2 rounded-lg border py-1 pr-3 pl-1 text-[13px] leading-4 @md:flex-col @md:gap-1.5 @md:not-aria-pressed:border-transparent @md:px-1 @md:pt-2.5 @md:pb-2 @md:text-[12px] text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-pressed:border-foreground/20 aria-pressed:bg-muted aria-pressed:text-foreground max-[740px]:min-h-11"
+            onClick={() => props.onSelect(id)}
+            className={className}
           >
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-md border bg-background shadow-xs @md:size-8">
-              <ItemLogo className="size-4 @md:size-4.5" />
-            </span>
-            <span className="truncate @md:w-full @md:text-center">{item.name}</span>
+            {content}
           </button>
         );
       })}

@@ -13,6 +13,7 @@ import { AsyncResult, type Atom } from "effect/reactivity";
 import type { ConnectedAgent } from "@executor-js/mcp-auth/agents";
 import type { GrantId } from "@executor-js/mcp-auth/grants";
 import type { AssistantId } from "@executor-js/ui/contracts/dashboard";
+import type { AssistantChoiceLinkProps } from "@executor-js/ui/dashboard/connect";
 import { executorCatalogPackage } from "@executor-js/hosted-server/catalog";
 import {
   AssistantChoices,
@@ -147,12 +148,15 @@ interface ScreenBaseline {
   readonly saved: AgentBaseline | undefined;
 }
 
+function AssistantChoiceLink({ assistant, ...props }: AssistantChoiceLinkProps) {
+  return <Link {...props} to="." search={{ assistant }} />;
+}
+
 /**
  * The assistants, then any MCP client by its URL. Picking an assistant opens its guide; an agent
  * that connects from here, by the URL, leads on to its first prompt like a guide's.
  */
 function ChooseStep({ endpoint, ...baseline }: { readonly endpoint: string } & ScreenBaseline) {
-  const navigate = useNavigate();
   const [agent, setAgent] = useState<ConnectedAgent>();
   useSetupViewed("setup_assistant");
   const name = "your assistant";
@@ -165,9 +169,7 @@ function ChooseStep({ endpoint, ...baseline }: { readonly endpoint: string } & S
         Executor works inside the AI assistant you already use. Pick yours to see how to add it.
       </SetupLede>
       <div className="mt-6">
-        <AssistantChoices
-          onSelect={(chosen) => void navigate({ to: ".", search: { assistant: chosen } })}
-        />
+        <AssistantChoices ChoiceLink={AssistantChoiceLink} />
       </div>
       <div className="mt-6 flex items-center gap-3 text-xs text-muted-foreground" role="separator">
         <span className="h-px flex-1 bg-border" />
