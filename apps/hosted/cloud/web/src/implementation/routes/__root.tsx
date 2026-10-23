@@ -4,7 +4,8 @@ import { clearSessionDisplay, sessionAtom } from "@executor-js/hosted-web/contra
 import { ExecutorDevtools } from "@executor-js/devtools";
 import { ErrorReportingIdentity } from "../error-reporting.tsx";
 import { AnalyticsIdentity } from "../analytics.tsx";
-import { ClientOnly, createRootRoute, Outlet } from "@tanstack/react-router";
+import { ClientOnly, createRootRouteWithContext, Outlet } from "@tanstack/react-router";
+import type { Loader } from "raf-effect-atom";
 import { PageError, PageNotFound } from "@executor-js/hosted-web/route-fallbacks";
 import { AuthBoundary } from "@executor-js/hosted-web/auth";
 import { OrganizationResumeBoundary } from "@executor-js/hosted-web/organization";
@@ -19,7 +20,9 @@ import { requireSession, restoreLastOrganization } from "@executor-js/hosted-web
 import { serverDocument } from "../document.ts";
 
 /** Global auth, invitation and callback routes have no selected organization. */
-export const Route = createRootRoute({
+export const Route = createRootRouteWithContext<{
+  readonly atoms: Loader.Loader;
+}>()({
   head: () => ({
     links: [...fontPreloads, { rel: "stylesheet", href: styles }],
     meta: [{ title: "Executor" }],

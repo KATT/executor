@@ -1,21 +1,45 @@
 import { Skeleton } from "@executor-js/ui/components/skeleton";
-import { useAtomValue } from "@effect/atom-react";
 import type { DashboardOverview } from "@executor-js/local-server/contracts";
-import { Link, Outlet, useMatches, useLocation } from "@tanstack/react-router";
+import { Link, Outlet, useMatches, useLocation, useLoaderData } from "@tanstack/react-router";
+import { useAtomResult } from "raf-effect-atom";
 import { Option } from "effect";
 import { AsyncResult } from "effect/reactivity";
-import { createContext, useContext } from "react";
+import { Suspense, createContext, useContext } from "react";
+import { started } from "@executor-js/ui/contracts/started-read";
 import { overviewAtom } from "../contracts/api.ts";
 import { InventoryPageSkeleton } from "@executor-js/ui/dashboard/loading";
 import { AppDetailPending } from "@executor-js/ui/dashboard/app-loading";
 import { parseAppSearch } from "../contracts/navigation.ts";
+import {
+  ForbiddenBoundary,
+  SessionBoundary,
+  StorageBoundary,
+  useStorageBoundary,
+} from "./components/read-boundaries.tsx";
 
 const OverviewContext = createContext<DashboardOverview | undefined>(undefined);
 
 /** Mount inventory consumers only after authenticated overview data is available. */
 export function InventoryLayout() {
+  return (
+    <SessionBoundary>
+      <ForbiddenBoundary>
+        <StorageBoundary>
+          <Suspense fallback={<InventoryPageSkeleton kind="apps" />}>
+            <InventoryReads />
+          </Suspense>
+        </StorageBoundary>
+      </ForbiddenBoundary>
+    </SessionBoundary>
+  );
+}
+
+function InventoryReads() {
   const location = useLocation();
-  const result = useAtomValue(overviewAtom);
+  const { overview } = useLoaderData({ from: "/_dashboard/_inventory" });
+  const claims = useStorageBoundary();
+  const read = started(claims.wrap(overviewAtom), overview);
+  const result = useAtomResult(read.source, read.handle);
   const data = AsyncResult.value(result);
   const section = useMatches({ select: (matches) => matches.at(-1)?.staticData.section });
   if (Option.isSome(data))

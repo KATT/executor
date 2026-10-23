@@ -4,7 +4,8 @@ import { Exit } from "effect";
 import { AsyncResult, type Atom } from "effect/reactivity";
 import type { GrantId } from "@executor-js/mcp-auth";
 import type { ConnectedAgent, ConnectedAgentAccess } from "@executor-js/mcp-auth/agents";
-import type { FailureProps, Query } from "../../contracts/dashboard.ts";
+import type { FailureProps } from "../../contracts/dashboard.ts";
+import type { StartedRead } from "../../contracts/started-read.ts";
 import { Button } from "../components/button.tsx";
 import {
   Dialog,
@@ -16,7 +17,7 @@ import {
 } from "../components/dialog.tsx";
 import { LocalTime, RelativeTime, shortMoment } from "../components/local-time.tsx";
 import { Skeleton } from "../components/skeleton.tsx";
-import { QueryView } from "./context.tsx";
+import { StartedQueryView } from "./context.tsx";
 
 const agentName = (agent: ConnectedAgent) => agent.name?.trim() || "Unnamed MCP client";
 
@@ -39,11 +40,11 @@ const accessLabel = (access: ConnectedAgentAccess) => {
  * Executor are listed, most recently used first.
  */
 export function ConnectedAgents<E, EL extends E, ER extends E>({
-  query,
+  read,
   revoke,
   Failure,
 }: {
-  readonly query: Query<readonly ConnectedAgent[], EL>;
+  readonly read: StartedRead<readonly ConnectedAgent[], EL>;
   readonly revoke: Atom.AtomResultFn<GrantId, void, ER>;
   /** Renders list and revocation failures. */
   readonly Failure: ComponentType<FailureProps<E>>;
@@ -56,8 +57,9 @@ export function ConnectedAgents<E, EL extends E, ER extends E>({
       <div className="mb-2 flex h-6 items-center">
         <h2 className="text-xs font-medium text-muted-foreground">Connected agents</h2>
       </div>
-      <QueryView<readonly ConnectedAgent[], E>
-        query={query}
+      <StartedQueryView<readonly ConnectedAgent[], E>
+        source={read.source}
+        handle={read.handle}
         Failure={Failure}
         pending={<ConnectedAgentsSkeleton />}
       >
@@ -74,7 +76,7 @@ export function ConnectedAgents<E, EL extends E, ER extends E>({
             </ul>
           )
         }
-      </QueryView>
+      </StartedQueryView>
       <Dialog
         open={revoking !== undefined}
         onOpenChange={(open) => {

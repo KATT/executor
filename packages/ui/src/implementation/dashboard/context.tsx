@@ -1,9 +1,11 @@
-import { createContext, useContext, type ReactNode } from "react";
+import { Suspense, createContext, useContext, type ReactNode } from "react";
 import { RegistryContext, useAtomValue, useAtomRefresh } from "@effect/atom-react";
+import { useAtomResult } from "raf-effect-atom";
 import { type Cause, Option } from "effect";
 import { Skeleton } from "../components/skeleton.tsx";
 import { AsyncResult, type Atom } from "effect/reactivity";
 import type { DashboardBindings, Query, QueryProps } from "../../contracts/dashboard.ts";
+import type { StartedRead } from "../../contracts/started-read.ts";
 
 const Context = createContext<DashboardBindings | null>(null);
 /** Bind product navigation and icon metadata, without an HTTP client or an auth context. */
@@ -43,6 +45,51 @@ export function QueryView<A, E>({
     <QueryResult result={result} Failure={Failure} retry={refresh} pending={pending}>
       {children}
     </QueryResult>
+  );
+}
+
+function StartedQueryBody<A, E>({
+  source,
+  handle,
+  Failure,
+  children,
+  pending,
+}: {
+  readonly source: StartedRead<A, E>["source"];
+  readonly handle: StartedRead<A, E>["handle"];
+  readonly Failure: QueryProps<A, E>["Failure"];
+  readonly children: (value: A) => ReactNode;
+  readonly pending: ReactNode;
+}) {
+  const result = useAtomResult(source, handle);
+  const refresh = useAtomRefresh(source);
+  return (
+    <QueryResult result={result} Failure={Failure} retry={refresh} pending={pending}>
+      {children}
+    </QueryResult>
+  );
+}
+
+/** Read a handle the route loader started. Suspense covers the wait; claimed errors throw to their boundaries. */
+export function StartedQueryView<A, E>({
+  source,
+  handle,
+  Failure,
+  children,
+  pending = <LoadingRows />,
+}: {
+  readonly source: StartedRead<A, E>["source"];
+  readonly handle: StartedRead<A, E>["handle"];
+  readonly Failure: QueryProps<A, E>["Failure"];
+  readonly children: (value: A) => ReactNode;
+  readonly pending?: ReactNode;
+}) {
+  return (
+    <Suspense fallback={pending}>
+      <StartedQueryBody source={source} handle={handle} Failure={Failure} pending={pending}>
+        {children}
+      </StartedQueryBody>
+    </Suspense>
   );
 }
 

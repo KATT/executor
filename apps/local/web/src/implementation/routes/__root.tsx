@@ -1,5 +1,6 @@
 import { ExecutorDevtools } from "@executor-js/devtools";
 import { ClientOnly, createRootRouteWithContext, Outlet } from "@tanstack/react-router";
+import type { Loader } from "raf-effect-atom";
 import { useAtomSet } from "@effect/atom-react";
 import { useEffect } from "react";
 import { connectionEntryAtom } from "../../contracts/account-connections.ts";
@@ -17,6 +18,7 @@ import { fontPreloads } from "@executor-js/ui/lib/fonts";
 /** Standalone connection handoffs and authenticated dashboard routes share only the router. */
 export const Route = createRootRouteWithContext<{
   readonly entry: BrowserEntryValues | undefined;
+  readonly atoms: Loader.Loader;
 }>()({
   head: () => ({
     links: [...fontPreloads, { rel: "stylesheet", href: styles }],

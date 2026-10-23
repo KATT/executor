@@ -12,7 +12,7 @@ import { Exit } from "effect";
 import { AsyncResult } from "effect/reactivity";
 import type { AccountId, App, AppId, ToolName } from "@executor-js/sdk";
 import { ConnectionId, type ConnectionView } from "@executor-js/mcp-auth/connections";
-import type { AccountSummary, FailureProps, Inventory, Query } from "../../contracts/dashboard.ts";
+import type { AccountSummary, FailureProps, Inventory } from "../../contracts/dashboard.ts";
 import {
   type ConnectionApp,
   type ConnectionDraft,
@@ -46,7 +46,9 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "../components/popover.tsx";
 import { Skeleton } from "../components/skeleton.tsx";
 import { PageFrame, PageHeader } from "./page.tsx";
-import { QueryView } from "./context.tsx";
+import { StartedQueryView } from "./context.tsx";
+import type { StartedRead } from "../../contracts/started-read.ts";
+import { useAtomResult } from "raf-effect-atom";
 import { AppIcon } from "./common.tsx";
 import {
   appChoices,
@@ -164,7 +166,7 @@ export function ScopedConnectionsPage<E, EL extends E, ES extends E, ER extends 
   readonly onSaved: (connection: ConnectionView) => void;
   /** Opens the list after a connection is revoked. */
   readonly onRevoked: () => void;
-  readonly query: Query<Inventory, E>;
+  readonly query: StartedRead<Inventory, E>;
   /** Renders every failure: inventory, connection reads, saves and revocation. */
   readonly Failure: ComponentType<FailureProps<E>>;
   readonly installation: ReactNode;
@@ -220,8 +222,9 @@ export function ScopedConnectionsPage<E, EL extends E, ES extends E, ER extends 
               </div>
               {installation}
             </section>
-            <QueryView<readonly ConnectionView[], E>
-              query={connections}
+            <StartedQueryView<readonly ConnectionView[], E>
+              source={connections.source}
+              handle={connections.handle}
               Failure={Failure}
               pending={<ConnectionListSkeleton />}
             >
@@ -250,7 +253,7 @@ export function ScopedConnectionsPage<E, EL extends E, ES extends E, ER extends 
                   </section>
                 )
               }
-            </QueryView>
+            </StartedQueryView>
             {agents}
           </div>
         )}
@@ -260,13 +263,17 @@ export function ScopedConnectionsPage<E, EL extends E, ES extends E, ER extends 
               title="New connection"
               description="Turn on the apps this agent needs. Everything else stays off. Approval rules come from each app’s code."
             />
-            <QueryView query={query} Failure={Failure}>
+            <StartedQueryView source={query.source} handle={query.handle} Failure={Failure}>
               {(inventory) => <NewConnection inventory={inventory} render={editor(false)} />}
-            </QueryView>
+            </StartedQueryView>
           </>
         )}
         {(screen.kind === "detail" || screen.kind === "edit") && (
-          <QueryView<readonly ConnectionView[], E> query={connections} Failure={Failure}>
+          <StartedQueryView<readonly ConnectionView[], E>
+            source={connections.source}
+            handle={connections.handle}
+            Failure={Failure}
+          >
             {(items) => {
               const connection = items.find((item) => item.id === screen.connection);
               if (connection === undefined)
@@ -283,7 +290,7 @@ export function ScopedConnectionsPage<E, EL extends E, ES extends E, ER extends 
                       title="Edit connection"
                       description="Turn on the apps this agent needs. Everything else stays off. Approval rules come from each app’s code."
                     />
-                    <QueryView query={query} Failure={Failure}>
+                    <StartedQueryView source={query.source} handle={query.handle} Failure={Failure}>
                       {(inventory) => (
                         <EditConnection
                           key={connection.id}
@@ -292,11 +299,11 @@ export function ScopedConnectionsPage<E, EL extends E, ES extends E, ER extends 
                           render={editor(true)}
                         />
                       )}
-                    </QueryView>
+                    </StartedQueryView>
                   </>
                 );
               return (
-                <QueryView query={query} Failure={Failure}>
+                <StartedQueryView source={query.source} handle={query.handle} Failure={Failure}>
                   {(inventory) => (
                     <ConnectionDetail
                       connection={connection}
@@ -306,10 +313,10 @@ export function ScopedConnectionsPage<E, EL extends E, ES extends E, ER extends 
                       onRevoke={() => setRevoking(connection)}
                     />
                   )}
-                </QueryView>
+                </StartedQueryView>
               );
             }}
-          </QueryView>
+          </StartedQueryView>
         )}
       </div>
       <Dialog
@@ -452,10 +459,10 @@ function ConnectionList<E>({
   DetailLink,
 }: {
   readonly items: readonly ConnectionView[];
-  readonly query: Query<Inventory, E>;
+  readonly query: StartedRead<Inventory, E>;
   readonly DetailLink: ScopedConnectionLinks["DetailLink"];
 }) {
-  const inventory = useAtomValue(query);
+  const inventory = useAtomResult(query.source, query.handle);
   const names = new Map<AppId, string>(
     AsyncResult.isSuccess(inventory) ? inventory.value.apps.map((app) => [app.id, app.name]) : [],
   );

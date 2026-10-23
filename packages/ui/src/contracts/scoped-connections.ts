@@ -6,7 +6,7 @@ import type {
   ConnectionView,
 } from "@executor-js/mcp-auth/connections";
 import type { Atom } from "effect/reactivity";
-import type { Query } from "./dashboard.ts";
+import type { StartedRead } from "./started-read.ts";
 
 /**
  * A connection's tool scope. Rules (all, read-only) include tools added later; selected names
@@ -95,7 +95,7 @@ export interface ConnectionSave {
 
 /** Product bindings for the shared connections page. One renderer handles every failure. */
 export interface ScopedConnectionBindings<EL, ES, ER> {
-  readonly connections: Query<readonly ConnectionView[], EL>;
+  readonly connections: StartedRead<readonly ConnectionView[], EL>;
   readonly save: Atom.AtomResultFn<ConnectionSave, ConnectionView, ES>;
   readonly revoke: Atom.AtomResultFn<ConnectionId, void, ER>;
 }

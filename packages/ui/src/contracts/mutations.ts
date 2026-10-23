@@ -42,10 +42,8 @@ export const acknowledgedQuery = <A, E>(
 };
 
 /** Point a derived atom at the atom whose value it shows, for loader hydration. */
-export const follows = <A extends Atom.Atom<unknown>>(
-  atom: A,
-  source: Atom.Atom<unknown>,
-): A => {
+// TODO(raf-effect-atom gap: Loader verbs die on derived atoms instead of following initialValueTarget)
+export const follows = <A extends Atom.Atom<unknown>>(atom: A, source: Atom.Atom<unknown>): A => {
   const derived: { initialValueTarget?: Atom.Atom<unknown> } = atom;
   derived.initialValueTarget = source;
   return atom;

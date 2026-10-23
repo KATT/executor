@@ -173,32 +173,32 @@ class ListKey extends Data.Class<{
 const inventory = Atom.family((key: ListKey) =>
   follows(
     Atom.map(
-    resourceDirectoryAtom(key.organization, key.view),
-    AsyncResult.map((data) => {
-      const apps = data.apps
-        .filter(
-          ({ access }) =>
-            key.group === "all" ||
-            (key.group === "private"
-              ? access.audience.kind === "private"
-              : access.audience.kind === "everyone" ||
-                (access.audience.kind === "groups" &&
-                  access.audience.groups.some((id) => id === key.group))),
-        )
-        .map(({ app }) => app);
-      const links = data.apps
-        .filter(({ app }) => apps.some((item) => item.id === app.id))
-        .flatMap(({ app, linkedAccounts }) =>
-          linkedAccounts.map((account) => ({ app: app.id, account })),
-        );
-      const accounts = data.accounts.map(({ account, provider, health }) => ({
-        ...account,
-        providerName: provider.definition.name,
-        providerUrl: providerDisplayUrl(provider.definition),
-        ...(health === undefined ? {} : { health }),
-      }));
-      return { apps, accounts, links, pendingApp: key.group !== "private" && data.pendingApp };
-    }),
+      resourceDirectoryAtom(key.organization, key.view),
+      AsyncResult.map((data) => {
+        const apps = data.apps
+          .filter(
+            ({ access }) =>
+              key.group === "all" ||
+              (key.group === "private"
+                ? access.audience.kind === "private"
+                : access.audience.kind === "everyone" ||
+                  (access.audience.kind === "groups" &&
+                    access.audience.groups.some((id) => id === key.group))),
+          )
+          .map(({ app }) => app);
+        const links = data.apps
+          .filter(({ app }) => apps.some((item) => item.id === app.id))
+          .flatMap(({ app, linkedAccounts }) =>
+            linkedAccounts.map((account) => ({ app: app.id, account })),
+          );
+        const accounts = data.accounts.map(({ account, provider, health }) => ({
+          ...account,
+          providerName: provider.definition.name,
+          providerUrl: providerDisplayUrl(provider.definition),
+          ...(health === undefined ? {} : { health }),
+        }));
+        return { apps, accounts, links, pendingApp: key.group !== "private" && data.pendingApp };
+      }),
     ),
     resourceDirectoryAtom(key.organization, key.view),
   ),

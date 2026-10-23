@@ -33,6 +33,7 @@
     "better-auth": "1.7.5",
     "effect": "4.0.1",
     "posthog-js": "1.434.7",
+    "raf-effect-atom": "workspace:*",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },

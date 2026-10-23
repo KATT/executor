@@ -24,14 +24,14 @@ export type BrowserEntryValues = ReturnType<typeof readBrowserEntry>;
 
 /** One router and atom registry per document request on the server, and one per page in the browser. */
 export function getRouter() {
-  const { connect, Wrap } = dashboardRegistry(
+  const { atoms, connect, Wrap } = dashboardRegistry(
     import.meta.env.SSR ? documentValues(serverDocument()) : [],
   );
   const entry = import.meta.env.SSR ? undefined : readBrowserEntry();
   return connect(
     createRouter({
       routeTree,
-      context: { entry },
+      context: { entry, atoms },
       defaultPreload: "intent",
       // Existing links use ordinary strings, including tool names such as "123".
       parseSearch: parseSearchParams,

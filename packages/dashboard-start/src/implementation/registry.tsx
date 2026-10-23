@@ -10,6 +10,7 @@ import { RegistryContext, scheduleTask, useAtomValue } from "@effect/atom-react"
 import type { AnyRouter } from "@tanstack/react-router";
 import { Cause } from "effect";
 import { AsyncResult, Atom, AtomRegistry, Hydration } from "effect/reactivity";
+import { Loader, RequestRegistry, WaterfallDetection } from "raf-effect-atom";
 import { createContext, useContext, useSyncExternalStore, type ReactNode } from "react";
 
 interface DehydratedAtoms {
@@ -62,8 +63,13 @@ const documentGuards = (registry: AtomRegistry.AtomRegistry) => {
       const existing = guards.get(check);
       const guard = existing ?? {
         decide: () => {
-          const outcome = registry.get(check);
-          return AsyncResult.isInitial(outcome) ? undefined : AsyncResult.isSuccess(outcome);
+          // Dehydrate runs after reads suspend, so this cannot go through `registry.get`.
+          const node = registry.getNodes().get(nodeKey(check));
+          if (node === undefined) return undefined;
+          const outcome = node.value();
+          if (!AsyncResult.isAsyncResult(outcome) || AsyncResult.isInitial(outcome))
+            return undefined;
+          return AsyncResult.isSuccess(outcome);
         },
         keys: new Set<string>(),
         allowed: undefined,
@@ -136,25 +142,29 @@ export const useGuardedPreload = <A, E>(
 };
 
 /**
- * React reads through this view of the request's registry. Atoms stay mounted until the request
- * ends so a resolved value cannot be discarded between React's suspension and its retry.
+ * React reads the request registry itself, so `useAtomResult` accepts it. `get` suspends only at
+ * the outermost read, and only after the route loaders have run.
  */
-const suspendingRegistry = (registry: AtomRegistry.AtomRegistry): AtomRegistry.AtomRegistry => {
+const installSuspendingGet = (registry: AtomRegistry.AtomRegistry) => {
   let pastDeadline = false;
-  let deadline: ReturnType<typeof setTimeout> | undefined;
+  let suspend = false;
+  let depth = 0;
+  let resolveDeadline: (() => void) | undefined;
   const expired = new Promise<void>((resolve) => {
-    deadline = setTimeout(() => {
-      pastDeadline = true;
-      resolve();
-    }, renderDeadline);
+    resolveDeadline = resolve;
   });
-  const mounted = new Set<Atom.Atom<unknown>>();
+  const deadline = setTimeout(() => {
+    pastDeadline = true;
+    resolveDeadline?.();
+  }, renderDeadline);
+  // TODO(raf-effect-atom gap: Patching registry.get is not type-safe)
+  const host = registry as unknown as {
+    get: typeof registry.get;
+    dispose: () => void;
+  };
+  const read = registry.get.bind(registry);
   const waiting = new Map<Atom.Atom<unknown>, Promise<void>>();
   const nodeOf = (atom: Atom.Atom<unknown>) => registry.getNodes().get(nodeKey(atom));
-  /**
-   * Reads in flight beneath an atom. A component may combine several queries in a derived atom
-   * whose own value is not a result, so the render waits for what that atom depends on.
-   */
   const pendingDependencies = (atom: Atom.Atom<unknown>) => {
     const pending: Array<Atom.Atom<unknown>> = [];
     const seen = new Set<AtomRegistry.Node<unknown>>();
@@ -183,41 +193,47 @@ const suspendingRegistry = (registry: AtomRegistry.AtomRegistry): AtomRegistry.A
     waiting.set(atom, promise);
     return promise;
   };
-  return {
-    [AtomRegistry.TypeId]: AtomRegistry.TypeId,
-    get scheduler() {
-      return registry.scheduler;
-    },
-    get schedulerAsync() {
-      return registry.schedulerAsync;
-    },
-    getNodes: () => registry.getNodes(),
-    get: (atom) => {
-      if (!mounted.has(atom)) {
-        mounted.add(atom);
-        registry.mount(atom);
-      }
-      const value = registry.get(atom);
-      if (pastDeadline) return value;
-      // React retries the render once the reads settle; the boundary's fallback streams meanwhile.
+  host.get = ((atom: Atom.Atom<unknown>): unknown => {
+    const outer = depth === 0;
+    depth += 1;
+    try {
+      const value = read(atom);
+      if (!suspend || !outer || pastDeadline) return value;
       if (pendingResult(value)) throw settle(atom);
       const dependencies = pendingDependencies(atom);
       if (dependencies.length > 0) throw Promise.all(dependencies.map(settle));
       return value;
-    },
-    mount: (atom) => registry.mount(atom),
-    refresh: (atom) => registry.refresh(atom),
-    set: (atom, value) => registry.set(atom, value),
-    setSerializable: (key, encoded) => registry.setSerializable(key, encoded),
-    modify: (atom, f) => registry.modify(atom, f),
-    update: (atom, f) => registry.update(atom, f),
-    subscribe: (atom, f, options) => registry.subscribe(atom, f, options),
-    reset: () => registry.reset(),
-    dispose: () => {
-      clearTimeout(deadline);
-      registry.dispose();
+    } finally {
+      depth -= 1;
+    }
+  }) as typeof registry.get;
+  const dispose = host.dispose.bind(registry);
+  host.dispose = () => {
+    clearTimeout(deadline);
+    dispose();
+  };
+  return {
+    enable: () => {
+      suspend = true;
     },
   };
+};
+
+/**
+ * `RequestRegistry.make` does not take the values a server render already knows.
+ * Subscribe without reading, then set the node's initial value the way `AtomRegistry.make` does.
+ */
+const seedInitialValues = (registry: AtomRegistry.AtomRegistry, initialValues: InitialValues) => {
+  // TODO(raf-effect-atom gap: RequestRegistry.make has no initial values)
+  for (const [atom, value] of initialValues) {
+    let target: Atom.Atom<unknown> = atom;
+    while (target.initialValueTarget !== undefined) target = target.initialValueTarget;
+    registry.subscribe(target, () => {}, { immediate: false });
+    const node = registry.getNodes().get(nodeKey(target)) as
+      | { setInitialValue?(value: unknown): void }
+      | undefined;
+    node?.setInitialValue?.(value);
+  }
 };
 
 /** Stream settled values after the first flush; values rendered in the shell go in the first one. */
@@ -368,22 +384,31 @@ type InitialValues = NonNullable<
 >;
 
 export const dashboardRegistry = (initialValues: InitialValues) => {
-  const registry = import.meta.env.SSR
-    ? AtomRegistry.make({ initialValues })
+  const server = import.meta.env.SSR;
+  // TODO(raf-effect-atom gap: setupRouterAtoms replaces dehydration executor still needs)
+  const registry = server
+    ? RequestRegistry.make({ seed: (created) => seedInitialValues(created, initialValues) })
     : AtomRegistry.make({ initialValues, scheduleTask, defaultIdleTTL: 400 });
-  const view = import.meta.env.SSR ? suspendingRegistry(registry) : registry;
-  const guards = import.meta.env.SSR ? documentGuards(registry) : undefined;
+  const suspending = server ? installSuspendingGet(registry) : undefined;
+  const guards = server ? documentGuards(registry) : undefined;
+  const atoms = Loader.make(registry);
   return {
     registry,
+    atoms,
     connect: <R extends AnyRouter>(router: R): R => {
       if (guards === undefined) hydrateAtoms(router, registry);
-      else streamAtoms(router, registry, () => view.dispose(), guards);
+      else streamAtoms(router, registry, () => registry.dispose(), guards);
       return router;
     },
-    Wrap: ({ children }: { readonly children: ReactNode }) => (
-      <RegistryContext.Provider value={view}>
-        <DocumentGuardsContext value={guards}>{children}</DocumentGuardsContext>
-      </RegistryContext.Provider>
-    ),
+    Wrap: ({ children }: { readonly children: ReactNode }) => {
+      suspending?.enable();
+      return (
+        <RegistryContext.Provider value={registry}>
+          <DocumentGuardsContext value={guards}>
+            <WaterfallDetection mode="throw">{children}</WaterfallDetection>
+          </DocumentGuardsContext>
+        </RegistryContext.Provider>
+      );
+    },
   };
 };

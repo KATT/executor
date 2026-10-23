@@ -15,7 +15,7 @@ import { Cause, Clock, Data, Effect, Option, Schedule, Schema, Stream } from "ef
 import { HttpClientError } from "effect/http";
 import { AsyncResult, Atom, AtomHttpApi } from "effect/reactivity";
 import { accountNeedsSignIn } from "./dashboard.ts";
-import { acknowledgedQuery, currentQuery } from "@executor-js/ui/contracts/mutations";
+import { acknowledgedQuery, currentQuery, follows } from "@executor-js/ui/contracts/mutations";
 import { refreshedOnFocus } from "@executor-js/ui/contracts/refresh";
 
 /** The browser uses the same schemas and route definitions as the local product server. */
@@ -128,6 +128,7 @@ export const liveQueryAtom = <A, I, Q, E, E2>(options: {
     },
     (refresh) => refresh(live),
   );
+  // TODO(raf-effect-atom gap: Loader verbs die on derived atoms instead of following initialValueTarget)
   return Object.assign(view, { snapshot: rendered, initialValueTarget: rendered });
 };
 
@@ -146,37 +147,37 @@ export const overviewSnapshotAtom = liveOverviewAtom.snapshot;
 export const overviewAtom = acknowledgedQuery(
   follows(
     Atom.readable(
-    (get) => {
-      const result = get(liveOverviewAtom);
-      const data = AsyncResult.value(result);
-      const now = Effect.runSync(Clock.currentTimeMillis);
-      if (Option.isSome(data)) {
-        const deadlines = data.value.accounts.flatMap((account) =>
-          account.signIn.state === "saved" &&
-          account.signIn.reconnectAt !== null &&
-          account.signIn.reconnectAt.getTime() > now
-            ? [account.signIn.reconnectAt.getTime()]
-            : [],
-        );
-        if (deadlines.length > 0)
-          get.addFinalizer(
-            Effect.runCallback(
-              Effect.sleep(Math.min(Math.min(...deadlines) - now, 2_147_483_647)).pipe(
-                Effect.andThen(Effect.sync(() => get.refreshSelf())),
-              ),
-            ),
+      (get) => {
+        const result = get(liveOverviewAtom);
+        const data = AsyncResult.value(result);
+        const now = Effect.runSync(Clock.currentTimeMillis);
+        if (Option.isSome(data)) {
+          const deadlines = data.value.accounts.flatMap((account) =>
+            account.signIn.state === "saved" &&
+            account.signIn.reconnectAt !== null &&
+            account.signIn.reconnectAt.getTime() > now
+              ? [account.signIn.reconnectAt.getTime()]
+              : [],
           );
-      }
-      return AsyncResult.map(result, (data) => ({
-        ...data,
-        accounts: data.accounts.map((account) =>
-          accountNeedsSignIn(account, now)
-            ? { ...account, signIn: { state: "reconnect" as const } }
-            : account,
-        ),
-      }));
-    },
-    (refresh) => refresh(liveOverviewAtom),
+          if (deadlines.length > 0)
+            get.addFinalizer(
+              Effect.runCallback(
+                Effect.sleep(Math.min(Math.min(...deadlines) - now, 2_147_483_647)).pipe(
+                  Effect.andThen(Effect.sync(() => get.refreshSelf())),
+                ),
+              ),
+            );
+        }
+        return AsyncResult.map(result, (data) => ({
+          ...data,
+          accounts: data.accounts.map((account) =>
+            accountNeedsSignIn(account, now)
+              ? { ...account, signIn: { state: "reconnect" as const } }
+              : account,
+          ),
+        }));
+      },
+      (refresh) => refresh(liveOverviewAtom),
     ),
     liveOverviewAtom,
   ),

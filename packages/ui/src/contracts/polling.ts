@@ -34,27 +34,27 @@ export const pollingQuery = <A>(
 ): Atom.Atom<A> =>
   follows(
     Atom.readable(
-    (get) => {
-      const value = get(source);
-      // A server render reads once; only a visible page keeps reconciling.
-      if (typeof window === "undefined") return value;
-      get.addFinalizer(
-        Effect.runCallback(
-          Effect.forever(
-            Effect.sleep(active?.(value) ? activeInterval : idle).pipe(
-              Effect.andThen(() =>
-                Effect.sync(() => {
-                  if (document.visibilityState === "visible") get.refresh(source);
-                }),
+      (get) => {
+        const value = get(source);
+        // A server render reads once; only a visible page keeps reconciling.
+        if (typeof window === "undefined") return value;
+        get.addFinalizer(
+          Effect.runCallback(
+            Effect.forever(
+              Effect.sleep(active?.(value) ? activeInterval : idle).pipe(
+                Effect.andThen(() =>
+                  Effect.sync(() => {
+                    if (document.visibilityState === "visible") get.refresh(source);
+                  }),
+                ),
               ),
             ),
           ),
-        ),
-      );
-      return value;
-    },
-    (refresh) => refresh(source),
-  ),
+        );
+        return value;
+      },
+      (refresh) => refresh(source),
+    ),
     source,
   );
 
