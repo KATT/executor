@@ -4,6 +4,7 @@ import { OrganizationBoundary } from "@executor-js/hosted-web/organization";
 import { OrganizationSetup } from "@executor-js/hosted-web/pages/organization-setup";
 import { SetupPage } from "@executor-js/hosted-web/setup-page";
 import { CloudSetupSequence } from "../components/team-setup.tsx";
+import { prefetchAfterAccess } from "@executor-js/hosted-web/contracts/guarded-read";
 import { setupSequenceAtom } from "../../contracts/onboarding.ts";
 
 /**
@@ -12,7 +13,10 @@ import { setupSequenceAtom } from "../../contracts/onboarding.ts";
  */
 export const Route = createFileRoute("/org/$organizationSlug_/setup")({
   codeSplitGroupings: [],
-  staticData: { organizationReads: (organization) => [setupSequenceAtom(organization)] },
+  loader: ({ context, params }) =>
+    prefetchAfterAccess(context.atoms, params.organizationSlug, (organization) => [
+      setupSequenceAtom(organization),
+    ]),
   component: SetupLayout,
   pendingComponent: () => <SetupPage />,
 });

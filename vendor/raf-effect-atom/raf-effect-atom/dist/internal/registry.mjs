@@ -19,8 +19,12 @@ const defaultIdleTTL = 400;
 * A request registry on the server, and in the browser a registry like
 * `@effect/atom-react`'s `RegistryProvider` makes.
 */
-const make = (options) => isServer() ? make$1({ seed: options?.seed }) : AtomRegistry.make({
+const make = (options) => isServer() ? make$1({
+	initialValues: options?.initialValues,
+	seed: options?.seed
+}) : AtomRegistry.make({
 	defaultIdleTTL: options?.defaultIdleTTL ?? defaultIdleTTL,
+	initialValues: options?.initialValues,
 	scheduleTask
 });
 let mounted;

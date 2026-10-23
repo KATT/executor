@@ -79,10 +79,16 @@ export const oauthSetupAtom = (key: {
   method: string;
 }) => oauthSetupQuery(new OAuthSetupKey(key));
 
+const appHttp = Atom.family(
+  (key: { readonly organization: OrganizationReference; readonly app: AppId }) =>
+    HostedClient.query("apps", "get", hydrated({ params: key })),
+);
 const appQuery = Atom.family(
   (key: { readonly organization: OrganizationReference; readonly app: AppId }) =>
-    HostedClient.query("apps", "get", hydrated({ params: key })).pipe(revalidated, protectedQuery),
+    appHttp(key).pipe(revalidated, protectedQuery),
 );
+/** Serializable app record. Loaders start this; the page reads `liveAppAtom`. */
+export const appRecordQuery = appHttp;
 const versionsQuery = Atom.family((key: AppKey) =>
   HostedClient.query("apps", "versions", hydrated({ params: key })).pipe(revalidated),
 );
@@ -120,7 +126,7 @@ class ToolKey extends Data.Class<{
  * shows the catalog loading rather than the previous one: the key does not name the linked
  * accounts, so a retained catalog may belong to accounts that are no longer linked.
  */
-const toolsQuery = Atom.family((key: ToolKey) =>
+const toolsHttp = Atom.family((key: ToolKey) =>
   HostedClient.query(
     "tools",
     "index",
@@ -128,8 +134,11 @@ const toolsQuery = Atom.family((key: ToolKey) =>
       params: key,
       query: { version: key.version },
     }),
-  ).pipe(revalidated, currentQuery),
+  ),
 );
+const toolsQuery = Atom.family((key: ToolKey) => toolsHttp(key).pipe(revalidated, currentQuery));
+/** Serializable tool index. Loaders start this; the page reads `toolsAtom`. */
+export const toolsRecordQuery = toolsHttp;
 /**
  * Pending credentials are fetched without reading saved secrets. A request whose app changed can
  * never complete, so a read reporting that drops the old form instead of showing it beside the error.
@@ -505,12 +514,13 @@ function connectionSaved(
   get.refresh(inventoryAtom(key.organization));
 }
 
-const toolCatalogs = Atom.family((key: ToolKey) =>
-  Atom.map(
-    toolsQuery(key),
-    AsyncResult.map((page): ToolCatalog => ({ tools: page.items, routers: page.routers })),
-  ),
-);
+const toolCatalogs = Atom.family((key: ToolKey) => {
+  const query = toolsQuery(key);
+  return Object.assign(
+    Atom.mapResult(query, (page): ToolCatalog => ({ tools: page.items, routers: page.routers })),
+    { initialValueTarget: query },
+  );
+});
 /** Shared browser view for the page's accounts, with the routers that group its tools. */
 export const toolCatalogAtom = (key: ConstructorParameters<typeof ToolKey>[0]) =>
   toolCatalogs(new ToolKey(key));
@@ -540,11 +550,15 @@ export const toolDetailAtom = (key: ConstructorParameters<typeof ToolDetailKey>[
   toolDetails(new ToolDetailKey(key));
 
 /** Connection search reads the whole schema-free index, so it includes every tool. */
-const connectionToolLists = Atom.family((key: ToolKey) =>
-  Atom.map(
-    toolsQuery(key),
-    AsyncResult.map((index) => index.items),
-  ),
-);
+const connectionToolLists = Atom.family((key: ToolKey) => {
+  const query = toolsQuery(key);
+  // `Atom.map` does not point at its source, so a loader would not follow this list.
+  return Object.assign(
+    Atom.mapResult(query, (index) => index.items),
+    {
+      initialValueTarget: query,
+    },
+  );
+});
 export const connectionToolListAtom = (key: ConstructorParameters<typeof ToolKey>[0]) =>
   connectionToolLists(new ToolKey(key));

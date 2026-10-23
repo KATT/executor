@@ -112,6 +112,7 @@ export function AppDetailLayout({
               {app ? (
                 <BoundAppLink
                   app={app.id}
+                  version={app.activeVersion ?? undefined}
                   aria-label={`${app.name} overview`}
                   className="hover:underline"
                 >
@@ -181,6 +182,7 @@ export function AppDetailLayout({
               <BoundAppLink
                 key={section.view}
                 app={app.id}
+                version={app.activeVersion ?? undefined}
                 view={section.view}
                 className={classes}
                 aria-current={

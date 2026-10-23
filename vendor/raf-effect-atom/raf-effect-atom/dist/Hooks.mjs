@@ -2,10 +2,9 @@
 import { stream } from "./internal/pending.mjs";
 import { hydrated } from "./Hydration.mjs";
 import { keyOf, release } from "./internal/leases.mjs";
-import { atomOf } from "./internal/handles.mjs";
+import { atomOf, sourceOf } from "./internal/handles.mjs";
 import { requireRequestRegistry } from "./internal/registry.mjs";
 import { ModeContext, check } from "./internal/waterfalls.mjs";
-import * as Atom from "effect/reactivity/Atom";
 import * as Predicate from "effect/Predicate";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
@@ -19,15 +18,6 @@ import * as React from "react";
 * @stability unstable
 * @since 0.1.0
 */
-/**
-* The atom the loader started and the server sent: the first serializable
-* atom in `atom`'s `initialValueTarget` chain, starting with `atom`. An
-* AtomRpc query is serializable itself, though it points at an inner atom.
-*/
-const sourceOf = (atom) => {
-	for (let target = atom; target !== void 0; target = target.initialValueTarget) if (Atom.isSerializable(target)) return target;
-	return atom;
-};
 /**
 * Reads a handle through React Suspense, through the source that made it: a
 * result streamed from the server, a hydrated one, or one a loader started.

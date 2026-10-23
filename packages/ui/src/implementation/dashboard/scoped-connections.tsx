@@ -10,7 +10,7 @@ import {
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { Exit } from "effect";
 import { AsyncResult } from "effect/reactivity";
-import type { AccountId, App, AppId, ToolName } from "@executor-js/sdk";
+import type { AccountId, App, AppId, ToolName, VersionId } from "@executor-js/sdk";
 import { ConnectionId, type ConnectionView } from "@executor-js/mcp-auth/connections";
 import type { AccountSummary, FailureProps, Inventory } from "../../contracts/dashboard.ts";
 import {
@@ -159,6 +159,8 @@ export function ScopedConnectionsPage<E, EL extends E, ES extends E, ER extends 
   agents,
   docs = publicDocsBaseUrl,
   renderTools,
+  toolsApp,
+  onToolsApp,
 }: ScopedConnectionBindings<EL, ES, ER> & {
   readonly screen: ScopedConnectionScreen;
   readonly links: ScopedConnectionLinks;
@@ -175,6 +177,12 @@ export function ScopedConnectionsPage<E, EL extends E, ES extends E, ER extends 
   /** Documentation the setup prompt points agents to. */
   readonly docs?: string;
   readonly renderTools: (props: ConnectionToolPickerProps) => ReactNode;
+  /** The app whose tool list is open, from the URL. */
+  readonly toolsApp?: AppId | undefined;
+  /** Writes the open tool list into the URL, including that app's active version. */
+  readonly onToolsApp: (
+    next: { readonly id: AppId; readonly version: VersionId | null } | undefined,
+  ) => void;
 }) {
   const [revoking, setRevoking] = useState<ConnectionView>();
   const submitRevoke = useAtomSet(revoke, { mode: "promiseExit" });
@@ -187,6 +195,8 @@ export function ScopedConnectionsPage<E, EL extends E, ES extends E, ER extends 
       existing={existing}
       inventory={inventory}
       renderTools={renderTools}
+      toolsApp={toolsApp}
+      onToolsApp={onToolsApp}
       save={save}
       Failure={Failure}
       links={links}
@@ -645,6 +655,8 @@ function ConnectionEditor<E, ES extends E>({
   existing,
   inventory,
   renderTools,
+  toolsApp,
+  onToolsApp,
   save,
   Failure,
   links,
@@ -654,6 +666,10 @@ function ConnectionEditor<E, ES extends E>({
   readonly existing: boolean;
   readonly inventory: Inventory;
   readonly renderTools: (props: ConnectionToolPickerProps) => ReactNode;
+  readonly toolsApp: AppId | undefined;
+  readonly onToolsApp: (
+    next: { readonly id: AppId; readonly version: VersionId | null } | undefined,
+  ) => void;
   readonly save: ScopedConnectionBindings<never, ES, never>["save"];
   readonly Failure: ComponentType<FailureProps<E>>;
   readonly links: ScopedConnectionLinks;
@@ -664,7 +680,6 @@ function ConnectionEditor<E, ES extends E>({
   const [draft, setDraft] = useState(initial);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>(initial.apps.length > 0 ? "selected" : "all");
-  const [expanded, setExpanded] = useState<AppId>();
   const query = useDeferredValue(search.trim().toLowerCase());
   const nameId = useId();
   // Apps already in the connection come first; the order is fixed so rows never jump on toggle.
@@ -833,8 +848,12 @@ function ConnectionEditor<E, ES extends E>({
               key={choice.app.id}
               choices={choice}
               selection={selections.get(choice.app.id)}
-              expanded={expanded === choice.app.id}
-              onExpandedChange={(open) => setExpanded(open ? choice.app.id : undefined)}
+              expanded={toolsApp === choice.app.id}
+              onExpandedChange={(open) =>
+                onToolsApp(
+                  open ? { id: choice.app.id, version: choice.app.activeVersion } : undefined,
+                )
+              }
               onChange={(next) => setSelection(choice.app.id, next)}
               renderTools={renderTools}
             />

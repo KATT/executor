@@ -7,8 +7,8 @@ import { catalogIconsAtom } from "@executor-js/ui/contracts/icons";
 
 const catalogIcons = catalogIconsAtom(dashboardAtoms.catalog);
 
-const AppLink = ({ app, view, tool, ...props }: AppLinkProps) => (
-  <Link to="/apps/$appId" params={{ appId: app }} search={{ view, tool }} {...props} />
+const AppLink = ({ app, view, tool, version, ...props }: AppLinkProps) => (
+  <Link to="/apps/$appId" params={{ appId: app }} search={{ view, tool, version }} {...props} />
 );
 const AccountLink = ({ account, ...props }: AccountLinkProps) => (
   <Link to="/accounts" search={{ account }} {...props} />

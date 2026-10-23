@@ -90,6 +90,26 @@ const ensure = atoms.ensure;
 */
 const fetch = atoms.fetch;
 /**
+* `Loader.Loader`'s `run` on the request's registry: runs an Effect that
+* needs the registry, such as the Effect verbs in an `Effect.gen`.
+*
+* **Example**
+*
+* ```ts
+* const handles = await run(
+*   Effect.gen(function* () {
+*     const issueHandle = yield* Loader.ensure(issue, id)
+*     return { comments: yield* Loader.prefetch(commentPage, id, 0), issue: issueHandle }
+*   })
+* )
+* ```
+*
+* @stability unstable
+* @category verbs
+* @since 0.2.3
+*/
+const run = atoms.run;
+/**
 * `Hydration.dehydrate` on the request's registry, for `HydrateAtoms`.
 *
 * **Gotchas**
@@ -110,4 +130,4 @@ const fetch = atoms.fetch;
 * @since 0.1.0
 */
 const dehydrate = atoms.dehydrate;
-export { HydrateAtoms, RegistryProvider, dehydrate, ensure, fetch, getRegistry, makeRequestAtoms, prefetch };
+export { HydrateAtoms, RegistryProvider, dehydrate, ensure, fetch, getRegistry, makeRequestAtoms, prefetch, run };

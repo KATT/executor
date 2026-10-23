@@ -106,12 +106,18 @@ export const liveQueryAtom = <A, I, Q, E, E2>(options: {
   readonly query: Effect.Effect<Stream.Stream<Snapshot<A, Q>, E>, E2, DashboardClient>;
 }) => {
   const live = liveStreamAtom(options.query);
-  // On the server this follows the subscription and is sent with the page. In the browser the
-  // page's value replaces it when the node is created; otherwise it also follows the subscription.
-  const rendered = Atom.readable((get) => AsyncResult.value(get(live))).pipe(
+  // The server sends this snapshot with the page. It stays Initial until the first success, so a
+  // still-loading read streams as a promise. In the browser the page's value replaces it when the
+  // node is created; otherwise it also follows the subscription.
+  const rendered = Atom.readable((get): Atom.Type<typeof live> => {
+    const result = get(live);
+    return AsyncResult.isSuccess(result) ? result : AsyncResult.initial(true);
+  }).pipe(
     Atom.serializable({
       key: `local:live:${options.name}:${requestKey(options.key)}`,
-      schema: Schema.Option(options.success),
+      schema: AsyncResult.Schema({
+        success: options.success,
+      }) as unknown as Schema.Codec<Atom.Type<typeof live>, unknown>,
     }),
   );
   const view = Atom.readable(
@@ -121,15 +127,14 @@ export const liveQueryAtom = <A, I, Q, E, E2>(options: {
       const snapshot = get(rendered);
       const previous = get.self<Atom.Type<typeof live>>();
       const following = Option.isSome(previous) && !pageSnapshots.has(previous.value);
-      if (following || !AsyncResult.isInitial(result) || Option.isNone(snapshot)) return result;
-      const shown = AsyncResult.success(snapshot.value);
-      pageSnapshots.add(shown);
-      return shown;
+      if (following || !AsyncResult.isInitial(result) || !AsyncResult.isSuccess(snapshot))
+        return result;
+      pageSnapshots.add(snapshot);
+      return snapshot;
     },
     (refresh) => refresh(live),
   );
-  // TODO(raf-effect-atom gap: Loader verbs die on derived atoms instead of following initialValueTarget)
-  return Object.assign(view, { snapshot: rendered, initialValueTarget: rendered });
+  return Object.assign(view, { initialValueTarget: rendered });
 };
 
 /** The inventory updates from committed storage changes, including writes made through MCP and the SDK. */
@@ -139,9 +144,6 @@ const liveOverviewAtom = liveQueryAtom({
   success: DashboardOverview,
   query: Effect.flatMap(DashboardClient, (client) => client.dashboard.liveOverview()),
 });
-
-/** The serializable first snapshot `overviewAtom` hydrates from. Loaders start this atom. */
-export const overviewSnapshotAtom = liveOverviewAtom.snapshot;
 
 /** Repaint at the next known expiry without polling the server or loading every app's tools. */
 export const overviewAtom = acknowledgedQuery(
@@ -184,16 +186,17 @@ export const overviewAtom = acknowledgedQuery(
 );
 
 /** Follow current configuration and version activation while this app is mounted. */
-export const appAtom = Atom.family((app: AppId) =>
-  liveQueryAtom({
+export const appAtom = Atom.family((app: AppId) => {
+  const live = liveQueryAtom({
     name: "app",
     key: { app },
     success: DashboardApp,
     query: Effect.flatMap(DashboardClient, (client) =>
       client.dashboard.liveApp({ params: { app } }),
     ),
-  }).pipe(acknowledgedQuery),
-);
+  });
+  return live.pipe(acknowledgedQuery);
+});
 
 /** Immutable retained source follows the version selected by its live app atom. */
 export const sourceAtom = Atom.family((key: { readonly app: AppId; readonly version: VersionId }) =>
@@ -227,8 +230,8 @@ class ToolKey extends Data.Class<{
   readonly app: AppId;
   readonly version?: VersionId | null | undefined;
 }> {}
-const toolQueries = Atom.family((key: ToolKey) =>
-  liveQueryAtom({
+const toolQueries = Atom.family((key: ToolKey) => {
+  const live = liveQueryAtom({
     name: "tools",
     // Every part of the key selects a distinct subscription, including those the request omits.
     key: { app: key.app, version: key.version },
@@ -239,19 +242,23 @@ const toolQueries = Atom.family((key: ToolKey) =>
         sseOptions: { maxEventSize: 16 * 1024 * 1024 },
       }),
     ),
-  }).pipe(refreshedOnFocus, currentQuery),
-);
+  });
+  return live.pipe(refreshedOnFocus, currentQuery);
+});
 
 /** One catalog per app and version. */
 export const toolsAtom = (key: ConstructorParameters<typeof ToolKey>[0]) =>
   toolQueries(new ToolKey(key));
-
-const toolLists = Atom.family((key: ToolKey) =>
-  Atom.map(
-    toolQueries(key),
-    AsyncResult.map((page) => page.tools),
-  ),
-);
+const toolLists = Atom.family((key: ToolKey) => {
+  const query = toolQueries(key);
+  // `Atom.map` does not point at its source, so a loader would not follow this list.
+  return Object.assign(
+    Atom.mapResult(query, (page) => page.tools),
+    {
+      initialValueTarget: query,
+    },
+  );
+});
 /** The catalog's tools alone, for pickers that do not group them. */
 export const toolListAtom = (key: ConstructorParameters<typeof ToolKey>[0]) =>
   toolLists(new ToolKey(key));

@@ -2,8 +2,8 @@
 
 Executor consumes `raf-effect-atom` and `effect-atom-boundary` from this folder. The packages are not on npm. Each workspace package is the built `dist` from a `pnpm pack` tarball committed next to it:
 
-- `raf-effect-atom-0.2.1.tgz`
-- `effect-atom-boundary-0.1.1.tgz`
+- `raf-effect-atom-0.2.5.tgz`
+- `effect-atom-boundary-0.1.1.tgz` (built from main after the AtomHttpApi `ErrorsOf` fix; the package version is unchanged)
 
 The workspace `package.json` files are written here, not taken from the tarball. They depend on executor's exact `effect`, `@effect/atom-react`, and `react` versions. Only the root export is exposed, so the TanStack Router, React Router, and Next entry points are not installed.
 

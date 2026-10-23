@@ -848,7 +848,7 @@
     },
     "vendor/raf-effect-atom/raf-effect-atom": {
       "name": "raf-effect-atom",
-      "version": "0.2.1",
+      "version": "0.2.5",
       "dependencies": {
         "@effect/atom-react": "4.0.1",
         "effect": "4.0.1",

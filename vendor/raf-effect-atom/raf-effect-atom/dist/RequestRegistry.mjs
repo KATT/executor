@@ -33,10 +33,15 @@ const requestRegistries = /* @__PURE__ */ new WeakSet();
 *   in the background, and a loader's lease lasts until the registry is
 *   disposed. In development, the loader verbs refuse an atom that isn't
 *   serializable, because the browser would request it again.
+* - `initialValues` are values the request's atoms start with, set on each
+*   atom, or on the end of its `initialValueTarget` chain, before anything
+*   reads it. They reach atoms `registry.set` can't, such as a readable atom
+*   that provides the request's `fetch`, and each stays mounted until the
+*   registry is disposed.
 * - `seed` sets what the request's atoms need before they run, such as the
 *   page request's cookie for an RPC protocol that forwards it. It can be
 *   async, for request data only a promise gives, such as Next.js's
-*   `headers()`.
+*   `headers()`. It runs after `initialValues` are set.
 *
 * **Gotchas**
 *
@@ -47,9 +52,11 @@ const requestRegistries = /* @__PURE__ */ new WeakSet();
 * **Example**
 *
 * ```ts
+* import { Atom } from "effect/reactivity"
 * import { RequestRegistry } from "raf-effect-atom"
 *
 * const registry = RequestRegistry.make({
+*   initialValues: [Atom.initialValue(requestFetch, request.fetch)],
 *   seed: (registry) => registry.set(requestCookie, request.headers.get("cookie") ?? undefined)
 * })
 * ```
@@ -59,8 +66,10 @@ const requestRegistries = /* @__PURE__ */ new WeakSet();
 * @since 0.1.0
 */
 const make = (options) => {
-	const registry = AtomRegistry.make();
+	const initialValues = options?.initialValues === void 0 ? void 0 : Array.from(options.initialValues);
+	const registry = AtomRegistry.make({ initialValues });
 	requestRegistries.add(registry);
+	if (initialValues !== void 0) for (const [atom] of initialValues) registry.mount(atom);
 	if (options?.seed !== void 0) run(registry, options.seed);
 	return registry;
 };

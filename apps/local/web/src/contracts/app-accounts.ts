@@ -4,33 +4,37 @@
  * connecting an account reads the app's discovery again.
  */
 import { hydrated } from "@executor-js/ui/contracts/http";
-import { acknowledge, acknowledgedQuery } from "@executor-js/ui/contracts/mutations";
+import { acknowledge, acknowledgedQuery, follows } from "@executor-js/ui/contracts/mutations";
 import { Data, Effect } from "effect";
-import { Atom } from "effect/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 import type { AccountId, AccountScope, AppId, VersionId } from "@executor-js/sdk";
 import { DashboardClient, overviewAtom } from "./api.ts";
 import { refreshAppDiscovery } from "./app-discovery.ts";
 
 /** Account changes arrive through the live inventory, so each update reads the source again. */
-const followInventory = <A>(source: Atom.Atom<A>) =>
-  Atom.readable(
-    (get) => {
-      get.subscribe(overviewAtom, () => get.refresh(source));
-      return get(source);
-    },
-    (refresh) => refresh(source),
+const followInventory = <A, E>(source: Atom.Atom<AsyncResult.AsyncResult<A, E>>) =>
+  follows(
+    Atom.readable(
+      (get): AsyncResult.AsyncResult<A, E> => {
+        get.subscribe(overviewAtom, () => get.refresh(source));
+        return get(source);
+      },
+      (refresh) => refresh(source),
+    ),
+    source,
   );
 
-const appLinks = Atom.family((app: AppId) =>
-  DashboardClient.query("dashboard", "appList", hydrated({ params: { app } })).pipe(
-    acknowledgedQuery,
-  ),
+const appLinksHttp = Atom.family((app: AppId) =>
+  DashboardClient.query("dashboard", "appList", hydrated({ params: { app } })),
 );
-const userLinks = Atom.family((app: AppId) =>
-  DashboardClient.query("dashboard", "userList", hydrated({ params: { app } })).pipe(
-    acknowledgedQuery,
-  ),
+const userLinksHttp = Atom.family((app: AppId) =>
+  DashboardClient.query("dashboard", "userList", hydrated({ params: { app } })),
 );
+const appLinks = Atom.family((app: AppId) => appLinksHttp(app).pipe(acknowledgedQuery));
+const userLinks = Atom.family((app: AppId) => userLinksHttp(app).pipe(acknowledgedQuery));
+/** Serializable link queries. Loaders start these; the page reads the inventory-following views. */
+export const appLinksQuery = appLinksHttp;
+export const userLinksQuery = userLinksHttp;
 const lists = { app: appLinks, user: userLinks };
 /** The accounts linked to the app's own requirements, oldest first per requirement. */
 export const appLinksAtom = Atom.family((app: AppId) => followInventory(appLinks(app)));

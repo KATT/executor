@@ -1,4 +1,4 @@
-import { Seed } from "./RequestRegistry.mjs";
+import { InitialValues, Seed } from "./RequestRegistry.mjs";
 import * as EffectHydration from "effect/reactivity/Hydration";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { AnyRouter } from "@tanstack/react-router";
@@ -39,6 +39,12 @@ export interface RouterAtomsOptions<TRouter extends AnyRouter> {
  *   default registry does. An atom's own `Atom.setIdleTTL` or
  *   `Atom.keepAlive` wins. The server's request registry lives for one
  *   request, so it has none.
+ * - `initialValues` are values both registries start with, as
+ *   `AtomRegistry.make`'s `initialValues`, such as the session the server
+ *   verified or a readable atom that provides the request's `fetch`. The
+ *   server's request registry keeps those atoms mounted until it's disposed.
+ *   The browser's registry drops an atom no component reads, value included,
+ *   so make one whose value must outlive its readers `Atom.keepAlive`.
  * - `seed` runs on the server's request registry before the loaders start
  *   atoms in it, as `RequestRegistry.make`'s does: set what the request's
  *   atoms need, such as its cookie. It can be async. The browser's registry
@@ -64,6 +70,7 @@ export interface RouterAtomsOptions<TRouter extends AnyRouter> {
  */
 export declare const makeRegistry: (options?: {
   readonly defaultIdleTTL?: number | undefined;
+  readonly initialValues?: InitialValues | undefined;
   readonly seed?: Seed | undefined;
 }) => AtomRegistry.AtomRegistry;
 /**

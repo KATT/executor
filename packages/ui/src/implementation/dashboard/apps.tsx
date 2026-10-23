@@ -136,6 +136,7 @@ function AppsList({
                 <AppLink
                   className="app-card flex min-h-[137px] flex-col min-w-0 p-[16px] border border-border rounded-[8px] bg-background [transition:border-color_120ms,_background-color_120ms] hover:border-input hover:bg-muted focus-visible:[outline:2px_solid_var(--ring)] focus-visible:outline-offset-[3px] max-[600px]:grid max-[600px]:min-h-0 max-[600px]:grid-cols-[auto_minmax(0,1fr)_auto] max-[600px]:items-center max-[600px]:gap-x-3 max-[600px]:gap-y-0.5 max-[600px]:px-3.5 max-[600px]:py-3"
                   app={app.id}
+                  version={app.activeVersion ?? undefined}
                   aria-label={`Open ${app.name}${needsSignIn ? ", needs sign-in" : unavailable ? ", account unavailable" : ""}`}
                 >
                   <div className="app-card-heading flex items-center justify-between gap-3 max-[600px]:contents">

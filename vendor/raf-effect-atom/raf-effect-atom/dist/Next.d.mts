@@ -109,6 +109,26 @@ export declare const ensure: <S extends Source>(source: S, ...args: ArgsOf<S>) =
  */
 export declare const fetch: <S extends Source>(source: S, ...args: ArgsOf<S>) => Promise<LoadedHandle<S>>;
 /**
+ * `Loader.Loader`'s `run` on the request's registry: runs an Effect that
+ * needs the registry, such as the Effect verbs in an `Effect.gen`.
+ *
+ * **Example**
+ *
+ * ```ts
+ * const handles = await run(
+ *   Effect.gen(function* () {
+ *     const issueHandle = yield* Loader.ensure(issue, id)
+ *     return { comments: yield* Loader.prefetch(commentPage, id, 0), issue: issueHandle }
+ *   })
+ * )
+ * ```
+ *
+ * @stability unstable
+ * @category verbs
+ * @since 0.2.3
+ */
+export declare const run: Loader["run"];
+/**
  * `Hydration.dehydrate` on the request's registry, for `HydrateAtoms`.
  *
  * **Gotchas**

@@ -27,13 +27,13 @@ export function useDashboardAtoms() {
   return dashboardAtoms(useOrganizationRoute().organization);
 }
 
-const AppLink = ({ app, view, tool, ...props }: AppLinkProps) => {
+const AppLink = ({ app, view, tool, version, ...props }: AppLinkProps) => {
   const { slug: organizationSlug } = useOrganizationRoute();
   return (
     <Link
       to="/org/$organizationSlug/apps/$appId"
       params={{ organizationSlug, appId: app }}
-      search={{ view, tool }}
+      search={{ view, tool, version }}
       {...props}
     />
   );

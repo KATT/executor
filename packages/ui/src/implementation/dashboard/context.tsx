@@ -30,6 +30,13 @@ export function useQuery<A, E>(atom: Query<A, E>) {
   return { result, data: AsyncResult.value(result), refresh };
 }
 
+/** Read a handle the route loader started. */
+export function useStartedQuery<A, E>(read: StartedRead<A, E>) {
+  const result = useAtomResult(read.source, read.handle);
+  const refresh = useAtomRefresh(read.source);
+  return { result, data: AsyncResult.value(result), refresh };
+}
+
 /** Loading/failure rendering follows the same source lifetime in every host. */
 export function QueryView<A, E>({
   query,

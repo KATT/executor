@@ -13,7 +13,8 @@ import {
   ViewIcon,
 } from "@hugeicons/core-free-icons";
 import type { Query, QueryProps, ToolCatalog } from "../../contracts/dashboard.ts";
-import { QueryResult, useQuery } from "./context.tsx";
+import { QueryResult, useQuery, useStartedQuery } from "./context.tsx";
+import type { StartedRead } from "../../contracts/started-read.ts";
 import { CopyButton } from "./code.tsx";
 import { humanize, SchemaSection } from "./tool-schema.tsx";
 import { ToolMarkdown } from "./markdown.tsx";
@@ -39,25 +40,65 @@ export interface ToolLinkProps {
  * A group that is a router, such as one MCP server, shows the router's title and description.
  * On phones the inspector fills the section and the list opens as a panel over it.
  */
-export function ToolBrowser<E>({
-  query,
+export function ToolBrowser<E>(
+  props: QueryProps<ToolCatalog, E> & {
+    /** Undefined when the tool left the catalog after the list was read. */
+    readonly detail: (tool: ToolSummary) => Query<Tool | undefined, E>;
+    readonly selected: string | undefined;
+    /** Each tool name links to that tool on this app. */
+    readonly ToolLink: ComponentType<ToolLinkProps>;
+    readonly renderAction?: (tool: ToolSummary) => ReactNode;
+    /** Replaces the empty catalog message when the host knows why the app listed nothing. */
+    readonly empty?: ReactNode;
+    /** Present when the route loader started this catalog. */
+    readonly read?: StartedRead<ToolCatalog, E>;
+  },
+) {
+  return props.read === undefined ? (
+    <ToolBrowserFromQuery {...props} />
+  ) : (
+    <ToolBrowserFromRead {...props} read={props.read} />
+  );
+}
+
+function ToolBrowserFromQuery<E>(props: QueryProps<ToolCatalog, E> & ToolBrowserExtras<E>) {
+  const state = useQuery(props.query);
+  return <ToolBrowserView {...props} {...state} />;
+}
+
+function ToolBrowserFromRead<E>(
+  props: QueryProps<ToolCatalog, E> &
+    ToolBrowserExtras<E> & { readonly read: StartedRead<ToolCatalog, E> },
+) {
+  const { read, ...rest } = props;
+  const state = useStartedQuery(read);
+  return <ToolBrowserView {...rest} {...state} />;
+}
+
+type ToolBrowserExtras<E> = {
+  readonly detail: (tool: ToolSummary) => Query<Tool | undefined, E>;
+  readonly selected: string | undefined;
+  readonly ToolLink: ComponentType<ToolLinkProps>;
+  readonly renderAction?: (tool: ToolSummary) => ReactNode;
+  readonly empty?: ReactNode;
+};
+
+function ToolBrowserView<E>({
   detail,
   Failure,
   selected,
   ToolLink,
   renderAction,
   empty,
-}: QueryProps<ToolCatalog, E> & {
-  /** Undefined when the tool left the catalog after the list was read. */
-  readonly detail: (tool: ToolSummary) => Query<Tool | undefined, E>;
-  readonly selected: string | undefined;
-  /** Each tool name links to that tool on this app. */
-  readonly ToolLink: ComponentType<ToolLinkProps>;
-  readonly renderAction?: (tool: ToolSummary) => ReactNode;
-  /** Replaces the empty catalog message when the host knows why the app listed nothing. */
-  readonly empty?: ReactNode;
-}) {
-  const { result, data, refresh } = useQuery(query);
+  result,
+  data,
+  refresh,
+}: QueryProps<ToolCatalog, E> &
+  ToolBrowserExtras<E> & {
+    readonly result: ReturnType<typeof useQuery<ToolCatalog, E>>["result"];
+    readonly data: ReturnType<typeof useQuery<ToolCatalog, E>>["data"];
+    readonly refresh: () => void;
+  }) {
   const [search, setSearch] = useState("");
   const [listOpen, setListOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());

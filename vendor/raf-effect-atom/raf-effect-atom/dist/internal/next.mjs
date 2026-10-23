@@ -22,7 +22,8 @@ const make = (options) => {
 		ensure: (source, ...args) => getLoader().ensure(source, ...args),
 		fetch: (source, ...args) => getLoader().fetch(source, ...args),
 		getRegistry,
-		prefetch: (source, ...args) => getLoader().prefetch(source, ...args)
+		prefetch: (source, ...args) => getLoader().prefetch(source, ...args),
+		run: (effect, runOptions) => getLoader().run(effect, runOptions)
 	};
 };
 export { make };

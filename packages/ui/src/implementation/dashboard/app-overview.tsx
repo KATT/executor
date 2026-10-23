@@ -42,7 +42,7 @@ export function AppOverview({
           action={
             source ? (
               <Button asChild disabledReason={sourceDisabledReason}>
-                <AppLink app={app.id} view="source">
+                <AppLink app={app.id} version={app.activeVersion ?? undefined} view="source">
                   Open source
                 </AppLink>
               </Button>
@@ -78,6 +78,7 @@ export function AppOverview({
             {!undeployed && (
               <AppLink
                 app={app.id}
+                version={app.activeVersion ?? undefined}
                 view="accounts"
                 className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
               >
@@ -109,7 +110,7 @@ export function AppOverview({
                 className="h-auto gap-1.5 rounded-none p-0 text-xs font-normal text-muted-foreground max-[740px]:min-h-0"
                 disabledReason={sourceDisabledReason}
               >
-                <AppLink app={app.id} view="source">
+                <AppLink app={app.id} version={app.activeVersion ?? undefined} view="source">
                   View files
                   <HugeiconsIcon
                     icon={ArrowRight02Icon}
@@ -179,7 +180,9 @@ export function AppOverviewTools<E>({
                 <AppLink
                   key={tool.name}
                   app={app.id}
+                  version={app.activeVersion ?? undefined}
                   view="tools"
+                  tool={tool.name}
                   className="group flex min-w-0 items-center gap-3 border-b py-3.5 last:border-b-0 hover:bg-muted/20 focus-visible:outline-ring"
                 >
                   <div className="min-w-0 flex-1">
@@ -217,6 +220,7 @@ function ToolsPreviewFrame({ app, children }: { readonly app: App; readonly chil
         {app.activeVersion !== null && (
           <AppLink
             app={app.id}
+            version={app.activeVersion ?? undefined}
             view="tools"
             className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
           >

@@ -2,7 +2,7 @@ import { createErrorBoundary } from "effect-atom-boundary";
 import { AuthenticationUnavailable, Unauthorized } from "@executor-js/hosted-server/auth";
 import { OrganizationForbidden } from "@executor-js/hosted-server/organization";
 import { ErrorNotice } from "@executor-js/ui/dashboard/error-notice";
-import { mcpConnectionsQuery } from "../../contracts/mcp-connections.ts";
+import { HostedClient } from "../../contracts/api.ts";
 
 function SessionFailure({
   error,
@@ -37,20 +37,20 @@ function AccessFailure({
 // TODO(raf-effect-atom gap: AtomHttpApi query errors omit HttpClientError)
 const [SessionBoundary, useSessionBoundary] = createErrorBoundary({
   name: "HostedSession",
-  errors: mcpConnectionsQuery,
+  errors: HostedClient,
   catchTags: { Unauthorized: SessionFailure },
 });
 
 const [AvailabilityBoundary, useAvailabilityBoundary] = createErrorBoundary({
   name: "HostedAuthentication",
-  errors: mcpConnectionsQuery,
+  errors: HostedClient,
   parent: SessionBoundary,
   catchTags: { AuthenticationUnavailable: AvailabilityFailure },
 });
 
 const [AccessBoundary, useAccessBoundary] = createErrorBoundary({
   name: "HostedAccess",
-  errors: mcpConnectionsQuery,
+  errors: HostedClient,
   parent: AvailabilityBoundary,
   catchTags: { OrganizationForbidden: AccessFailure },
 });

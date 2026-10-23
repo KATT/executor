@@ -1,4 +1,5 @@
 import { createFileRoute, Outlet, useLocation } from "@tanstack/react-router";
+import { ensureOrganizationAccess } from "@executor-js/hosted-web/contracts/guarded-read";
 import { DashboardEntryPending } from "@executor-js/hosted-web/entry";
 import { PagePending } from "@executor-js/hosted-web/page-pending";
 import { DashboardShell } from "@executor-js/hosted-web/shell";
@@ -8,6 +9,7 @@ import { Navigation } from "../navigation.tsx";
 
 /** The URL owns this tab's organization; all product pages inherit this boundary. */
 export const Route = createFileRoute("/org/$organizationSlug")({
+  loader: ({ context, params }) => ensureOrganizationAccess(context.atoms, params.organizationSlug),
   component: OrganizationLayout,
   // The server streams the dashboard frame and navigation first, then the organization.
   pendingComponent: OrganizationPending,

@@ -1,4 +1,4 @@
-import { AccountConnectionId, AccountId } from "@executor-js/sdk";
+import { AccountConnectionId, AccountId, AppId, VersionId } from "@executor-js/sdk";
 import { GrantId } from "@executor-js/mcp-auth/grants";
 import { AppView, AppViewFromUrl, AssistantId } from "@executor-js/ui/contracts/dashboard";
 import { Option, Schema } from "effect";
@@ -111,11 +111,24 @@ export function parseAppSearch(search: Record<string, unknown>): ReturnType<
 > & {
   readonly view?: AppView | undefined;
   readonly tool?: string | undefined;
+  readonly version?: VersionId | undefined;
 } {
   return {
     ...parseConnectionSearch(search),
     view: Option.getOrUndefined(Schema.decodeUnknownOption(AppViewFromUrl)(search.view)),
     tool: Option.getOrUndefined(Schema.decodeUnknownOption(Schema.NonEmptyString)(search.tool)),
+    version: Option.getOrUndefined(Schema.decodeUnknownOption(VersionId)(search.version)),
+  };
+}
+
+/** The connection editor's open tool list. The version is the app's active version. */
+export function parseConnectSearch(search: Record<string, unknown>): {
+  readonly app?: AppId | undefined;
+  readonly version?: VersionId | undefined;
+} {
+  return {
+    app: Option.getOrUndefined(Schema.decodeUnknownOption(AppId)(search.app)),
+    version: Option.getOrUndefined(Schema.decodeUnknownOption(VersionId)(search.version)),
   };
 }
 

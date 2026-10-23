@@ -2,7 +2,7 @@ import { __exportAll } from "./_virtual/_rolldown/runtime.mjs";
 import { hydrated } from "./Hydration.mjs";
 import { isDevelopment } from "./internal/development.mjs";
 import { keyOf, take } from "./internal/leases.mjs";
-import { atomOf, loaded as loaded$1, make as make$1 } from "./internal/handles.mjs";
+import { atomOf, loaded as loaded$1, make as make$1, sourceOf } from "./internal/handles.mjs";
 import { afterSeed, pending } from "./internal/seeds.mjs";
 import { isRequestRegistry } from "./RequestRegistry.mjs";
 import * as Atom from "effect/reactivity/Atom";
@@ -70,14 +70,16 @@ const start = Effect.fnUntraced(function* (atom) {
 	const seed = pending(registry);
 	if (seed !== void 0) yield* Effect.promise(() => seed);
 	const request = isRequestRegistry(registry);
-	if (request && !Atom.isSerializable(atom) && (yield* isDevelopment)) return yield* Effect.die(/* @__PURE__ */ new Error(`raf-effect-atom: a loader started ${String(atom)}, which isn't serializable, so the browser would request it again. Give it a serialization key, such as AtomRpc's serializationKey option.`));
+	const source = sourceOf(atom);
+	if (request && !Atom.isSerializable(source) && (yield* isDevelopment)) return yield* Effect.die(/* @__PURE__ */ new Error(`raf-effect-atom: a loader started ${String(atom)}, which isn't serializable and doesn't point at a serializable atom with initialValueTarget, so the browser would request it again. Give it a serialization key, such as AtomRpc's serializationKey option.`));
 	const ttl = request ? void 0 : Duration.toMillis(yield* LeaseTTL);
-	const target = hydrated(atom);
+	const target = hydrated(source);
 	const key = keyOf(target);
 	const existed = registry.getNodes().has(key) || Predicate.isString(key) && registry.preloadedSerializable.has(key);
 	take(registry, target, ttl);
 	return {
 		existed,
+		read: source === atom ? hydrated(atom) : atom,
 		registry,
 		request,
 		target
@@ -115,10 +117,24 @@ const rejectDefects = (result) => {
 *
 * **Details**
 *
-* Starts the atom if it isn't in the registry, and leaves it alone if it is.
-* Takes a lease either way. The component that reads the handle suspends
-* until the result settles. On a request registry whose async seed is still
-* running, it waits for the seed first.
+* - Starts the atom if it isn't in the registry, and leaves it alone if it
+*   is. Takes a lease either way. The component that reads the handle
+*   suspends until the result settles. On a request registry whose async
+*   seed is still running, it waits for the seed first.
+* - A derived atom that isn't serializable, such as an error boundary's
+*   `wrap(source)`, starts the first serializable atom its
+*   `initialValueTarget` chain points at, the one `useAtomResult` reads it
+*   through: the lease, the handle's key and what the server sends are
+*   that atom's. `ensure` and `fetch` wait for the derived atom's own
+*   result.
+*
+* **Gotchas**
+*
+* The server sends a result still loading as a promise only when the atom
+* it sends holds an `AsyncResult`. A derived atom whose serializable atom
+* holds another value, such as an `Option` snapshot, crosses with the value
+* it has when the registry is dehydrated: point it at an `AsyncResult`
+* atom, or `ensure` it.
 *
 * **Example**
 *
@@ -181,7 +197,7 @@ const loaded = (args, atom, result) => {
 const ensure = (source, ...args) => Effect.gen(function* () {
 	const atom = atomOf(source, args);
 	const started = yield* start(atom);
-	const result = yield* settled(started.registry, started.target, started.request ? isSettled : AsyncResult.isNotInitial);
+	const result = yield* settled(started.registry, started.read, started.request ? isSettled : AsyncResult.isNotInitial);
 	return loaded(args, atom, result);
 });
 /**
@@ -207,12 +223,12 @@ const ensure = (source, ...args) => Effect.gen(function* () {
 const fetch = (source, ...args) => Effect.gen(function* () {
 	const atom = atomOf(source, args);
 	const started = yield* start(atom);
-	const { registry, target } = started;
-	if (started.existed && isSettled(registry.get(target))) {
+	const { read, registry, target } = started;
+	if (started.existed && isSettled(registry.get(read))) {
 		const node = registry.getNodes().get(keyOf(target));
-		registry.refresh(node?.atom ?? target);
+		registry.refresh(read === target ? node?.atom ?? target : read);
 	}
-	const result = yield* settled(registry, target, isSettled);
+	const result = yield* settled(registry, read, isSettled);
 	return loaded(args, atom, result);
 });
 const results = /* @__PURE__ */ new WeakMap();
@@ -253,6 +269,7 @@ const result = (handle) => {
 const runPromise = (effect, signal) => Effect.runPromise(effect, { signal }).catch((error) => {
 	throw signal?.aborted ? signal.reason : error;
 });
+const either = (first, second) => first === void 0 || second === void 0 ? first ?? second : AbortSignal.any([first, second]);
 /**
 * Creates the Promise verbs over one registry.
 *
@@ -261,14 +278,14 @@ const runPromise = (effect, signal) => Effect.runPromise(effect, { signal }).cat
 * Use in a framework integration, in loaders that are async functions, or
 * in an event handler that starts an atom before the state change that
 * renders its reader, for state that can't be in the URL, such as a
-* search-as-you-type query. In Effect code, use the verbs directly with the
-* `AtomRegistry` provided.
+* search-as-you-type query. In Effect code, use the verbs directly, and run
+* the Effect on the registry with `run`.
 *
 * **Details**
 *
-* With a `signal`, an aborted request or navigation stops waiting: `ensure`
-* and `fetch` reject with the signal's reason, and the atoms they started
-* keep loading. The React Router and Next.js integrations pass the
+* With a `signal`, an aborted request or navigation stops waiting: `ensure`,
+* `fetch` and `run` reject with the signal's reason, and the atoms they
+* started keep loading. The React Router and Next.js integrations pass the
 * request's.
 *
 * **Example**
@@ -301,7 +318,8 @@ const make = (registry, options) => {
 				Effect.runSync(provide(start(atom)));
 			});
 			return make$1(args, atom);
-		}
+		},
+		run: (effect, runOptions) => runPromise(provide(effect), either(signal, runOptions?.signal))
 	};
 };
 export { LeaseTTL, Loader_exports, ensure, fetch, make, prefetch, result };

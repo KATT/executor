@@ -40,10 +40,24 @@ export declare const LeaseTTL: Context.Reference<Duration.Duration>;
  *
  * **Details**
  *
- * Starts the atom if it isn't in the registry, and leaves it alone if it is.
- * Takes a lease either way. The component that reads the handle suspends
- * until the result settles. On a request registry whose async seed is still
- * running, it waits for the seed first.
+ * - Starts the atom if it isn't in the registry, and leaves it alone if it
+ *   is. Takes a lease either way. The component that reads the handle
+ *   suspends until the result settles. On a request registry whose async
+ *   seed is still running, it waits for the seed first.
+ * - A derived atom that isn't serializable, such as an error boundary's
+ *   `wrap(source)`, starts the first serializable atom its
+ *   `initialValueTarget` chain points at, the one `useAtomResult` reads it
+ *   through: the lease, the handle's key and what the server sends are
+ *   that atom's. `ensure` and `fetch` wait for the derived atom's own
+ *   result.
+ *
+ * **Gotchas**
+ *
+ * The server sends a result still loading as a promise only when the atom
+ * it sends holds an `AsyncResult`. A derived atom whose serializable atom
+ * holds another value, such as an `Option` snapshot, crosses with the value
+ * it has when the registry is dehydrated: point it at an `AsyncResult`
+ * atom, or `ensure` it.
  *
  * **Example**
  *
@@ -165,21 +179,30 @@ export interface Loader {
    * the seed resolves.
    */
   readonly prefetch: <S extends Source>(source: S, ...args: ArgsOf<S>) => Handle<S>;
+  /**
+   * Runs an Effect that needs the registry, such as the Effect verbs in an
+   * `Effect.gen`, as a Promise that rejects with its squashed cause.
+   * Aborting `signal`, or the one the verbs were made with, interrupts it,
+   * and the Promise rejects with the abort reason.
+   */
+  readonly run: <A, E>(effect: Effect.Effect<A, E, AtomRegistry.AtomRegistry>, options?: {
+    readonly signal?: AbortSignal | undefined;
+  }) => Promise<A>;
 }
 /**
  * Options for `make`.
  *
  * @stability unstable
  * @category models
- * @since 0.3.0
+ * @since 0.2.2
  */
 export interface MakeOptions {
   /** How long a lease lasts in the browser. See {@link LeaseTTL}. */
   readonly leaseTTL?: Duration.Input | undefined;
   /**
    * The request's or the navigation's abort signal. Aborting it interrupts
-   * the `ensure` and `fetch` calls still waiting, which reject with its
-   * reason. The atoms they started keep loading.
+   * the `ensure`, `fetch` and `run` calls still waiting, which reject with
+   * its reason. The atoms they started keep loading.
    */
   readonly signal?: AbortSignal | undefined;
 }
@@ -191,14 +214,14 @@ export interface MakeOptions {
  * Use in a framework integration, in loaders that are async functions, or
  * in an event handler that starts an atom before the state change that
  * renders its reader, for state that can't be in the URL, such as a
- * search-as-you-type query. In Effect code, use the verbs directly with the
- * `AtomRegistry` provided.
+ * search-as-you-type query. In Effect code, use the verbs directly, and run
+ * the Effect on the registry with `run`.
  *
  * **Details**
  *
- * With a `signal`, an aborted request or navigation stops waiting: `ensure`
- * and `fetch` reject with the signal's reason, and the atoms they started
- * keep loading. The React Router and Next.js integrations pass the
+ * With a `signal`, an aborted request or navigation stops waiting: `ensure`,
+ * `fetch` and `run` reject with the signal's reason, and the atoms they
+ * started keep loading. The React Router and Next.js integrations pass the
  * request's.
  *
  * **Example**

@@ -1,7 +1,7 @@
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { Schema } from "effect";
-import type { Loader } from "raf-effect-atom";
-import { started } from "@executor-js/ui/contracts/started-read";
+import { AsyncResult } from "effect/reactivity";
+import { Loader } from "raf-effect-atom";
 import { OrganizationReference } from "@executor-js/hosted-server/organization";
 import { Button } from "@executor-js/ui/components/button";
 import { Code } from "@executor-js/ui/dashboard/code";
@@ -16,13 +16,12 @@ import { ConnectedAgents } from "@executor-js/ui/dashboard/connected-agents";
 import { ConnectionToolPicker } from "@executor-js/ui/dashboard/connection-tool-picker";
 import { useOrganizationRoute } from "../components/organization.tsx";
 import { HostedFailure } from "../components/dashboard-bindings.tsx";
-import { resourceDirectoryQuery, resourceInventoryAtom } from "../../contracts/resource-access.ts";
+import { resourceInventoryAtom } from "../../contracts/resource-access.ts";
 import { connectionToolListAtom } from "../../contracts/apps.ts";
+import { parseConnectSearch } from "../../contracts/navigation.ts";
 import {
   mcpAgentsAtom,
-  mcpAgentsQuery,
   mcpConnectionsAtom,
-  mcpConnectionsQuery,
   revokeMcpAgentAtom,
   revokeMcpConnectionAtom,
   saveMcpConnectionAtom,
@@ -35,40 +34,73 @@ import {
   SessionBoundary,
   useAccessBoundary,
 } from "../components/read-boundaries.tsx";
-import type { OrganizationPageReads } from "../components/organization.tsx";
+import { startAfterAccess } from "../../contracts/guarded-read.ts";
 
 const organizationFromSlug = (slug: string) =>
   Schema.decodeUnknownSync(OrganizationReference)(slug);
 
-/** Start the connect page's reads from the URL, before the first component renders. */
+const connectReads = async (
+  atoms: Loader.Loader,
+  organization: ReturnType<typeof organizationFromSlug>,
+  search: { readonly app?: string | undefined; readonly version?: string | undefined },
+) => {
+  const parsed = parseConnectSearch(search);
+  const directory = atoms.prefetch(resourceInventoryAtom(organization));
+  const connections = atoms.prefetch(mcpConnectionsAtom(organization));
+  const agents = atoms.prefetch(mcpAgentsAtom(organization));
+  const listed =
+    parsed.app !== undefined && parsed.version !== undefined
+      ? {
+          version: parsed.version,
+          handle: atoms.prefetch(
+            connectionToolListAtom({
+              organization,
+              app: parsed.app,
+              version: parsed.version,
+            }),
+          ),
+        }
+      : undefined;
+  if (listed !== undefined || parsed.app === undefined) {
+    return { directory, connections, agents, tools: listed };
+  }
+  const inventory = await atoms.ensure(resourceInventoryAtom(organization));
+  const result = Loader.result(inventory);
+  const active = AsyncResult.isSuccess(result)
+    ? result.value.apps.find((item) => item.id === parsed.app)?.activeVersion
+    : undefined;
+  return {
+    directory,
+    connections,
+    agents,
+    tools:
+      active == null
+        ? undefined
+        : {
+            version: active,
+            handle: atoms.prefetch(
+              connectionToolListAtom({ organization, app: parsed.app, version: active }),
+            ),
+          },
+  };
+};
+
+export type HostedConnectReads = Awaited<ReturnType<typeof connectReads>>;
+
+/** Start the connect page's reads after this organization's access check succeeded. */
 export function loadConnect({
   atoms,
   organizationSlug,
+  search = {},
 }: {
   readonly atoms: Loader.Loader;
   readonly organizationSlug: string;
+  readonly search?: { readonly app?: string | undefined; readonly version?: string | undefined };
 }) {
-  const organization = organizationFromSlug(organizationSlug);
-  return {
-    directory: atoms.prefetch(resourceDirectoryQuery(organization)),
-    connections: atoms.prefetch(mcpConnectionsQuery(organization)),
-    agents: atoms.prefetch(mcpAgentsQuery(organization)),
-  };
+  return startAfterAccess(atoms, organizationSlug, (organization) =>
+    connectReads(atoms, organization, search),
+  );
 }
-
-export type HostedConnectReads = ReturnType<typeof loadConnect>;
-
-/** The same atoms the loader starts, named so a failed access check withholds them. */
-export const connectOrganizationReads: OrganizationPageReads = (_organization, params) => {
-  const slug = params.organizationSlug;
-  if (typeof slug !== "string") return [];
-  const organization = organizationFromSlug(slug);
-  return [
-    resourceDirectoryQuery(organization),
-    mcpConnectionsQuery(organization),
-    mcpAgentsQuery(organization),
-  ];
-};
 
 /** Headless setup: a personal access token against this organization's own addresses. */
 function PersonalTokenSetup({
@@ -154,8 +186,9 @@ export function ConnectPage({
   reads,
 }: {
   readonly screen?: ScopedConnectionScreen;
-  readonly reads: HostedConnectReads;
+  readonly reads: HostedConnectReads | undefined;
 }) {
+  if (reads === undefined) return null;
   return (
     <SessionBoundary>
       <AvailabilityBoundary>
@@ -181,6 +214,20 @@ function Connect({
   const docs = useDocumentationUrl();
   const claims = useAccessBoundary();
   const organizationKey = organizationFromSlug(organizationSlug);
+  const search = parseConnectSearch(useLocation().search);
+  const tools =
+    reads.tools === undefined || search.app === undefined
+      ? undefined
+      : {
+          source: claims.wrap(
+            connectionToolListAtom({
+              organization: organizationKey,
+              app: search.app,
+              version: reads.tools.version,
+            }),
+          ),
+          handle: reads.tools.handle,
+        };
   return (
     <ScopedConnectionsPage
       screen={screen}
@@ -200,15 +247,64 @@ function Connect({
         });
       }}
       key={organizationKey}
-      query={started(claims.wrap(resourceInventoryAtom(organizationKey)), reads.directory)}
-      connections={started(claims.wrap(mcpConnectionsAtom(organizationKey)), reads.connections)}
+      query={{
+        source: claims.wrap(resourceInventoryAtom(organizationKey)),
+        handle: reads.directory,
+      }}
+      connections={{
+        source: claims.wrap(mcpConnectionsAtom(organizationKey)),
+        handle: reads.connections,
+      }}
       save={saveMcpConnectionAtom(organizationKey)}
       revoke={revokeMcpConnectionAtom(organizationKey)}
       Failure={HostedFailure}
+      toolsApp={search.app}
+      onToolsApp={(next) => {
+        const search = {
+          app: next?.id,
+          version: next?.version ?? undefined,
+        };
+        if (screen.kind === "detail") {
+          void navigate({
+            to: "/org/$organizationSlug/connect/$connectionId",
+            params: { organizationSlug, connectionId: screen.connection },
+            search,
+            replace: true,
+          });
+          return;
+        }
+        if (screen.kind === "edit") {
+          void navigate({
+            to: "/org/$organizationSlug/connect/$connectionId/edit",
+            params: { organizationSlug, connectionId: screen.connection },
+            search,
+            replace: true,
+          });
+          return;
+        }
+        if (screen.kind === "new") {
+          void navigate({
+            to: "/org/$organizationSlug/connect/new",
+            params: { organizationSlug },
+            search,
+            replace: true,
+          });
+          return;
+        }
+        void navigate({
+          to: "/org/$organizationSlug/connect",
+          params: { organizationSlug },
+          search,
+          replace: true,
+        });
+      }}
       docs={docs}
       agents={
         <ConnectedAgents
-          read={started(claims.wrap(mcpAgentsAtom(organizationKey)), reads.agents)}
+          read={{
+            source: claims.wrap(mcpAgentsAtom(organizationKey)),
+            handle: reads.agents,
+          }}
           revoke={revokeMcpAgentAtom(organizationKey)}
           Failure={HostedFailure}
         />
@@ -220,20 +316,25 @@ function Connect({
           token={<PersonalTokenSetup apiOrigin={origins.api[0]} mcpOrigin={mcpOrigin} />}
         />
       }
-      renderTools={({ app, names, onChange }) => (
-        // TODO(raf-effect-atom gap: Loader verbs die on derived atoms instead of following initialValueTarget)
-        // TODO(raf-effect-atom gap: Tool list state is not a URL the loader can prefetch)
-        <ConnectionToolPicker
-          query={connectionToolListAtom({
-            organization: organizationKey,
-            app: app.id,
-            version: app.activeVersion ?? undefined,
-          })}
-          Failure={HostedFailure}
-          names={names}
-          onChange={onChange}
-        />
-      )}
+      renderTools={({ app, names, onChange }) =>
+        tools === undefined ? (
+          <p className="px-4 py-6 text-xs text-muted-foreground">
+            Deploy this app to choose its tools.
+          </p>
+        ) : (
+          <ConnectionToolPicker
+            query={connectionToolListAtom({
+              organization: organizationKey,
+              app: app.id,
+              version: app.activeVersion ?? undefined,
+            })}
+            read={tools}
+            Failure={HostedFailure}
+            names={names}
+            onChange={onChange}
+          />
+        )
+      }
     />
   );
 }

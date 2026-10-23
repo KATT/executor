@@ -1,11 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { overviewSnapshotAtom } from "../../contracts/api.ts";
-import { prefetchLiveSnapshot } from "../../contracts/live-prefetch.ts";
+import { overviewAtom } from "../../contracts/api.ts";
 import { InventoryLayout } from "../inventory.tsx";
 /** Generated-tree route for /_dashboard/_inventory. */
 export const Route = createFileRoute("/_dashboard/_inventory")({
   loader: ({ context }) => ({
-    overview: prefetchLiveSnapshot(context.atoms, overviewSnapshotAtom),
+    overview: context.atoms.prefetch(overviewAtom),
   }),
   component: InventoryLayout,
 });

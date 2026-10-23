@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { parseConnectSearch } from "../../contracts/navigation.ts";
 import { ConnectAgentPage, loadLocalConnect } from "../pages/connect-agent.tsx";
 import { parseMcpConnectionParams } from "../route-params.ts";
 
@@ -6,7 +7,9 @@ import { parseMcpConnectionParams } from "../route-params.ts";
 export const Route = createFileRoute("/_dashboard/connect_/$connectionId")({
   staticData: { section: "connect" },
   params: { parse: parseMcpConnectionParams },
-  loader: ({ context }) => loadLocalConnect(context.atoms),
+  validateSearch: parseConnectSearch,
+  loaderDeps: ({ search }) => search,
+  loader: ({ context, deps }) => loadLocalConnect(context.atoms, deps),
   component: function ScopedConnectionPage() {
     const { connectionId } = Route.useParams();
     return (

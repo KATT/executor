@@ -142,6 +142,8 @@ export interface AppLinkProps {
   readonly app: AppId;
   readonly view?: AppView;
   readonly tool?: string;
+  /** The version whose data the destination reads. Absent until the app has one. */
+  readonly version?: VersionId | undefined;
   readonly className?: string;
   readonly children: ReactNode;
   readonly "aria-label"?: string;

@@ -1,7 +1,8 @@
-import { Link, useNavigate } from "@tanstack/react-router";
-import type { Loader } from "raf-effect-atom";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
+import type { AppId, VersionId } from "@executor-js/sdk";
+import { AsyncResult } from "effect/reactivity";
+import { Loader } from "raf-effect-atom";
 import { StartedQueryView } from "@executor-js/ui/dashboard/context";
-import { started } from "@executor-js/ui/contracts/started-read";
 import { McpInstallInstructions } from "@executor-js/ui/dashboard/connect";
 import {
   ScopedConnectionsPage,
@@ -10,33 +11,70 @@ import {
   type ScopedConnectionTargetLinkProps,
 } from "@executor-js/ui/dashboard/scoped-connections";
 import { ConnectionToolPicker } from "@executor-js/ui/dashboard/connection-tool-picker";
-import { overviewAtom, overviewSnapshotAtom, toolListAtom } from "../../contracts/api.ts";
-import { prefetchLiveSnapshot } from "../../contracts/live-prefetch.ts";
+import { overviewAtom, toolListAtom } from "../../contracts/api.ts";
+import { parseConnectSearch } from "../../contracts/navigation.ts";
 import { mcpInstallationAtom } from "../../contracts/mcp.ts";
 import {
   mcpConnectionsAtom,
-  mcpConnectionsQuery,
   revokeMcpConnectionAtom,
   saveMcpConnectionAtom,
 } from "../../contracts/mcp-connections.ts";
 import { Failure, LoadingRows } from "../components/common.tsx";
 import {
+  DataBoundary,
   ForbiddenBoundary,
+  LiveBoundary,
+  MissingBoundary,
   SessionBoundary,
   StorageBoundary,
-  useStorageBoundary,
+  useMissingBoundary,
 } from "../components/read-boundaries.tsx";
 
-/** Start the connect page's reads together, before the first component renders. */
-export function loadLocalConnect(atoms: Loader.Loader) {
+/** The version the open app's tool list was started with. */
+const toolVersion = async (atoms: Loader.Loader, app: AppId, version: VersionId | undefined) => {
+  if (version !== undefined) return version;
+  const overview = await atoms.ensure(overviewAtom);
+  const result = Loader.result(overview);
+  if (!AsyncResult.isSuccess(result)) return undefined;
+  const active = result.value.apps.find((item) => item.id === app)?.activeVersion;
+  return active ?? undefined;
+};
+
+/** Start the connect page's reads before the first component renders. */
+export async function loadLocalConnect(
+  atoms: Loader.Loader,
+  search: { readonly app?: AppId | undefined; readonly version?: VersionId | undefined } = {},
+) {
+  const installation = atoms.prefetch(mcpInstallationAtom);
+  const connections = atoms.prefetch(mcpConnectionsAtom);
+  const overview = atoms.prefetch(overviewAtom);
+  const listed =
+    search.app !== undefined && search.version !== undefined
+      ? {
+          version: search.version,
+          handle: atoms.prefetch(toolListAtom({ app: search.app, version: search.version })),
+        }
+      : undefined;
+  const version =
+    listed !== undefined || search.app === undefined
+      ? undefined
+      : await toolVersion(atoms, search.app, undefined);
   return {
-    installation: atoms.prefetch(mcpInstallationAtom),
-    connections: atoms.prefetch(mcpConnectionsQuery),
-    overview: prefetchLiveSnapshot(atoms, overviewSnapshotAtom),
+    installation,
+    connections,
+    overview,
+    tools:
+      listed ??
+      (search.app === undefined || version === undefined
+        ? undefined
+        : {
+            version,
+            handle: atoms.prefetch(toolListAtom({ app: search.app, version })),
+          }),
   };
 }
 
-export type LocalConnectReads = ReturnType<typeof loadLocalConnect>;
+export type LocalConnectReads = Awaited<ReturnType<typeof loadLocalConnect>>;
 
 function ListLink(props: ScopedConnectionLinkProps) {
   return <Link {...props} to="/connect" />;
@@ -66,7 +104,13 @@ export function ConnectAgentPage({
     <SessionBoundary>
       <ForbiddenBoundary>
         <StorageBoundary>
-          <ConnectAgent screen={screen} reads={reads} />
+          <DataBoundary>
+            <LiveBoundary>
+              <MissingBoundary>
+                <ConnectAgent screen={screen} reads={reads} />
+              </MissingBoundary>
+            </LiveBoundary>
+          </DataBoundary>
         </StorageBoundary>
       </ForbiddenBoundary>
     </SessionBoundary>
@@ -81,8 +125,19 @@ function ConnectAgent({
   readonly reads: LocalConnectReads;
 }) {
   const navigate = useNavigate();
-  const claims = useStorageBoundary();
-  const installation = started(claims.wrap(mcpInstallationAtom), reads.installation);
+  const search = parseConnectSearch(useLocation().search);
+  const claims = useMissingBoundary();
+  const installation = {
+    source: claims.wrap(mcpInstallationAtom),
+    handle: reads.installation,
+  };
+  const tools =
+    reads.tools === undefined || search.app === undefined
+      ? undefined
+      : {
+          source: claims.wrap(toolListAtom({ app: search.app, version: reads.tools.version })),
+          handle: reads.tools.handle,
+        };
   return (
     <ScopedConnectionsPage
       screen={screen}
@@ -97,24 +152,38 @@ function ConnectAgent({
       onRevoked={() => {
         void navigate({ to: "/connect", replace: true });
       }}
-      query={started(claims.wrap(overviewAtom), reads.overview)}
-      connections={started(claims.wrap(mcpConnectionsAtom), reads.connections)}
+      query={{ source: claims.wrap(overviewAtom), handle: reads.overview }}
+      connections={{ source: claims.wrap(mcpConnectionsAtom), handle: reads.connections }}
       save={saveMcpConnectionAtom}
       revoke={revokeMcpConnectionAtom}
       Failure={Failure}
-      renderTools={({ app, names, onChange }) => (
-        // TODO(raf-effect-atom gap: Loader verbs die on derived atoms instead of following initialValueTarget)
-        // TODO(raf-effect-atom gap: Tool list state is not a URL the loader can prefetch)
-        <ConnectionToolPicker
-          query={toolListAtom({
-            app: app.id,
-            version: app.activeVersion,
-          })}
-          Failure={Failure}
-          names={names}
-          onChange={onChange}
-        />
-      )}
+      toolsApp={search.app}
+      onToolsApp={(next) => {
+        void navigate({
+          to: ".",
+          search: (previous) => ({
+            ...previous,
+            app: next?.id,
+            version: next?.version ?? undefined,
+          }),
+          replace: true,
+        });
+      }}
+      renderTools={({ app, names, onChange }) =>
+        tools === undefined ? (
+          <p className="px-4 py-6 text-xs text-muted-foreground">
+            Deploy this app to choose its tools.
+          </p>
+        ) : (
+          <ConnectionToolPicker
+            query={toolListAtom({ app: app.id, version: app.activeVersion })}
+            read={tools}
+            Failure={Failure}
+            names={names}
+            onChange={onChange}
+          />
+        )
+      }
       installation={
         <StartedQueryView
           source={installation.source}

@@ -1,5 +1,6 @@
 import { AppResources } from "./app-resources.tsx";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Loader } from "raf-effect-atom";
 import { AppAccounts } from "./app-accounts.tsx";
 import { AppSkills } from "@executor-js/ui/dashboard/app-skills";
 import {
@@ -9,14 +10,19 @@ import {
 import { appBrowserBindings } from "../../contracts/app-browser.ts";
 import { AppSchedules } from "@executor-js/ui/dashboard/schedules";
 import { scheduleBindings } from "../../contracts/schedules.ts";
-import { allResults, QueryResult, QueryView, useQuery } from "@executor-js/ui/dashboard/context";
+import {
+  allResults,
+  QueryResult,
+  QueryView,
+  useStartedQuery,
+} from "@executor-js/ui/dashboard/context";
 import {
   missingRequirements,
   requirementAccounts,
   type RequirementLink,
 } from "@executor-js/ui/contracts/app-accounts";
 import { useAtomSet } from "@effect/atom-react";
-import type { App, AppId } from "@executor-js/sdk";
+import type { App, AppId, VersionId } from "@executor-js/sdk";
 import type {
   AppAccountLink,
   DashboardAccount,
@@ -26,7 +32,7 @@ import { Atom, AsyncResult } from "effect/reactivity";
 import { Data, Option } from "effect";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft02Icon, ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
-import { appAtom, toolsAtom } from "../../contracts/api.ts";
+import { appAtom, sourceAtom, toolCatalogAtom, toolsAtom } from "../../contracts/api.ts";
 import { appLinksAtom, userLinksAtom } from "../../contracts/app-accounts.ts";
 import { renameAppAtom, acknowledgeApp } from "../../contracts/apps.ts";
 import { Link, useBlocker, useNavigate } from "@tanstack/react-router";
@@ -38,6 +44,7 @@ import { CopyApp } from "@executor-js/ui/dashboard/copy-app";
 import { AppSettings } from "@executor-js/ui/dashboard/app-settings";
 import { AppDetailLayout } from "@executor-js/ui/dashboard/app-detail";
 import { AppTools } from "./app-tools.tsx";
+import { useMissingBoundary } from "../components/read-boundaries.tsx";
 import { AppSource, AppVersions } from "./app-source.tsx";
 import {
   AppOverview,
@@ -58,6 +65,51 @@ const overviewToolsAtom = Atom.family((key: PreviewKey) =>
     AsyncResult.map((data) => ({ items: data.tools })),
   ),
 );
+
+/** The version this page's tools and source were started with. */
+const listedVersion = async (atoms: Loader.Loader, app: AppId, version: VersionId | undefined) => {
+  if (version !== undefined) return version;
+  const loaded = await atoms.ensure(appAtom(app));
+  const result = Loader.result(loaded);
+  if (!AsyncResult.isSuccess(result) || result.value.app.activeVersion == null) return undefined;
+  return result.value.app.activeVersion;
+};
+
+/** Start the app page's reads from the URL before the first component renders. */
+export async function loadLocalApp(
+  atoms: Loader.Loader,
+  app: AppId,
+  search: { readonly version?: VersionId | undefined },
+) {
+  const record = atoms.prefetch(appAtom(app));
+  const appLinks = atoms.prefetch(appLinksAtom(app));
+  const userLinks = atoms.prefetch(userLinksAtom(app));
+  const known = search.version;
+  const listed =
+    known === undefined
+      ? undefined
+      : {
+          version: known,
+          tools: atoms.prefetch(toolCatalogAtom({ app, version: known })),
+          source: atoms.prefetch(sourceAtom({ app, version: known })),
+        };
+  const version =
+    listed === undefined ? await listedVersion(atoms, app, undefined) : listed.version;
+  return {
+    app: record,
+    appLinks,
+    userLinks,
+    version,
+    tools:
+      listed?.tools ??
+      (version === undefined ? undefined : atoms.prefetch(toolCatalogAtom({ app, version }))),
+    source:
+      listed?.source ??
+      (version === undefined ? undefined : atoms.prefetch(sourceAtom({ app, version }))),
+  };
+}
+
+export type LocalAppReads = Awaited<ReturnType<typeof loadLocalApp>>;
 
 /** Views that read only the app. The others also read its linked accounts. */
 const appWideViews: ReadonlySet<AppView> = new Set(["settings", "versions", "source", "history"]);
@@ -84,25 +136,46 @@ export function AppDetailPage({
   id,
   tab,
   tool,
+  version,
+  reads,
   overview,
 }: {
   readonly id: AppId;
   readonly tab: AppView;
   readonly tool: string | undefined;
+  readonly version: VersionId | undefined;
+  readonly reads: LocalAppReads;
   readonly overview: DashboardOverview;
 }) {
   const navigate = useNavigate();
+  const claims = useMissingBoundary();
   const [skillDirty, setSkillDirty] = useState(false);
   useBlocker({
     shouldBlockFn: () => skillDirty && !window.confirm("Discard your unsaved changes?"),
     enableBeforeUnload: skillDirty,
   });
-  const query = useQuery(appAtom(id));
-  const appLinks = useQuery(appLinksAtom(id));
-  const userLinks = useQuery(userLinksAtom(id));
+  const query = useStartedQuery({ source: claims.wrap(appAtom(id)), handle: reads.app });
+  const appLinks = useStartedQuery({
+    source: claims.wrap(appLinksAtom(id)),
+    handle: reads.appLinks,
+  });
+  const userLinks = useStartedQuery({
+    source: claims.wrap(userLinksAtom(id)),
+    handle: reads.userLinks,
+  });
   const app = Option.isSome(query.data)
     ? query.data.value.app
     : overview.apps.find((item) => item.id === id);
+  const activeVersion = app?.activeVersion;
+  useEffect(() => {
+    if (version !== undefined || activeVersion == null) return;
+    void navigate({
+      to: "/apps/$appId",
+      params: { appId: id },
+      search: (previous) => ({ ...previous, version: activeVersion }),
+      replace: true,
+    });
+  }, [activeVersion, id, navigate, version]);
   const missing = (forEveryone: boolean) => (
     <div className="space-y-3 p-5 text-sm text-muted-foreground">
       <p>
@@ -186,8 +259,28 @@ export function AppDetailPage({
                   }
                 />
               );
-            if (tab === "versions") return <AppVersions data={current} />;
-            return <AppSource data={current} view={tab === "history" ? "history" : "source"} />;
+            if (tab === "versions")
+              return (
+                <AppVersions
+                  data={current}
+                  version={version ?? current.app.activeVersion ?? undefined}
+                  onVersionChange={(next) => {
+                    void navigate({
+                      to: "/apps/$appId",
+                      params: { appId: id },
+                      search: (previous) => ({ ...previous, view: "versions", version: next }),
+                      replace: true,
+                    });
+                  }}
+                />
+              );
+            return (
+              <AppSource
+                data={current}
+                version={version ?? current.app.activeVersion}
+                view={tab === "history" ? "history" : "source"}
+              />
+            );
           }}
         </QueryResult>
       ) : (
@@ -211,7 +304,7 @@ export function AppDetailPage({
               user: withSummaries(userRows, overview.accounts),
             };
             const requirements = requirementAccounts(current.app, linked);
-            const version = String(current.app.activeVersion);
+            const versionKey = String(current.app.activeVersion);
             const ready = missingRequirements(requirements).length === 0;
             const gate = (children: ReactNode) =>
               ready
@@ -235,10 +328,22 @@ export function AppDetailPage({
                   }}
                 />,
               );
-            if (tab === "tools")
+            if (tab === "tools") {
+              const selectedVersion = version ?? reads.version;
               return gate(
-                <AppTools app={current.app} requirements={requirements} selected={tool} />,
+                reads.tools === undefined || selectedVersion === undefined ? (
+                  pending
+                ) : (
+                  <AppTools
+                    app={current.app}
+                    version={selectedVersion}
+                    tools={reads.tools}
+                    requirements={requirements}
+                    selected={tool}
+                  />
+                ),
               );
+            }
             if (tab === "workflows")
               return gate(<AppResources app={current.app} view="workflows" />);
             if (tab === "webhooks") return <AppResources app={current.app} view="webhooks" />;
@@ -274,7 +379,7 @@ export function AppDetailPage({
                             ready
                               ? [
                                   {
-                                    key: version,
+                                    key: versionKey,
                                     query: appBrowserBindings(current.app).workflows,
                                   },
                                 ]
@@ -299,7 +404,7 @@ export function AppDetailPage({
                         ready
                           ? [
                               {
-                                key: version,
+                                key: versionKey,
                                 query: overviewToolsAtom(
                                   new PreviewKey({
                                     app: id,

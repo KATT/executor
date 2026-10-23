@@ -4,7 +4,8 @@ import type { QueryProps } from "../../contracts/dashboard.ts";
 import { Checkbox } from "../components/checkbox.tsx";
 import { Button } from "../components/button.tsx";
 import { Input } from "../components/input.tsx";
-import { QueryView } from "./context.tsx";
+import { QueryView, StartedQueryView } from "./context.tsx";
+import type { StartedRead } from "../../contracts/started-read.ts";
 import { useIncrementalList } from "./incremental-list.tsx";
 
 type Filter = "all" | "read" | "write" | "selected";
@@ -19,25 +20,32 @@ const filters: readonly { readonly value: Filter; readonly label: string }[] = [
 /** Read-only catalog picker; selection edits only the enclosing connection draft. */
 export function ConnectionToolPicker<E>({
   query,
+  read,
   Failure,
   names,
   onChange,
 }: QueryProps<readonly ToolSummary[], E> & {
   readonly names: readonly ToolName[];
   readonly onChange: (names: readonly ToolName[]) => void;
+  /** Present when the route loader started this catalog. */
+  readonly read?: StartedRead<readonly ToolSummary[], E>;
 }) {
-  return (
-    <QueryView
-      query={query}
-      Failure={Failure}
-      pending={
-        <p role="status" className="px-4 py-6 text-xs text-muted-foreground">
-          Loading tools…
-        </p>
-      }
-    >
-      {(tools) => <ToolList tools={tools} names={names} onChange={onChange} />}
+  const pending = (
+    <p role="status" className="px-4 py-6 text-xs text-muted-foreground">
+      Loading tools…
+    </p>
+  );
+  const list = (tools: readonly ToolSummary[]) => (
+    <ToolList tools={tools} names={names} onChange={onChange} />
+  );
+  return read === undefined ? (
+    <QueryView query={query} Failure={Failure} pending={pending}>
+      {list}
     </QueryView>
+  ) : (
+    <StartedQueryView source={read.source} handle={read.handle} Failure={Failure} pending={pending}>
+      {list}
+    </StartedQueryView>
   );
 }
 

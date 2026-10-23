@@ -1,5 +1,4 @@
 import { usePreload } from "@executor-js/ui/dashboard/context";
-import { useGuardedPreload } from "@executor-js/dashboard-start/registry";
 import { PageFrame, PageHeader } from "@executor-js/ui/dashboard/page";
 import {
   OrganizationSlug,
@@ -13,7 +12,7 @@ import { EmptyState } from "@executor-js/ui/dashboard/empty-state";
 import { RegistryContext, useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
 import type { OrganizationId, OrganizationAccess } from "@executor-js/hosted-server/organization";
 // oxlint-disable-next-line no-restricted-imports -- ResumeOrganization renders it only at /, which its navigation leaves; OrganizationEntry and OrganizationDestination read atoms, not the location
-import { Link, Navigate, useLocation, useMatches, useNavigate } from "@tanstack/react-router";
+import { Link, Navigate, useLocation, useNavigate } from "@tanstack/react-router";
 import { Cause, Exit, Match, Option, Schema } from "effect";
 import { lastOrganizationAtom, sessionAtom } from "../../contracts/auth.ts";
 import { OrganizationResume } from "../../contracts/navigation.ts";
@@ -31,7 +30,15 @@ import {
   DropdownMenuTrigger,
 } from "@executor-js/ui/components/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@executor-js/ui/components/avatar";
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import {
   accessAtom,
   organizationPresentation,
@@ -70,7 +77,10 @@ const OrganizationRouteContext = createContext<{
   readonly id: OrganizationId | undefined;
   readonly name: string | undefined;
   readonly unavailable: boolean;
-  /** Whether the page may render; see `useGuardedPreload`. */
+  /**
+   * Whether the page may render. The server and hydration show it only after access
+   * succeeded. Once hydrated the browser keeps it mounted.
+   */
   readonly released: boolean;
   readonly metadataFailed: boolean;
   readonly retry: () => void;
@@ -270,23 +280,14 @@ function useOrganizationQueryReference(routeReference: OrganizationReference) {
 }
 
 /**
- * The reads an organization page starts with, from its URL alone. A server render waits for the
- * access check before it renders the page, so without these the page's reads would start only
- * after access settles. The boundary starts them with the check, and a document whose access
- * does not succeed carries none of their values. The browser renders the page while access loads
- * and needs no list.
+ * The reads an organization page starts with, from its URL alone. Its loader `ensure`s access
+ * and prefetches these only when that check succeeded.
  */
 export type OrganizationPageReads = (
   organization: OrganizationReference,
   params: Readonly<Record<string, unknown>>,
+  search?: Readonly<Record<string, unknown>>,
 ) => ReadonlyArray<Atom.Atom<unknown>>;
-
-declare module "@tanstack/react-router" {
-  interface StaticDataRouteOption {
-    /** Started by the organization boundary together with its access check. */
-    readonly organizationReads?: OrganizationPageReads;
-  }
-}
 
 /** The API refused this user the organization, as opposed to failing to answer. */
 const refused = (access: Atom.Type<ReturnType<typeof accessAtom>>) =>
@@ -311,13 +312,16 @@ export function OrganizationBoundary({
   const reference = useOrganizationQueryReference(
     Schema.decodeUnknownSync(OrganizationReference)(slug),
   );
-  const matches = useMatches();
   usePreload(accessAtom(reference), organizationsAtom);
-  const released = useGuardedPreload(
-    accessAtom(reference),
-    matches.flatMap((match) => match.staticData.organizationReads?.(reference, match.params) ?? []),
-  );
   const access = useAtomValue(accessAtom(reference));
+  const accessSucceeded = AsyncResult.isSuccess(access);
+  // The verdict itself is the snapshot, so a document whose check succeeded does not re-render
+  // here after hydration; that update would reach regions still waiting to hydrate.
+  const released = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => accessSucceeded,
+  );
   const session = useAtomValue(sessionAtom);
   const snapshot = useAtomValue(organizationPresentation(reference));
   const registry = useContext(RegistryContext);

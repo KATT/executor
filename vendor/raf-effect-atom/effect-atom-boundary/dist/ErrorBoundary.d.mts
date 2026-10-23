@@ -2,7 +2,10 @@ import { ErrorBoundaryClaims, TagsOf, Variance } from "./Claim.mjs";
 import * as React from "react";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
+import { HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware } from "effect/http-api";
+import * as AtomHttpApi from "effect/reactivity/AtomHttpApi";
 import * as AtomRpc from "effect/reactivity/AtomRpc";
+import * as Schema from "effect/Schema";
 /**
  * Props for a `catchTags` handler: the caught error, and `reset`.
  *
@@ -32,14 +35,20 @@ export type CatchTags<E, Tags extends TagsOf<E> = TagsOf<E>> = { readonly [Tag i
   readonly _tag: Tag;
 }>>) => React.ReactNode; };
 /**
+ * The errors an `AtomHttpApi` query of each endpoint fails with: the
+ * endpoint's errors and its middleware's.
+ */
+type EndpointErrors<Endpoint> = Endpoint extends HttpApiEndpoint.HttpApiEndpoint<infer _Identifier, infer _Method, infer _Path, infer _Params, infer _Query, infer _Payload, infer _Headers, infer _Success, infer Error extends Schema.Top, infer Middleware, infer _MiddlewareServices> ? Error["Type"] | HttpApiMiddleware.Error<Middleware> | HttpApiMiddleware.ClientError<Middleware> : never;
+/**
  * The error type of what a boundary's `errors` names: an `AtomRpc` client
- * (the errors of every procedure), an atom, or an atom family.
+ * (the errors of every procedure), an `AtomHttpApi` client (the errors of
+ * every endpoint and its middleware), an atom, or an atom family.
  *
  * @stability unstable
  * @category utility types
  * @since 0.1.0
  */
-export type ErrorsOf<Source> = Source extends AtomRpc.AtomRpcClient<infer _Self, infer _Id, infer _Rpcs> ? Source["query"] extends ((...args: ReadonlyArray<never>) => infer Query) ? Query extends Atom.Atom<AsyncResult.AsyncResult<infer _A, infer E>> ? E : never : never : Source extends Atom.Atom<AsyncResult.AsyncResult<infer _A, infer E>> ? E : Source extends ((...args: ReadonlyArray<never>) => Atom.Atom<AsyncResult.AsyncResult<infer _A, infer E>>) ? E : never;
+export type ErrorsOf<Source> = Source extends AtomRpc.AtomRpcClient<infer _Self, infer _Id, infer _Rpcs> ? Source["query"] extends ((...args: ReadonlyArray<never>) => infer Query) ? Query extends Atom.Atom<AsyncResult.AsyncResult<infer _A, infer E>> ? E : never : never : Source extends AtomHttpApi.AtomHttpApiClient<infer _Self, infer _Id, infer Groups> ? EndpointErrors<HttpApiGroup.Endpoints<Groups>> : Source extends Atom.Atom<AsyncResult.AsyncResult<infer _A, infer E>> ? E : Source extends ((...args: ReadonlyArray<never>) => Atom.Atom<AsyncResult.AsyncResult<infer _A, infer E>>) ? E : never;
 /**
  * Props for an error boundary that catches one atom's failures by `_tag`.
  *
@@ -170,8 +179,8 @@ export interface ErrorBoundaryOptions<Source, Tags extends TagsOf<ErrorsOf<Sourc
   /** A handler per `_tag` this boundary claims. */
   readonly catchTags: CatchTags<ErrorsOf<Source>, Tags>;
   /**
-   * What the handlers' errors come from, for the types: an `AtomRpc`
-   * client, an atom, or an atom family.
+   * What the handlers' errors come from, for the types: an `AtomRpc` or
+   * `AtomHttpApi` client, an atom, or an atom family.
    */
   readonly errors: Source;
   /** Names it in messages and React DevTools: `"Auth"` is `<AuthBoundary>`. */
@@ -245,3 +254,4 @@ export interface ErrorBoundaryOptions<Source, Tags extends TagsOf<ErrorsOf<Sourc
  * @since 0.1.0
  */
 export declare const createErrorBoundary: <Source, Tags extends TagsOf<ErrorsOf<Source>>, ParentTags extends string = never>(options: ErrorBoundaryOptions<Source, Tags, ParentTags>) => ErrorBoundary<Tags | ParentTags>;
+export {};
