@@ -23,6 +23,7 @@ const make = (options) => {
 		fetch: (source, ...args) => getLoader().fetch(source, ...args),
 		getRegistry,
 		prefetch: (source, ...args) => getLoader().prefetch(source, ...args),
+		prefetchInBrowser: (source, ...args) => getLoader().prefetchInBrowser(source, ...args),
 		run: (effect, runOptions) => getLoader().run(effect, runOptions)
 	};
 };

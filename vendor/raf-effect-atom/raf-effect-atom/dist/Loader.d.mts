@@ -5,7 +5,7 @@ import * as Effect from "effect/Effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 declare namespace Loader_d_exports {
-  export { LeaseTTL, Loader, MakeOptions, SettledResult, ensure, fetch, make, prefetch, result };
+  export { LeaseTTL, Loader, MakeOptions, SettledResult, ensure, fetch, make, prefetch, prefetchInBrowser, result };
 }
 /**
  * A settled `AsyncResult`: what `ensure` and `fetch` return.
@@ -73,6 +73,49 @@ export declare const LeaseTTL: Context.Reference<Duration.Duration>;
  * @since 0.1.0
  */
 export declare const prefetch: <S extends Source>(source: S, ...args: ArgsOf<S>) => Effect.Effect<Handle<S>, never, AtomRegistry.AtomRegistry>;
+/**
+ * Starts a source's atom in the browser, and returns its handle: on the
+ * server, it starts nothing, and the browser's read starts the atom.
+ *
+ * **When to use**
+ *
+ * Use for data only the browser can load: an input the server never sees,
+ * such as a token in the URL's fragment or a permission, or a request the
+ * server can't make. The rest of the page still renders on the server.
+ *
+ * **Details**
+ *
+ * - In the browser, it's `prefetch`: a loader that runs there, such as on a
+ *   client navigation, starts the atom and takes a lease.
+ * - On a request registry, it returns a handle marked `inBrowser` without
+ *   starting the atom, so the atom needs no serialization key. On the
+ *   server, `useAtomResult` throws for that handle, so React renders the
+ *   nearest Suspense boundary's fallback there and renders the boundary in
+ *   the browser. There, the read starts the atom, and the waterfall check
+ *   skips it, since a loader asked for it.
+ *
+ * **Gotchas**
+ *
+ * - Read the handle under a Suspense boundary: on the server, a read
+ *   outside one fails the whole render. React reports the boundary it
+ *   renders in the browser to `onRecoverableError`.
+ * - On a page the server rendered, the request starts when the browser
+ *   renders the read, after hydration's JavaScript has loaded: start the
+ *   data the server can load with `prefetch` or `ensure`.
+ *
+ * **Example**
+ *
+ * ```ts
+ * import { Loader } from "raf-effect-atom"
+ *
+ * const program = Loader.prefetchInBrowser(pushSubscription)
+ * ```
+ *
+ * @stability unstable
+ * @category verbs
+ * @since 0.2.6
+ */
+export declare const prefetchInBrowser: <S extends Source>(source: S, ...args: ArgsOf<S>) => Effect.Effect<Handle<S>, never, AtomRegistry.AtomRegistry>;
 /**
  * Starts a source's atom, waits only while it has no result, and returns a
  * handle whose reader renders without suspending.
@@ -179,6 +222,8 @@ export interface Loader {
    * the seed resolves.
    */
   readonly prefetch: <S extends Source>(source: S, ...args: ArgsOf<S>) => Handle<S>;
+  /** {@link prefetchInBrowser}, run at once. */
+  readonly prefetchInBrowser: <S extends Source>(source: S, ...args: ArgsOf<S>) => Handle<S>;
   /**
    * Runs an Effect that needs the registry, such as the Effect verbs in an
    * `Effect.gen`, as a Promise that rejects with its squashed cause.
@@ -213,8 +258,8 @@ export interface MakeOptions {
  *
  * Use in a framework integration, in loaders that are async functions, or
  * in an event handler that starts an atom before the state change that
- * renders its reader, for state that can't be in the URL, such as a
- * search-as-you-type query. In Effect code, use the verbs directly, and run
+ * renders its reader, for a choice a click or a submit makes that doesn't
+ * belong in the URL. In Effect code, use the verbs directly, and run
  * the Effect on the registry with `run`.
  *
  * **Details**

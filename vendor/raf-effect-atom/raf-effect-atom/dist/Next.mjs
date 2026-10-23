@@ -72,6 +72,15 @@ const getRegistry = atoms.getRegistry;
 */
 const prefetch = atoms.prefetch;
 /**
+* `Loader.prefetchInBrowser` on the request's registry: returns a handle
+* whose atom the browser's read starts, without starting it on the server.
+*
+* @stability unstable
+* @category verbs
+* @since 0.2.6
+*/
+const prefetchInBrowser = atoms.prefetchInBrowser;
+/**
 * `Loader.ensure` on the request's registry: starts a source's atom, waits
 * for its result, and returns its handle.
 *
@@ -130,4 +139,4 @@ const run = atoms.run;
 * @since 0.1.0
 */
 const dehydrate = atoms.dehydrate;
-export { HydrateAtoms, RegistryProvider, dehydrate, ensure, fetch, getRegistry, makeRequestAtoms, prefetch, run };
+export { HydrateAtoms, RegistryProvider, dehydrate, ensure, fetch, getRegistry, makeRequestAtoms, prefetch, prefetchInBrowser, run };

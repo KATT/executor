@@ -91,6 +91,15 @@ export declare const getRegistry: () => AtomRegistry.AtomRegistry;
  */
 export declare const prefetch: <S extends Source>(source: S, ...args: ArgsOf<S>) => Handle<S>;
 /**
+ * `Loader.prefetchInBrowser` on the request's registry: returns a handle
+ * whose atom the browser's read starts, without starting it on the server.
+ *
+ * @stability unstable
+ * @category verbs
+ * @since 0.2.6
+ */
+export declare const prefetchInBrowser: <S extends Source>(source: S, ...args: ArgsOf<S>) => Handle<S>;
+/**
  * `Loader.ensure` on the request's registry: starts a source's atom, waits
  * for its result, and returns its handle.
  *

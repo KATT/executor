@@ -3,6 +3,7 @@ import { stream } from "./internal/pending.mjs";
 import { hydrated } from "./Hydration.mjs";
 import { keyOf, release } from "./internal/leases.mjs";
 import { atomOf, sourceOf } from "./internal/handles.mjs";
+import { isRequestRegistry } from "./RequestRegistry.mjs";
 import { requireRequestRegistry } from "./internal/registry.mjs";
 import { ModeContext, check } from "./internal/waterfalls.mjs";
 import * as Predicate from "effect/Predicate";
@@ -99,6 +100,7 @@ const useAtomResult = (source, handle) => {
 	const registry = React.useContext(RegistryContext);
 	const atom = atomOf(source, handle.args);
 	requireRequestRegistry(registry, "useAtomResult");
+	if (handle.inBrowser === true && isRequestRegistry(registry)) throw new Error(`raf-effect-atom: ${String(atom)} starts in the browser (Loader.prefetchInBrowser), so the server renders the nearest Suspense boundary's fallback, and the browser renders the boundary.`);
 	const target = sourceOf(atom);
 	const started = hydrated(target);
 	const read = target === atom ? hydrated(atom) : atom;
@@ -106,7 +108,7 @@ const useAtomResult = (source, handle) => {
 	if (process.env.NODE_ENV !== "production" && handle.key !== void 0 && Predicate.isString(key) && handle.key !== key) throw new Error(`raf-effect-atom: useAtomResult read the handle of ${handle.key} through a source that makes ${key}. Read a handle through the source that made it.`);
 	const streamed = Predicate.isString(key) ? stream(registry, key) : void 0;
 	if (streamed !== void 0) React.use(streamed);
-	if (process.env.NODE_ENV !== "production") check(registry, started, React.use(ModeContext));
+	if (process.env.NODE_ENV !== "production" && handle.inBrowser !== true) check(registry, started, React.use(ModeContext));
 	if (read !== started) registry.get(started);
 	const current = registry.get(read);
 	const result = useAtomSuspense(read, {

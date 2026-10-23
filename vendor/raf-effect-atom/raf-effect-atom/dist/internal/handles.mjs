@@ -23,9 +23,14 @@ const make = (args, atom) => ({
 	args,
 	key: keyOf(atom)
 });
+const inBrowser = (args, atom) => ({
+	args,
+	inBrowser: true,
+	key: keyOf(atom)
+});
 const loaded = (args, atom) => ({
 	args,
 	key: keyOf(atom),
 	loaded: true
 });
-export { atomOf, loaded, make, sourceOf };
+export { atomOf, inBrowser, loaded, make, sourceOf };

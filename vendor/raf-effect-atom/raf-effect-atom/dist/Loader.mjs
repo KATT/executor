@@ -2,7 +2,7 @@ import { __exportAll } from "./_virtual/_rolldown/runtime.mjs";
 import { hydrated } from "./Hydration.mjs";
 import { isDevelopment } from "./internal/development.mjs";
 import { keyOf, take } from "./internal/leases.mjs";
-import { atomOf, loaded as loaded$1, make as make$1, sourceOf } from "./internal/handles.mjs";
+import { atomOf, inBrowser, loaded as loaded$1, make as make$1, sourceOf } from "./internal/handles.mjs";
 import { afterSeed, pending } from "./internal/seeds.mjs";
 import { isRequestRegistry } from "./RequestRegistry.mjs";
 import * as Atom from "effect/reactivity/Atom";
@@ -31,6 +31,9 @@ import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 * | `ensure`   | if it isn't in the registry     | only while it's `Initial`     | returns it at once    |
 * | `fetch`    | if it isn't, or refreshes it    | until the new result settles  | refreshes, then waits |
 *
+* `prefetchInBrowser` is `prefetch` in the browser. On the server, it
+* starts nothing, and the browser's read starts the atom.
+*
 * Typed failures don't reject: `ensure` and `fetch` settle on them, and
 * `result` returns the settled `AsyncResult`, so a loader can redirect on a
 * tag and otherwise let a boundary render the failure. Only defects and
@@ -48,6 +51,7 @@ var Loader_exports = /* @__PURE__ */ __exportAll({
 	fetch: () => fetch,
 	make: () => make,
 	prefetch: () => prefetch,
+	prefetchInBrowser: () => prefetchInBrowser,
 	result: () => result
 });
 /**
@@ -151,6 +155,54 @@ const rejectDefects = (result) => {
 */
 const prefetch = (source, ...args) => Effect.gen(function* () {
 	const atom = atomOf(source, args);
+	yield* start(atom);
+	return make$1(args, atom);
+});
+/**
+* Starts a source's atom in the browser, and returns its handle: on the
+* server, it starts nothing, and the browser's read starts the atom.
+*
+* **When to use**
+*
+* Use for data only the browser can load: an input the server never sees,
+* such as a token in the URL's fragment or a permission, or a request the
+* server can't make. The rest of the page still renders on the server.
+*
+* **Details**
+*
+* - In the browser, it's `prefetch`: a loader that runs there, such as on a
+*   client navigation, starts the atom and takes a lease.
+* - On a request registry, it returns a handle marked `inBrowser` without
+*   starting the atom, so the atom needs no serialization key. On the
+*   server, `useAtomResult` throws for that handle, so React renders the
+*   nearest Suspense boundary's fallback there and renders the boundary in
+*   the browser. There, the read starts the atom, and the waterfall check
+*   skips it, since a loader asked for it.
+*
+* **Gotchas**
+*
+* - Read the handle under a Suspense boundary: on the server, a read
+*   outside one fails the whole render. React reports the boundary it
+*   renders in the browser to `onRecoverableError`.
+* - On a page the server rendered, the request starts when the browser
+*   renders the read, after hydration's JavaScript has loaded: start the
+*   data the server can load with `prefetch` or `ensure`.
+*
+* **Example**
+*
+* ```ts
+* import { Loader } from "raf-effect-atom"
+*
+* const program = Loader.prefetchInBrowser(pushSubscription)
+* ```
+*
+* @stability unstable
+* @category verbs
+* @since 0.2.6
+*/
+const prefetchInBrowser = (source, ...args) => Effect.gen(function* () {
+	const atom = atomOf(source, args);
+	if (isRequestRegistry(yield* AtomRegistry.AtomRegistry)) return inBrowser(args, atom);
 	yield* start(atom);
 	return make$1(args, atom);
 });
@@ -277,8 +329,8 @@ const either = (first, second) => first === void 0 || second === void 0 ? first 
 *
 * Use in a framework integration, in loaders that are async functions, or
 * in an event handler that starts an atom before the state change that
-* renders its reader, for state that can't be in the URL, such as a
-* search-as-you-type query. In Effect code, use the verbs directly, and run
+* renders its reader, for a choice a click or a submit makes that doesn't
+* belong in the URL. In Effect code, use the verbs directly, and run
 * the Effect on the registry with `run`.
 *
 * **Details**
@@ -319,7 +371,15 @@ const make = (registry, options) => {
 			});
 			return make$1(args, atom);
 		},
+		prefetchInBrowser: (source, ...args) => {
+			const atom = atomOf(source, args);
+			if (isRequestRegistry(registry)) return inBrowser(args, atom);
+			afterSeed(registry, () => {
+				Effect.runSync(provide(start(atom)));
+			});
+			return make$1(args, atom);
+		},
 		run: (effect, runOptions) => runPromise(provide(effect), either(signal, runOptions?.signal))
 	};
 };
-export { LeaseTTL, Loader_exports, ensure, fetch, make, prefetch, result };
+export { LeaseTTL, Loader_exports, ensure, fetch, make, prefetch, prefetchInBrowser, result };
