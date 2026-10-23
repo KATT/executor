@@ -143,7 +143,16 @@ const initialOrganizationsQuery = Atom.readable(
     refresh(entryOrganizationsAtom);
     refresh(organizationsQuery);
   },
-).pipe(revalidated);
+).pipe(
+  revalidated,
+  // The readable has no serialization key of its own. Mark the view after `revalidated`, which
+  // copies the atom and drops an earlier key, so a loader can start this read.
+  hydratedResult({
+    key: "hosted:organizations-view",
+    success: Schema.Array(OrganizationSummary),
+    error: OrganizationFailed,
+  }),
+);
 /** Confirmed writes and source waiting state are shared by every route consumer. */
 export const organizationsAtom = acknowledgedQuery(initialOrganizationsQuery);
 
