@@ -1,10 +1,12 @@
 import { EmptyState } from "@executor-js/ui/dashboard/empty-state";
 import { resourceDirectoryAtom } from "../../contracts/resource-access.ts";
-import { QueryView } from "@executor-js/ui/dashboard/context";
-import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
+import { QueryResult, useStartedQuery } from "@executor-js/ui/dashboard/context";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
-import { Cause, Exit, Option } from "effect";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { Cause, Exit, Option, Schema } from "effect";
+import { Loader } from "raf-effect-atom";
+import { OrganizationReference } from "@executor-js/hosted-server/organization";
+import { Suspense, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useForm, useStore } from "@tanstack/react-form";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -33,19 +35,77 @@ import { groupsAtom, saveGroupAtom, removeGroupAtom } from "../../contracts/grou
 import { appError, type HostedError } from "../../contracts/errors.ts";
 import { GroupConflict } from "@executor-js/hosted-server/groups";
 import { Alert, AlertTitle, AlertDescription } from "@executor-js/ui/components/alert";
+import {
+  AccessBoundary,
+  AvailabilityBoundary,
+  SessionBoundary,
+  useAccessBoundary,
+} from "../components/read-boundaries.tsx";
+
+const organizationFromSlug = (slug: string) =>
+  Schema.decodeUnknownSync(OrganizationReference)(slug);
+
+/** Start the group list, and the directory a group page uses to list its apps. */
+export function loadGroups(
+  atoms: Loader.Loader,
+  organization: OrganizationReference,
+  detail: boolean,
+) {
+  return {
+    groups: atoms.prefetch(groupsAtom(organization)),
+    directory: detail ? atoms.prefetch(resourceDirectoryAtom(organization)) : undefined,
+  };
+}
+
+export type GroupsReads = ReturnType<typeof loadGroups>;
 
 /** Shared hosted groups page. A reload reads persisted membership, never fixture data. */
-export function GroupsPage({ id }: { readonly id?: string }) {
-  const { organization } = useOrganizationRoute();
-  const result = useAtomValue(groupsAtom(organization));
-  const refresh = useAtomRefresh(groupsAtom(organization));
-  const data = AsyncResult.value(result);
+export function GroupsPage({
+  id,
+  reads,
+}: {
+  readonly id?: string;
+  readonly reads: GroupsReads | undefined;
+}) {
   useDocumentTitle(productTitle(groupsTitle));
+  if (reads === undefined) return null;
+  return (
+    <SessionBoundary>
+      <AvailabilityBoundary>
+        <AccessBoundary>
+          <Suspense
+            fallback={
+              <GroupsFrame>
+                <GroupsLoading />
+              </GroupsFrame>
+            }
+          >
+            <Groups id={id} reads={reads} />
+          </Suspense>
+        </AccessBoundary>
+      </AvailabilityBoundary>
+    </SessionBoundary>
+  );
+}
+
+function Groups({ id, reads }: { readonly id: string | undefined; readonly reads: GroupsReads }) {
+  const { slug } = useOrganizationRoute();
+  const organization = organizationFromSlug(slug);
+  const claims = useAccessBoundary();
+  const { result, data, refresh } = useStartedQuery({
+    source: claims.wrap(groupsAtom(organization)),
+    handle: reads.groups,
+  });
   return (
     <GroupsFrame>
       {AsyncResult.isFailure(result) && <HostedFailure cause={result.cause} retry={refresh} />}
       {Option.isSome(data) ? (
-        <GroupContent key={`${organization}:${id ?? "list"}`} data={data.value} id={id} />
+        <GroupContent
+          key={`${organization}:${id ?? "list"}`}
+          data={data.value}
+          id={id}
+          reads={reads}
+        />
       ) : (
         !AsyncResult.isFailure(result) && <GroupsLoading />
       )}
@@ -55,11 +115,14 @@ export function GroupsPage({ id }: { readonly id?: string }) {
 function GroupContent({
   data,
   id,
+  reads,
 }: {
   readonly data: typeof GroupsView.Type;
   readonly id: string | undefined;
+  readonly reads: GroupsReads;
 }) {
-  const { organization, slug: organizationSlug, role } = useOrganizationRoute();
+  const { slug: organizationSlug, role } = useOrganizationRoute();
+  const organization = organizationFromSlug(organizationSlug);
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [edit, setEdit] = useState<Group | "new" | null>(null);
@@ -115,7 +178,9 @@ function GroupContent({
                 </Button>
               }
             />
-            <GroupApps group={selected.id} />
+            {reads.directory !== undefined && (
+              <GroupApps group={selected.id} directory={reads.directory} />
+            )}
             <div className="mt-8 border-t pt-5">
               <h3 className="text-sm font-medium text-destructive">Delete group</h3>
               <p className="mt-1 text-xs text-muted-foreground">
@@ -237,6 +302,7 @@ function GroupContent({
           key={edit === "new" ? "new" : edit.id}
           group={edit === "new" ? null : edit}
           members={data.members}
+          groups={reads.groups}
           close={() => setEdit(null)}
         />
       )}
@@ -328,15 +394,21 @@ function Members({
 function GroupEditor({
   group,
   members,
+  groups,
   close,
 }: {
   readonly group: Group | null;
   readonly members: readonly GroupMember[];
+  readonly groups: GroupsReads["groups"];
   readonly close: () => void;
 }) {
-  const { organization } = useOrganizationRoute();
-  const latest = useAtomValue(groupsAtom(organization));
-  const refresh = useAtomRefresh(groupsAtom(organization));
+  const { slug } = useOrganizationRoute();
+  const organization = organizationFromSlug(slug);
+  const claims = useAccessBoundary();
+  const { result: latest, refresh } = useStartedQuery({
+    source: claims.wrap(groupsAtom(organization)),
+    handle: groups,
+  });
   const [search, setSearch] = useState("");
   const save = useAtomSet(saveGroupAtom(organization), { mode: "promiseExit" });
   const id = useId();
@@ -576,12 +648,24 @@ function GroupEditor({
   );
 }
 
-function GroupApps({ group }: { readonly group: string }) {
-  const { organization, slug: organizationSlug } = useOrganizationRoute();
+function GroupApps({
+  group,
+  directory,
+}: {
+  readonly group: string;
+  readonly directory: NonNullable<GroupsReads["directory"]>;
+}) {
+  const { slug: organizationSlug } = useOrganizationRoute();
+  const organization = organizationFromSlug(organizationSlug);
+  const claims = useAccessBoundary();
+  const { result, refresh } = useStartedQuery({
+    source: claims.wrap(resourceDirectoryAtom(organization)),
+    handle: directory,
+  });
   return (
     <section className="mt-7 space-y-3">
       <h3 className="text-sm font-medium">Apps</h3>
-      <QueryView query={resourceDirectoryAtom(organization)} Failure={HostedFailure}>
+      <QueryResult result={result} Failure={HostedFailure} retry={refresh}>
         {(data) => {
           const apps = data.apps.filter(
             ({ access }) =>
@@ -618,7 +702,7 @@ function GroupApps({ group }: { readonly group: string }) {
             </EmptyState>
           );
         }}
-      </QueryView>
+      </QueryResult>
     </section>
   );
 }
