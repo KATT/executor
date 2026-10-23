@@ -1,7 +1,8 @@
 import { useHydrated } from "@executor-js/ui/hooks/hydrated";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { DashboardUnauthorized } from "@executor-js/local-server/contracts";
-import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
+import { useAtomValue } from "@effect/atom-react";
+import { useStartedQuery } from "@executor-js/ui/dashboard/context";
 import { Cause, Option, Schema } from "effect";
 import { AsyncResult } from "effect/reactivity";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -14,7 +15,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { overviewAtom } from "../contracts/api.ts";
 import { bootstrapAtom, sessionAtom } from "../contracts/connection.ts";
-import { Link, Outlet, useMatches } from "@tanstack/react-router";
+import { Link, Outlet, useLoaderData, useMatches } from "@tanstack/react-router";
 import { usePairingLinks } from "./connection.ts";
 import { cn } from "@executor-js/ui/lib/utils";
 import { Button } from "@executor-js/ui/components/button";
@@ -58,7 +59,9 @@ export function DashboardLayout() {
   return (
     <AuthenticationGate>
       <LocalDashboard>
-        <Dashboard />
+        <Suspense fallback={<Connect pending />}>
+          <Dashboard />
+        </Suspense>
       </LocalDashboard>
     </AuthenticationGate>
   );
@@ -115,8 +118,8 @@ function Connect({
 
 function Dashboard() {
   const section = useMatches({ select: (matches) => matches.at(-1)?.staticData.section });
-  const result = useAtomValue(overviewAtom);
-  const refresh = useAtomRefresh(overviewAtom);
+  const { overview, migration } = useLoaderData({ from: "/_dashboard" });
+  const { result, refresh } = useStartedQuery({ source: overviewAtom, handle: overview });
   const data = AsyncResult.value(result);
   const error = AsyncResult.isFailure(result) ? Cause.findErrorOption(result.cause) : Option.none();
   if (Option.isSome(error) && Schema.is(DashboardUnauthorized)(error.value))
@@ -191,7 +194,7 @@ function Dashboard() {
           <Failure cause={result.cause} retry={refresh} />
         </div>
       )}
-      <OwnerMigrationBanner />
+      <OwnerMigrationBanner migration={migration} />
       <Outlet />
       <NameAccountDialog />
     </DashboardShell>

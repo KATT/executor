@@ -47,6 +47,7 @@ function Root() {
 /**
  * Apply the entry credentials the browser erased from its address. The server rendered without
  * them, so they take effect after hydration instead of changing the first render.
+ * TODO(raf-effect-atom gap: Browser entry credentials cannot be loader-started)
  */
 function BrowserEntry() {
   const { entry } = Route.useRouteContext();

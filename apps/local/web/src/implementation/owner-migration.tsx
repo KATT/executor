@@ -1,5 +1,6 @@
-import { useAtomValue } from "@effect/atom-react";
+import type { Handle } from "raf-effect-atom";
 import { AsyncResult } from "effect/reactivity";
+import { useStartedQuery } from "@executor-js/ui/dashboard/context";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { AlertCircleIcon } from "@hugeicons/core-free-icons";
 import { Alert } from "@executor-js/ui/components/alert";
@@ -49,8 +50,12 @@ const blocked = (record: Blocked) => {
  * 7 moves them to `local`. Until then their apps are listed but cannot be connected, so this says
  * why and what a person does about it. Nothing shows once the step has moved them.
  */
-export function OwnerMigrationBanner() {
-  const result = useAtomValue(ownerMigrationAtom);
+export function OwnerMigrationBanner({
+  migration: handle,
+}: {
+  readonly migration: Handle<typeof ownerMigrationAtom>;
+}) {
+  const { result } = useStartedQuery({ source: ownerMigrationAtom, handle });
   if (!AsyncResult.isSuccess(result) || result.value === null) return null;
   const migration = result.value;
   const owners = quoted(migration.owners);
