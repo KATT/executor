@@ -3,7 +3,8 @@ import { Option } from "effect";
 import { AppCardsSkeleton } from "./loading.tsx";
 import { Card } from "@executor-js/ui/components/card";
 import { useState, type ReactNode } from "react";
-import { QueryResult, useQuery, useDashboard } from "./context.tsx";
+import { QueryResult, useQuery, useStartedQuery, useDashboard } from "./context.tsx";
+import type { StartedRead } from "../../contracts/started-read.ts";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { AlertCircleIcon, ArrowRight02Icon, Key01Icon } from "@hugeicons/core-free-icons";
 import type { Inventory, QueryProps } from "../../contracts/dashboard.ts";
@@ -17,23 +18,50 @@ import {
 import { AppIcon, Empty, SearchInput } from "./common.tsx";
 import { Button } from "../components/button.tsx";
 
-/** A card for each configured app and its linked accounts. */
-export function AppsPage<E>({
-  action,
-  connect,
-  filters,
-  empty,
-  pending,
-  query,
-  Failure,
-}: QueryProps<Inventory, E> & {
+type AppsPageProps<E> = QueryProps<Inventory, E> & {
   readonly action?: ReactNode;
   readonly connect: ReactNode;
   readonly filters?: ReactNode;
   readonly empty?: ReactNode;
   readonly pending?: ReactNode;
+  /** Present when the route loader started this inventory. */
+  readonly read?: StartedRead<Inventory, E> | undefined;
+};
+
+/** A card for each configured app and its linked accounts. */
+export function AppsPage<E>(props: AppsPageProps<E>) {
+  return props.read === undefined ? (
+    <AppsFromQuery {...props} />
+  ) : (
+    <AppsFromRead {...props} read={props.read} />
+  );
+}
+
+function AppsFromQuery<E>(props: AppsPageProps<E>) {
+  const state = useQuery(props.query);
+  return <AppsBody {...props} {...state} />;
+}
+
+function AppsFromRead<E>(props: AppsPageProps<E> & { readonly read: StartedRead<Inventory, E> }) {
+  const state = useStartedQuery(props.read);
+  return <AppsBody {...props} {...state} />;
+}
+
+function AppsBody<E>({
+  action,
+  connect,
+  filters,
+  empty,
+  pending,
+  Failure,
+  result,
+  data,
+  refresh,
+}: AppsPageProps<E> & {
+  readonly result: ReturnType<typeof useQuery<Inventory, E>>["result"];
+  readonly data: ReturnType<typeof useQuery<Inventory, E>>["data"];
+  readonly refresh: () => void;
 }) {
-  const { result, data, refresh } = useQuery(query);
   const [search, setSearch] = useState("");
   return (
     <PageFrame>

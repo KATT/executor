@@ -4,7 +4,8 @@ import { Option } from "effect";
 import { AccountRowsSkeleton } from "./loading.tsx";
 import { AccountCheckDot, AccountIdentity } from "./account-health.tsx";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { QueryResult, useQuery, useDashboard } from "./context.tsx";
+import { QueryResult, useQuery, useStartedQuery, useDashboard } from "./context.tsx";
+import type { StartedRead } from "../../contracts/started-read.ts";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
 import type { AccountId } from "@executor-js/sdk";
@@ -14,13 +15,7 @@ import { accountNeedsSignIn } from "../../contracts/dashboard.ts";
 import { Empty, ProviderIcon, SearchInput } from "./common.tsx";
 import { Button } from "../components/button.tsx";
 
-/** Saved account metadata is shared across app references, without exposing credential values. */
-export function AccountsPage<E>({
-  query,
-  Failure,
-  action,
-  ...props
-}: QueryProps<Inventory, E> & {
+type AccountsPageProps<E> = QueryProps<Inventory, E> & {
   readonly filters?: ReactNode;
   /** A page action beside the title, such as managing OAuth clients; hidden while there are none. */
   readonly action?: ReactNode;
@@ -29,8 +24,43 @@ export function AccountsPage<E>({
   readonly accountMeta?: (account: AccountSummary) => ReactNode;
   /** A linked account is scrolled into view and marked, since accounts have no page of their own. */
   readonly highlight?: AccountId | undefined;
+  /** Present when the route loader started this inventory. */
+  readonly read?: StartedRead<Inventory, E> | undefined;
+};
+
+/** Saved account metadata is shared across app references, without exposing credential values. */
+export function AccountsPage<E>(props: AccountsPageProps<E>) {
+  return props.read === undefined ? (
+    <AccountsFromQuery {...props} />
+  ) : (
+    <AccountsFromRead {...props} read={props.read} />
+  );
+}
+
+function AccountsFromQuery<E>(props: AccountsPageProps<E>) {
+  const state = useQuery(props.query);
+  return <AccountsBody {...props} {...state} />;
+}
+
+function AccountsFromRead<E>(
+  props: AccountsPageProps<E> & { readonly read: StartedRead<Inventory, E> },
+) {
+  const state = useStartedQuery(props.read);
+  return <AccountsBody {...props} {...state} />;
+}
+
+function AccountsBody<E>({
+  Failure,
+  action,
+  result,
+  data,
+  refresh,
+  ...props
+}: AccountsPageProps<E> & {
+  readonly result: ReturnType<typeof useQuery<Inventory, E>>["result"];
+  readonly data: ReturnType<typeof useQuery<Inventory, E>>["data"];
+  readonly refresh: () => void;
 }) {
-  const { result, data, refresh } = useQuery(query);
   const [search, setSearch] = useState("");
   return (
     <PageFrame>
