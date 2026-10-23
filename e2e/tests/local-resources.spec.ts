@@ -89,7 +89,7 @@ export default defineApp({user: { accounts:{service} }},{tools: router({ identit
         );
         yield* browser.use("Open local tools", (page) => page.goto(`/apps/${app.id}?view=tools`));
         yield* browser.use("Tools load with the linked account, without a choice", (page) =>
-          page.getByRole("button", { name: "identity", exact: true }).waitFor(),
+          page.getByRole("link", { name: "identity", exact: true }).waitFor(),
         );
         expect(
           yield* browser.use("No account choice is offered", (page) =>

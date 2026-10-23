@@ -73,7 +73,7 @@ export default defineApp({}, async () => ({
                 view === "settings"
                   ? 'section[aria-label="App name"]'
                   : view === "tools"
-                    ? 'button[title="hello"]'
+                    ? 'a[title="hello"]'
                     : undefined;
               if (content === undefined) return;
               const record = { shown: false, reverted: false };

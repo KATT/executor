@@ -337,7 +337,7 @@ export const checkAppLoading = (input: {
                   );
                 } else {
                   yield* browser.use("Tool discovery completes", (page) =>
-                    page.getByRole("button", { name: "hello", exact: true }).waitFor(),
+                    page.getByRole("link", { name: "hello", exact: true }).waitFor(),
                   );
                   expect(
                     yield* browser.use("The search survives loading", (page) =>
