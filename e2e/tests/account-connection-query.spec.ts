@@ -280,7 +280,7 @@ export default defineApp({ user: { accounts: { service } } }, async ({ user: { a
           page.getByRole("link", { name: "Tools", exact: true }).click(),
         );
         yield* browser.use("The connected app's tools load without refreshing", (page) =>
-          page.getByRole("button", { name: "echo", exact: true }).waitFor({ state: "visible" }),
+          page.getByRole("link", { name: "echo", exact: true }).waitFor({ state: "visible" }),
         );
         expect(
           yield* browser.use("The original document remains mounted", (page) =>
