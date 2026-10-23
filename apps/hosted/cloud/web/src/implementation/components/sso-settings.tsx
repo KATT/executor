@@ -1,6 +1,7 @@
 import { usePageUrl } from "@executor-js/dashboard-start/page";
-import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { useOrganizationRoute } from "@executor-js/hosted-web/organization";
+import { useStartedQuery } from "@executor-js/ui/dashboard/context";
 import { Button } from "@executor-js/ui/components/button";
 import { Input } from "@executor-js/ui/components/input";
 import { Textarea } from "@executor-js/ui/components/textarea";
@@ -13,7 +14,8 @@ import {
 } from "@executor-js/ui/components/card";
 import { AsyncResult } from "effect/reactivity";
 import { Exit, Option, Redacted } from "effect";
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import type { Handle } from "raf-effect-atom";
 import { billingAtom } from "../../contracts/billing.ts";
 import type { OrganizationReference } from "@executor-js/hosted-server/organization";
 import {
@@ -27,10 +29,17 @@ import {
   type SsoConnection,
 } from "../../contracts/sso.ts";
 
+/** Handles the organization route starts for owners and admins. Members receive neither. */
+export type SsoReads = {
+  readonly billing?: Handle<ReturnType<typeof billingAtom>> | undefined;
+  readonly connections?: Handle<ReturnType<typeof ssoConnectionsAtom>> | undefined;
+};
+
 /** Enterprise owners and admins can configure SSO; other teams never load its controls. */
-export function SsoSettings() {
+export function SsoSettings({ reads }: { readonly reads: SsoReads | undefined }) {
   const organization = useOrganizationRoute();
   if (
+    reads?.billing === undefined ||
     organization.role === undefined ||
     organization.role === "member" ||
     organization.id === undefined
@@ -42,6 +51,8 @@ export function SsoSettings() {
       organization={organization.organization}
       organizationId={organization.id}
       slug={organization.slug}
+      billing={reads.billing}
+      {...(reads.connections === undefined ? {} : { connections: reads.connections })}
     />
   );
 }
@@ -50,14 +61,18 @@ function EnterpriseSsoSettings({
   organization,
   organizationId,
   slug,
+  billing,
+  connections,
 }: {
   readonly organization: OrganizationReference;
   readonly organizationId: string;
   readonly slug: string;
+  readonly billing: NonNullable<SsoReads["billing"]>;
+  readonly connections?: NonNullable<SsoReads["connections"]>;
 }) {
-  const billing = useAtomValue(billingAtom(organization));
-  const confirmed = Option.getOrUndefined(AsyncResult.value(billing));
-  if (confirmed?.enterprise !== true) return null;
+  const plan = useStartedQuery({ source: billingAtom(organization), handle: billing });
+  const confirmed = Option.getOrUndefined(AsyncResult.value(plan.result));
+  if (confirmed?.enterprise !== true || connections === undefined) return null;
   return (
     <Card className="gap-0 py-0">
       <CardHeader className="gap-1.5 px-4 pt-4 pb-3">
@@ -69,7 +84,16 @@ function EnterpriseSsoSettings({
         </CardDescription>
       </CardHeader>
       <CardContent className="px-4 pb-4">
-        <Connections organizationId={organizationId} slug={slug} />
+        <Suspense
+          fallback={
+            <div
+              className="h-16 animate-pulse rounded-md bg-muted"
+              aria-label="Loading SSO connections"
+            />
+          }
+        >
+          <Connections organizationId={organizationId} slug={slug} connections={connections} />
+        </Suspense>
       </CardContent>
     </Card>
   );
@@ -78,12 +102,18 @@ function EnterpriseSsoSettings({
 function Connections({
   organizationId,
   slug,
+  connections,
 }: {
   readonly organizationId: string;
   readonly slug: string;
+  readonly connections: NonNullable<SsoReads["connections"]>;
 }) {
-  const query = useAtomValue(ssoConnectionsAtom(organizationId));
-  const refresh = useAtomRefresh(ssoConnectionsAtom(organizationId));
+  const listed = useStartedQuery({
+    source: ssoConnectionsAtom(organizationId),
+    handle: connections,
+  });
+  const query = listed.result;
+  const refresh = listed.refresh;
   const rows = Option.getOrUndefined(AsyncResult.value(query));
   const [adding, setAdding] = useState(false);
   return (

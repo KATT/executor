@@ -1,21 +1,47 @@
 import { Suspense } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { Link, createFileRoute } from "@tanstack/react-router";
+import { accessAtom } from "@executor-js/hosted-web/contracts/organization";
 import { startAfterAccess } from "@executor-js/hosted-web/contracts/guarded-read";
 import {
   loadMembers,
   OrganizationPage,
   type MemberLimit,
+  type MembersReads,
 } from "@executor-js/hosted-web/pages/organization";
+import type { OrganizationReference } from "@executor-js/hosted-server/organization";
 import { useOrganizationRoute } from "@executor-js/hosted-web/organization";
 import { Button } from "@executor-js/ui/components/button";
 import { Option } from "effect";
 import { AsyncResult, Atom } from "effect/reactivity";
+import { Loader } from "raf-effect-atom";
 import { DeleteOrganization } from "../components/delete-organization.tsx";
-import { SsoSettings } from "../components/sso-settings.tsx";
+import { SsoSettings, type SsoReads } from "../components/sso-settings.tsx";
 import { BillingSettings } from "../components/billing-settings.tsx";
 import { V1ImportSettings } from "../components/v1-import-links.tsx";
-import { memberLimitAtom } from "../../contracts/billing.ts";
+import { billingAtom, memberLimitAtom } from "../../contracts/billing.ts";
+import { ssoConnectionsAtom } from "../../contracts/sso.ts";
+
+/** Members never read billing. Owners and admins do, and enterprise plans also read SSO. */
+async function loadCloudOrganization(
+  atoms: Loader.Loader,
+  organization: OrganizationReference,
+): Promise<(MembersReads & SsoReads) | undefined> {
+  const members = await loadMembers(atoms, organization);
+  if (members === undefined) return undefined;
+  const access = Loader.result(await atoms.ensure(accessAtom(organization)));
+  if (!AsyncResult.isSuccess(access) || access.value.role === "member") return members;
+  const billing = atoms.prefetch(billingAtom(organization));
+  const plan = Loader.result(await atoms.ensure(billingAtom(organization)));
+  const enterprise = AsyncResult.isSuccess(plan) && plan.value.enterprise === true;
+  return {
+    ...members,
+    billing,
+    ...(enterprise
+      ? { connections: atoms.prefetch(ssoConnectionsAtom(access.value.organization)) }
+      : {}),
+  };
+}
 
 /** Members cannot read billing, and cannot invite, so they never ask for the limit. */
 const noMemberLimit = Atom.make(AsyncResult.initial<{ readonly limit: number | null }>());
@@ -46,18 +72,19 @@ function useMemberLimit(): MemberLimit | undefined {
 }
 
 function CloudOrganizationPage() {
+  const reads = Route.useLoaderData();
   return (
     <OrganizationPage
       emailInvitations
       memberLimit={useMemberLimit()}
-      reads={Route.useLoaderData()}
+      reads={reads}
       footer={<DeleteOrganization />}
     >
       <BillingSettings />
       {/* Only enterprise plans show this card, and its plan check calls the billing provider;
           the rest of the page does not wait for it. */}
       <Suspense fallback={null}>
-        <SsoSettings />
+        <SsoSettings reads={reads} />
       </Suspense>
       <V1ImportSettings />
     </OrganizationPage>
@@ -68,7 +95,7 @@ function CloudOrganizationPage() {
 export const Route = createFileRoute("/org/$organizationSlug/organization")({
   loader: ({ context, params }) =>
     startAfterAccess(context.atoms, params.organizationSlug, (organization) =>
-      loadMembers(context.atoms, organization),
+      loadCloudOrganization(context.atoms, organization),
     ),
   component: CloudOrganizationPage,
 });
