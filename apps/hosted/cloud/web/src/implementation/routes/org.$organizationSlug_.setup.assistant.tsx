@@ -1,16 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { prefetchAfterAccess } from "@executor-js/hosted-web/contracts/guarded-read";
+import { startAfterAccess } from "@executor-js/hosted-web/contracts/guarded-read";
 import { parseAgentSetupSearch } from "@executor-js/hosted-web/contracts/navigation";
-import { inventoryAtom } from "@executor-js/hosted-web/contracts/organization";
-import { AgentSetupPage } from "@executor-js/hosted-web/pages/agent-setup";
+import { AgentSetupPage, loadAgentSetup } from "@executor-js/hosted-web/pages/agent-setup";
 
 /** The assistant handoff, available on reload; its first prompt names the connected accounts. */
 export const Route = createFileRoute("/org/$organizationSlug_/setup/assistant")({
   codeSplitGroupings: [],
   validateSearch: parseAgentSetupSearch,
   loader: ({ context, params }) =>
-    prefetchAfterAccess(context.atoms, params.organizationSlug, (organization) => [
-      inventoryAtom(organization),
-    ]),
-  component: AgentSetupPage,
+    startAfterAccess(context.atoms, params.organizationSlug, (organization) =>
+      loadAgentSetup(context.atoms, organization),
+    ),
+  component: function AssistantSetup() {
+    const reads = Route.useLoaderData();
+    return reads === undefined ? null : <AgentSetupPage inventory={reads.inventory} />;
+  },
 });
