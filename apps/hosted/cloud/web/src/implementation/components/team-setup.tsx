@@ -8,7 +8,6 @@ import {
   firstSetupStep,
   useSetupSequence,
 } from "@executor-js/hosted-web/setup-sequence";
-import { useOrganizationRoute } from "@executor-js/hosted-web/organization";
 import { organizationsAtom } from "@executor-js/hosted-web/contracts/organization";
 import { HostedEntry, HostedEntryLoading } from "@executor-js/hosted-web/entry";
 import { UnknownPagePending } from "@executor-js/hosted-web/page-pending";
@@ -28,7 +27,8 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { Link, Navigate, useLocation } from "@tanstack/react-router";
 import { Cause, Exit, Option, Schema } from "effect";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useId, useState, type ReactNode } from "react";
+import { useAtomResult, type Handle } from "raf-effect-atom";
 import { reportBrowserUsage } from "@executor-js/hosted-web/contracts/product-analytics";
 import {
   OnboardingDraft,
@@ -343,24 +343,48 @@ function TeamForm({
  * The team's setup steps in the order its setup sequence names. They render only once the order
  * is known, which the setup document reads with the page, so no step shows in the wrong place.
  */
-export function CloudSetupSequence({ children }: { readonly children: ReactNode }) {
-  const { organization } = useOrganizationRoute();
-  const sequence = useAtomValue(setupSequenceAtom(organization));
-  const retry = useAtomRefresh(setupSequenceAtom(organization));
-  return AsyncResult.builder(sequence)
-    .onInitial(() => <SetupPage />)
-    .onFailure(() => (
+export function CloudSetupSequence({
+  children,
+  reads,
+}: {
+  readonly children: ReactNode;
+  readonly reads:
+    | {
+        readonly organization: Parameters<typeof setupSequenceAtom>[0];
+        readonly sequence: Handle<ReturnType<typeof setupSequenceAtom>>;
+      }
+    | undefined;
+}) {
+  if (reads === undefined) return <SetupPage />;
+  return (
+    <Suspense fallback={<SetupPage />}>
+      <StartedSetupSequence reads={reads}>{children}</StartedSetupSequence>
+    </Suspense>
+  );
+}
+
+function StartedSetupSequence({
+  children,
+  reads,
+}: {
+  readonly children: ReactNode;
+  readonly reads: {
+    readonly organization: Parameters<typeof setupSequenceAtom>[0];
+    readonly sequence: Handle<ReturnType<typeof setupSequenceAtom>>;
+  };
+}) {
+  const sequence = useAtomResult(setupSequenceAtom(reads.organization), reads.sequence);
+  const retry = useAtomRefresh(setupSequenceAtom(reads.organization));
+  if (AsyncResult.isFailure(sequence))
+    return (
       <SetupPage>
         <div className="flex min-h-[200px] flex-col items-center justify-center gap-4">
           <p role="alert">Unable to open your team's setup. Try again.</p>
-          <Button onClick={retry} loading={sequence.waiting}>
-            Try again
-          </Button>
+          <Button onClick={retry}>Try again</Button>
         </div>
       </SetupPage>
-    ))
-    .onSuccess((value) => <SetupSequenceProvider value={value}>{children}</SetupSequenceProvider>)
-    .exhaustive();
+    );
+  return <SetupSequenceProvider value={sequence.value}>{children}</SetupSequenceProvider>;
 }
 
 /** A new team's setup starts at the first step of its sequence, replacing this entry. */

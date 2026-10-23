@@ -68,14 +68,21 @@ const replyUnreadable = (cause: Cause.Cause<BrowserApprovalFailure>) => {
 type Outcome = "answered" | "unavailable" | "reply-unreadable";
 
 /** Authentication is provided by the product; the server independently checks every read and answer. */
-export function BrowserApprovalPage({ atoms }: { readonly atoms: BrowserApprovalAtoms }) {
+export function BrowserApprovalPage({
+  atoms,
+  view,
+}: {
+  readonly atoms: BrowserApprovalAtoms;
+  /** Present when the route loader started this review. */
+  readonly view?: Handle<ReviewAtoms["view"]> | undefined;
+}) {
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col px-5 py-12 sm:py-20">
       <div className="mb-8 flex items-center gap-2 text-lg font-semibold">
         <img src="/favicon.png" alt="" className="size-7" />
         executor
       </div>
-      <BrowserApprovalCard atoms={atoms} />
+      <BrowserApprovalCard atoms={atoms} {...(view === undefined ? {} : { view })} />
     </main>
   );
 }
