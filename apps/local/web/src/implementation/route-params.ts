@@ -1,3 +1,4 @@
+import { ConnectionId } from "@executor-js/mcp-auth/connections";
 import { AccountId, AppId, WebhookId } from "@executor-js/sdk";
 import { notFound } from "@tanstack/react-router";
 import { Option, Schema } from "effect";
@@ -20,6 +21,11 @@ export function parseAppParams(params: { readonly appId: string }) {
 /** Reject malformed account URLs before mounting any account reads. */
 export function parseAccountParams(params: { readonly accountId: string }) {
   return { accountId: decodeParam(AccountId, params.accountId) };
+}
+
+/** Reject malformed scoped MCP connection URLs before reading the connection. */
+export function parseMcpConnectionParams(params: { readonly connectionId: string }) {
+  return { connectionId: decodeParam(ConnectionId, params.connectionId) };
 }
 
 /** Reject malformed webhook setup URLs before reading the subscription. */
