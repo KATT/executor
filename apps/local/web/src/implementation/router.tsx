@@ -6,6 +6,7 @@ import { parseSearchParams, type NavigationSection } from "../contracts/navigati
 import { readAccountConnection } from "./account-connections.ts";
 import { readPairingToken } from "./connection.ts";
 import { readOAuthCallback } from "./oauth.ts";
+import { PageError } from "./components/not-found.tsx";
 import { routeTree } from "./routeTree.gen.ts";
 import { serverDocument } from "./document.ts";
 
@@ -38,6 +39,7 @@ export function getRouter() {
       stringifySearch: stringifySearchWith(JSON.stringify),
       scrollRestoration: true,
       scrollToTopSelectors: ["main.main"],
+      defaultErrorComponent: PageError,
       Wrap,
     }),
   );

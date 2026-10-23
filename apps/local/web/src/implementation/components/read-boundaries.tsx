@@ -38,7 +38,7 @@ function StorageFailure({
   return <ErrorNotice error={error} context="While reading this page." retry={reset} />;
 }
 
-// TODO(raf-effect-atom gap: AtomHttpApi query errors omit HttpClientError)
+// Transport and decode failures are defects, so they are not endpoint tags.
 const [SessionBoundary, useSessionBoundary] = createErrorBoundary({
   name: "LocalSession",
   errors: DashboardClient,

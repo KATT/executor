@@ -34,7 +34,7 @@ function AccessFailure({
   return <ErrorNotice error={error} context="While reading this organization." retry={reset} />;
 }
 
-// TODO(raf-effect-atom gap: AtomHttpApi query errors omit HttpClientError)
+// Transport and decode failures are defects, so they are not endpoint tags.
 const [SessionBoundary, useSessionBoundary] = createErrorBoundary({
   name: "HostedSession",
   errors: HostedClient,

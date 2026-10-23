@@ -8,7 +8,7 @@ import { pairingTokenAtom } from "../../contracts/connection.ts";
 import { oauthCallbackAtom } from "../../contracts/oauth.ts";
 import type { BrowserEntryValues } from "../router.tsx";
 import { localPageTitle } from "../../contracts/navigation.ts";
-import { NotFoundPage } from "../components/not-found.tsx";
+import { NotFoundPage, PageError } from "../components/not-found.tsx";
 import { useLocation } from "@tanstack/react-router";
 import { DocumentTitleProvider, productTitle } from "@executor-js/ui/hooks/document-title";
 import { DashboardDocument } from "@executor-js/dashboard-start/shell";
@@ -27,6 +27,7 @@ export const Route = createRootRouteWithContext<{
   shellComponent: DashboardDocument,
   component: Root,
   notFoundComponent: NotFoundPage,
+  errorComponent: PageError,
 });
 
 function Root() {
