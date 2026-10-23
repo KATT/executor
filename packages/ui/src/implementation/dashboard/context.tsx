@@ -40,12 +40,41 @@ export function useStartedQuery<A, E>(read: StartedRead<A, E>) {
 /** Loading/failure rendering follows the same source lifetime in every host. */
 export function QueryView<A, E>({
   query,
+  read,
   Failure,
   children,
   pending = <LoadingRows />,
 }: QueryProps<A, E> & {
+  readonly read?: StartedRead<A, E> | undefined;
   readonly children: (value: A) => ReactNode;
   readonly pending?: ReactNode;
+}) {
+  if (read !== undefined)
+    return (
+      <StartedQueryView
+        source={read.source}
+        handle={read.handle}
+        Failure={Failure}
+        pending={pending}
+      >
+        {children}
+      </StartedQueryView>
+    );
+  return (
+    <QueryViewQuery query={query} Failure={Failure} pending={pending}>
+      {children}
+    </QueryViewQuery>
+  );
+}
+
+function QueryViewQuery<A, E>({
+  query,
+  Failure,
+  children,
+  pending,
+}: QueryProps<A, E> & {
+  readonly children: (value: A) => ReactNode;
+  readonly pending: ReactNode;
 }) {
   const { result, refresh } = useQuery(query);
   return (

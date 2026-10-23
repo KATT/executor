@@ -4,7 +4,10 @@ import { Alert, AlertDescription } from "@executor-js/ui/components/alert";
 import { EmptyState } from "@executor-js/ui/dashboard/empty-state";
 import { Card } from "@executor-js/ui/components/card";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import { QueryResult, useQuery } from "@executor-js/ui/dashboard/context";
+import { Loader } from "raf-effect-atom";
+import { QueryResult, useStartedQuery } from "@executor-js/ui/dashboard/context";
+import { accessAtom } from "@executor-js/hosted-web/contracts/organization";
+import type { OrganizationReference } from "@executor-js/hosted-server/organization";
 import { useOrganizationRoute } from "@executor-js/hosted-web/organization";
 import { Button } from "@executor-js/ui/components/button";
 import { Duration, Exit, Option } from "effect";
@@ -62,15 +65,44 @@ interface BillingProps {
   readonly returned: ReturnType<typeof billingSearch>;
   /** Drop the checkout return from the address, so reloading or a bookmark does not wait again. */
   readonly onCheckoutSettled: () => void;
+  readonly reads: BillingReads | undefined;
 }
 
-function BillingDetails({ returned, onCheckoutSettled }: BillingProps) {
+/** Start billing for owners and admins. Members never fetch it. */
+export async function loadBilling(
+  atoms: Loader.Loader,
+  organization: OrganizationReference,
+  search: { readonly organization?: string | undefined; readonly plan?: string | undefined },
+) {
+  const access = Loader.result(await atoms.ensure(accessAtom(organization)));
+  if (!AsyncResult.isSuccess(access) || access.value.role === "member")
+    return { awaiting: undefined, billing: undefined };
+  const awaiting =
+    search.organization === access.value.organization && search.plan !== undefined
+      ? search.plan
+      : undefined;
+  return { awaiting, billing: atoms.prefetch(billingAtom(organization, awaiting)) };
+}
+
+export type BillingReads = Awaited<ReturnType<typeof loadBilling>>;
+
+function BillingDetails({
+  returned,
+  onCheckoutSettled,
+  reads,
+}: {
+  readonly returned: ReturnType<typeof billingSearch>;
+  readonly onCheckoutSettled: () => void;
+  readonly reads: BillingReads & { readonly billing: NonNullable<BillingReads["billing"]> };
+}) {
   const organization = useOrganizationRoute();
-  const awaitingPlan =
-    returned.organization === organization.id && returned.plan ? returned.plan : undefined;
+  const awaitingPlan = reads.awaiting;
   /** A returned checkout whose plan was still not in effect when the page stopped waiting. */
   const [unconfirmedPlan, setUnconfirmedPlan] = useState<string>();
-  const { result, data, refresh } = useQuery(billingAtom(organization.organization, awaitingPlan));
+  const { result, data, refresh } = useStartedQuery({
+    source: billingAtom(organization.organization, awaitingPlan),
+    handle: reads.billing,
+  });
   const checkout = useAtomSet(checkoutAtom, { mode: "promiseExit" });
   const portal = useAtomSet(portalAtom, { mode: "promiseExit" });
   const checkoutState = useAtomValue(checkoutAtom);
@@ -282,8 +314,9 @@ function BillingFailure({ retry }: { readonly retry?: (() => void) | undefined }
   );
 }
 /** Members never fetch billing; the backend independently enforces the same rule. */
-export function BillingPage({ returned, onCheckoutSettled }: BillingProps) {
+export function BillingPage({ returned, onCheckoutSettled, reads }: BillingProps) {
   const organization = useOrganizationRoute();
+  if (reads === undefined) return null;
   if (organization.role === undefined) return <PageSkeleton title="Billing" />;
   if (organization.role === "member")
     return (
@@ -307,11 +340,13 @@ export function BillingPage({ returned, onCheckoutSettled }: BillingProps) {
         </EmptyState>
       </section>
     );
+  if (reads.billing === undefined) return <PageSkeleton title="Billing" />;
   return (
     <BillingDetails
       key={organization.organization}
       returned={returned}
       onCheckoutSettled={onCheckoutSettled}
+      reads={{ ...reads, billing: reads.billing }}
     />
   );
 }

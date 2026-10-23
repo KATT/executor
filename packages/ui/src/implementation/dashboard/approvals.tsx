@@ -3,25 +3,28 @@ import { EmptyState } from "./empty-state.tsx";
 import { PageFrame, PageHeader } from "./page.tsx";
 import { approvalsDescription, approvalsTitle } from "./loading.tsx";
 import type { ComponentType, ReactNode } from "react";
-import type { FailureProps, Query } from "../../contracts/dashboard.ts";
+import type { AsyncResult } from "effect/reactivity";
+import type { FailureProps } from "../../contracts/dashboard.ts";
 import type { ApprovalListItem } from "../../contracts/schedules.ts";
-import { QueryView } from "./context.tsx";
+import { QueryResult } from "./context.tsx";
 import { Button } from "../components/button.tsx";
 
 /** Pending scheduled work uses the same review interaction in local and hosted dashboards. */
 export function ApprovalsPage<E>({
-  query,
+  result,
+  retry,
   Failure,
   review,
 }: {
-  readonly query: Query<readonly ApprovalListItem[], E>;
+  readonly result: AsyncResult.AsyncResult<readonly ApprovalListItem[], E>;
+  readonly retry: () => void;
   readonly Failure: ComponentType<FailureProps<NoInfer<E>>>;
   readonly review: (item: ApprovalListItem) => ReactNode;
 }) {
   return (
     <PageFrame>
       <PageHeader title={approvalsTitle} description={approvalsDescription} />
-      <QueryView query={query} Failure={Failure}>
+      <QueryResult result={result} Failure={Failure} retry={retry}>
         {(items) =>
           items.length === 0 ? (
             <EmptyState title="No approvals waiting">
@@ -51,7 +54,7 @@ export function ApprovalsPage<E>({
             </div>
           )
         }
-      </QueryView>
+      </QueryResult>
     </PageFrame>
   );
 }

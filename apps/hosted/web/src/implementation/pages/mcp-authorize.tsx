@@ -1,7 +1,10 @@
+import { Suspense } from "react";
 import { usePageUrl } from "@executor-js/dashboard-start/page";
 import { EmptyState } from "@executor-js/ui/dashboard/empty-state";
+import { useStartedQuery } from "@executor-js/ui/dashboard/context";
 import { reportBrowserUsage } from "../../contracts/product-analytics.ts";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { Loader } from "raf-effect-atom";
 import { useState } from "react";
 import { Cause, Exit } from "effect";
 import { AsyncResult } from "effect/reactivity";
@@ -28,7 +31,27 @@ import { useResourceOrigins } from "../resource-origin.ts";
  * The user approves the URL's requested connection. App/tool scoping remains a backend capability.
  * The request may name a resource at any of the deployment's resource origins.
  */
-export function McpAuthorizePage() {
+/** Start the registered client and the caller's organizations from the raw authorize query. */
+export function loadMcpAuthorization(atoms: Loader.Loader, search: string) {
+  const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  const clientId = params.get("client_id") ?? "";
+  return {
+    organizations: atoms.prefetch(organizationsAtom),
+    client: atoms.prefetch(mcpClientAtom(clientId)),
+  };
+}
+
+export type McpAuthorizationReads = ReturnType<typeof loadMcpAuthorization>;
+
+export function McpAuthorizePage({ reads }: { readonly reads: McpAuthorizationReads }) {
+  return (
+    <Suspense fallback={<McpConsentLoading />}>
+      <McpAuthorize reads={reads} />
+    </Suspense>
+  );
+}
+
+function McpAuthorize({ reads }: { readonly reads: McpAuthorizationReads }) {
   const page = usePageUrl();
   const resourceOrigins = useResourceOrigins();
   // Keep the signed query intact; repeated OAuth fields must not be reserialized by the router.
@@ -37,8 +60,11 @@ export function McpAuthorizePage() {
   const clientId = params.get("client_id") ?? "";
   const target = grantTarget(resourceOrigins, params.getAll("resource"));
   const destination = consentDestination(params.get("redirect_uri"));
-  const client = useAtomValue(mcpClientAtom(clientId));
-  const organizations = useAtomValue(organizationsAtom);
+  const client = useStartedQuery({ source: mcpClientAtom(clientId), handle: reads.client }).result;
+  const organizations = useStartedQuery({
+    source: organizationsAtom,
+    handle: reads.organizations,
+  }).result;
   const consent = useAtomSet(mcpConsentAtom, { mode: "promiseExit" });
   const state = useAtomValue(mcpConsentAtom);
   const [selected, setSelected] = useState("");

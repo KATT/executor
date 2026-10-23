@@ -9,7 +9,11 @@ import { parseAppParams } from "@executor-js/hosted-web/route-params";
 export const Route = createFileRoute("/org/$organizationSlug/apps/$appId")({
   params: { parse: parseAppParams },
   validateSearch: parseAppSearch,
-  loaderDeps: ({ search }) => ({ version: search.version, tool: search.tool }),
+  loaderDeps: ({ search }) => ({
+    version: search.version,
+    tool: search.tool,
+    connection: search.connection,
+  }),
   loader: ({ context, params, deps }) =>
     startAfterAccess(context.atoms, params.organizationSlug, (organization) =>
       loadHostedApp(context.atoms, organization, params.appId, deps),
@@ -33,6 +37,7 @@ function AppPage() {
       <AccountConnectionDialog
         connectionId={connection}
         client={client}
+        read={Route.useLoaderData()?.connection}
         onClose={() => {
           void navigate({ search: { view, tool, version }, replace: true });
         }}

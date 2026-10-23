@@ -31,7 +31,7 @@ import type { OrganizationReference } from "@executor-js/hosted-server/organizat
 import { HostedFailure, useDashboardAtoms } from "../components/dashboard-bindings.tsx";
 import { dashboardAtoms } from "../../contracts/dashboard-bindings.ts";
 import { useAtomSet } from "@effect/atom-react";
-import { AppId, ToolName, VersionId, type App } from "@executor-js/sdk";
+import { AccountConnectionId, AppId, ToolName, VersionId, type App } from "@executor-js/sdk";
 import { Link, useBlocker, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -66,6 +66,7 @@ import {
   useStartedQuery,
 } from "@executor-js/ui/dashboard/context";
 import {
+  connectionAtom,
   toolsAtom,
   liveAppAtom,
   sourceAtom,
@@ -97,7 +98,11 @@ export async function loadHostedApp(
   atoms: Loader.Loader,
   organization: OrganizationReference,
   app: AppId,
-  search: { readonly version?: VersionId | undefined; readonly tool?: string | undefined },
+  search: {
+    readonly version?: VersionId | undefined;
+    readonly tool?: string | undefined;
+    readonly connection?: AccountConnectionId | undefined;
+  },
 ) {
   const key = { organization, app };
   const record = atoms.prefetch(liveAppAtom(key));
@@ -108,6 +113,10 @@ export async function loadHostedApp(
   const session = atoms.prefetch(sessionAtom);
   const versions = atoms.prefetch(versionsAtom(key));
   const groups = atoms.prefetch(groupsAtom(organization));
+  const connection =
+    search.connection === undefined
+      ? undefined
+      : atoms.prefetch(connectionAtom({ organization, connection: search.connection }));
   const tool = namedTool(search.tool);
   const known = search.version;
   const started = (version: VersionId) => ({
@@ -127,6 +136,7 @@ export async function loadHostedApp(
       session,
       versions,
       groups,
+      connection,
       ...started(known),
     };
   }
@@ -142,6 +152,7 @@ export async function loadHostedApp(
     session,
     versions,
     groups,
+    connection,
     ...(active == null
       ? { version: undefined, tools: undefined, source: undefined, detail: undefined }
       : started(active)),
@@ -406,7 +417,12 @@ function AppDetail({
                   }
                 >
                   <section className="rounded-lg border p-5">
-                    <AppAccessSettings app={current.id} />
+                    <AppAccessSettings
+                      app={current.id}
+                      userId={userId}
+                      access={reads.access}
+                      groups={reads.groups}
+                    />
                   </section>
                 </AppSettings>
               );
@@ -594,6 +610,7 @@ function AppDetail({
                   appLinks={linked.app}
                   userLinks={linked.user}
                   canManage={canManage}
+                  canUse={canUse}
                   accounts={inventory.accounts}
                   redirectUri={inventory.accountSetup.redirectUri}
                 />

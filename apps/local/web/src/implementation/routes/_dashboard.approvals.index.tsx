@@ -1,6 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ApprovalsPage } from "../pages/approvals.tsx";
+import { ApprovalsPage, loadApprovals } from "../pages/approvals.tsx";
+
 export const Route = createFileRoute("/_dashboard/approvals/")({
   staticData: { section: "approvals" },
-  component: ApprovalsPage,
+  loader: ({ context }) => loadApprovals(context.atoms),
+  component: ApprovalsRoute,
 });
+
+function ApprovalsRoute() {
+  return <ApprovalsPage reads={Route.useLoaderData()} />;
+}

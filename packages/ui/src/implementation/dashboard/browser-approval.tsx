@@ -1,6 +1,7 @@
 import { LocalTime, timeOfDay } from "../components/local-time.tsx";
 /** A shared review page for tool consent and standard MCP form input. */
 import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useAtomResult, type Handle } from "raf-effect-atom";
 import {
   BrowserApprovalFailed,
   type BrowserApprovalAtoms,
@@ -13,7 +14,7 @@ import {
   type ElicitationResponse,
 } from "@executor-js/mcp/browser";
 import { Cause, Exit, Match } from "effect";
-import { AsyncResult } from "effect/reactivity";
+import { AsyncResult, type Atom } from "effect/reactivity";
 import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "../components/button.tsx";
 import { Code } from "./code.tsx";
@@ -82,13 +83,62 @@ export function BrowserApprovalPage({ atoms }: { readonly atoms: BrowserApproval
 export function BrowserApprovalCard({
   atoms,
   completion,
+  view,
+}: {
+  readonly atoms: ReviewAtoms;
+  readonly completion?: ReactNode;
+  /** Present when the route loader started this review. */
+  readonly view?: Handle<ReviewAtoms["view"]> | undefined;
+}) {
+  return view === undefined ? (
+    <BrowserApprovalFromAtom atoms={atoms} completion={completion} />
+  ) : (
+    <BrowserApprovalFromHandle atoms={atoms} completion={completion} view={view} />
+  );
+}
+
+function BrowserApprovalFromAtom({
+  atoms,
+  completion,
 }: {
   readonly atoms: ReviewAtoms;
   readonly completion?: ReactNode;
 }) {
   const view = useAtomValue(atoms.view);
-  const refused = AsyncResult.isFailure(view) ? refusal(view.cause) : undefined;
   const refresh = useAtomRefresh(atoms.view);
+  return (
+    <BrowserApprovalBody atoms={atoms} completion={completion} view={view} refresh={refresh} />
+  );
+}
+
+function BrowserApprovalFromHandle({
+  atoms,
+  completion,
+  view: handle,
+}: {
+  readonly atoms: ReviewAtoms;
+  readonly completion?: ReactNode;
+  readonly view: Handle<ReviewAtoms["view"]>;
+}) {
+  const view = useAtomResult(atoms.view, handle);
+  const refresh = useAtomRefresh(atoms.view);
+  return (
+    <BrowserApprovalBody atoms={atoms} completion={completion} view={view} refresh={refresh} />
+  );
+}
+
+function BrowserApprovalBody({
+  atoms,
+  completion,
+  view,
+  refresh,
+}: {
+  readonly atoms: ReviewAtoms;
+  readonly completion?: ReactNode;
+  readonly view: Atom.Type<ReviewAtoms["view"]>;
+  readonly refresh: () => void;
+}) {
+  const refused = AsyncResult.isFailure(view) ? refusal(view.cause) : undefined;
   const expires =
     AsyncResult.isSuccess(view) && view.value.status === "pending"
       ? view.value.request.expiresAt

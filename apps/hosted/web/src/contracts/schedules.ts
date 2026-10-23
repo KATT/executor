@@ -146,7 +146,8 @@ const runsSource = Atom.family((organization: OrganizationReference) =>
     }),
   ).pipe(revalidated, protectedQuery),
 );
-const runsQuery = Atom.family((organization: OrganizationReference) =>
+/** Pending scheduled runs. App names are joined from the inventory by the page. */
+export const approvalRunsAtom = Atom.family((organization: OrganizationReference) =>
   // Approval requests expire, and this queue exists to receive them.
   pollingQuery(runsSource(organization), steadyPolling),
 );
@@ -156,7 +157,7 @@ export const pendingApprovalsAtom = Atom.family((organization: OrganizationRefer
     Effect.gen(function* () {
       // App names come from the inventory; read it alongside the runs rather than after them.
       const [runs, inventory] = yield* Effect.all(
-        [get.result(runsQuery(organization)), get.result(inventoryAtom(organization))],
+        [get.result(approvalRunsAtom(organization)), get.result(inventoryAtom(organization))],
         { concurrency: "unbounded" },
       );
       return runs.map((run): ApprovalListItem => ({

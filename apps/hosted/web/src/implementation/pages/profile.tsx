@@ -1,5 +1,8 @@
+import { Suspense } from "react";
 import { Link } from "@tanstack/react-router";
-import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
+import { Loader } from "raf-effect-atom";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useStartedQuery } from "@executor-js/ui/dashboard/context";
 import { Cause, Exit, Option } from "effect";
 import { AsyncResult } from "effect/reactivity";
 import { useState, type ReactNode } from "react";
@@ -21,6 +24,7 @@ import { sessionAtom } from "../../contracts/auth.ts";
 import { organizationsAtom } from "../../contracts/organization.ts";
 import {
   AccountSettingPending,
+  ProfilePending,
   accountSettingClass,
   readOnlyInputClass,
   profileDescription,
@@ -44,9 +48,41 @@ const suggestedName = (email: string) => email.split("@")[0] ?? "";
  * The signed-in person's identity; it belongs to them, not to any organization. A host that can
  * verify a new address renders its own email setting; otherwise the email is read-only.
  */
-export function ProfilePage({ email }: { readonly email?: (current: string) => ReactNode }) {
+/** Start the signed-in session and the organizations it belongs to. */
+export function loadProfile(atoms: Loader.Loader) {
+  return {
+    session: atoms.prefetch(sessionAtom),
+    organizations: atoms.prefetch(organizationsAtom),
+  };
+}
+
+export type ProfileReads = ReturnType<typeof loadProfile>;
+
+export function ProfilePage({
+  email,
+  reads,
+}: {
+  readonly email?: (current: string) => ReactNode;
+  readonly reads: ProfileReads;
+}) {
+  return (
+    <Suspense fallback={<ProfilePending />}>
+      <Profile reads={reads} {...(email === undefined ? {} : { email })} />
+    </Suspense>
+  );
+}
+
+function Profile({
+  email,
+  reads,
+}: {
+  readonly email?: (current: string) => ReactNode;
+  readonly reads: ProfileReads;
+}) {
   useDocumentTitle(productTitle(profileTitle));
-  const session = Option.getOrUndefined(AsyncResult.value(useAtomValue(sessionAtom)));
+  const session = Option.getOrUndefined(
+    AsyncResult.value(useStartedQuery({ source: sessionAtom, handle: reads.session }).result),
+  );
   return (
     <PageFrame>
       <PageHeader title={profileTitle} description={profileDescription} />
@@ -90,7 +126,7 @@ export function ProfilePage({ email }: { readonly email?: (current: string) => R
             )}
           </>
         )}
-        <Memberships />
+        <Memberships organizations={reads.organizations} />
       </div>
     </PageFrame>
   );
@@ -168,9 +204,14 @@ function DisplayName({ current, email }: { readonly current: string; readonly em
 }
 
 /** Every organization this person belongs to; each one owns its own apps, accounts and groups. */
-function Memberships() {
-  const organizations = useAtomValue(organizationsAtom);
-  const retry = useAtomRefresh(organizationsAtom);
+function Memberships({
+  organizations: handle,
+}: {
+  readonly organizations: ProfileReads["organizations"];
+}) {
+  const organizationsQuery = useStartedQuery({ source: organizationsAtom, handle });
+  const organizations = organizationsQuery.result;
+  const retry = organizationsQuery.refresh;
   return (
     <Card className={accountSettingClass}>
       <CardHeader>

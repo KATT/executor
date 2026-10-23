@@ -1,6 +1,8 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useState, type ReactNode } from "react";
+import { Loader } from "raf-effect-atom";
 import { useNavigate } from "@tanstack/react-router";
 import { AccountConnectionId, type Provider } from "@executor-js/sdk";
+import type { OrganizationReference } from "@executor-js/hosted-server/organization";
 import { Option } from "effect";
 import {
   Dialog,
@@ -11,7 +13,8 @@ import {
 import { ProviderIcon } from "@executor-js/ui/dashboard/common";
 import { providerDisplayUrl } from "@executor-js/ui/contracts/dashboard";
 import { DetailSkeleton } from "@executor-js/ui/dashboard/loading";
-import { QueryResult, useQuery } from "@executor-js/ui/dashboard/context";
+import { QueryResult, useStartedQuery } from "@executor-js/ui/dashboard/context";
+import type { HostedAppReads } from "./app-detail.tsx";
 import { connectionAtom } from "../../contracts/apps.ts";
 import { useOrganizationRoute } from "../components/organization.tsx";
 import { HostedFailure } from "../components/dashboard-bindings.tsx";
@@ -72,17 +75,20 @@ export function ConnectionDialogHeader({
 export function AccountConnectionDialog({
   connectionId,
   client,
+  read,
   onClose,
 }: {
   readonly connectionId?: AccountConnectionId | undefined;
   readonly client?: "change" | undefined;
+  readonly read: NonNullable<HostedAppReads["connection"]> | undefined;
   readonly onClose: () => void;
 }) {
-  return connectionId === undefined ? null : (
+  return connectionId === undefined || read === undefined ? null : (
     <ResumedConnectionDialog
       key={connectionId}
       connectionId={connectionId}
       client={client}
+      read={read}
       onClose={onClose}
     />
   );
@@ -91,15 +97,20 @@ export function AccountConnectionDialog({
 function ResumedConnectionDialog({
   connectionId,
   client,
+  read,
   onClose,
 }: {
   readonly connectionId: AccountConnectionId;
   readonly client?: "change" | undefined;
+  readonly read: NonNullable<HostedAppReads["connection"]>;
   readonly onClose: () => void;
 }) {
   const { organization, slug: organizationSlug } = useOrganizationRoute();
   const navigate = useNavigate();
-  const query = useQuery(connectionAtom({ organization, connection: connectionId }));
+  const query = useStartedQuery({
+    source: connectionAtom({ organization, connection: connectionId }),
+    handle: read,
+  });
   const connection = Option.getOrUndefined(query.data);
   const [busy, setBusy] = useState(false);
   return (
@@ -141,17 +152,71 @@ function ResumedConnectionDialog({
   );
 }
 
+/** Start one connection handoff after the organization's access check. */
+export function loadConnection(
+  atoms: Loader.Loader,
+  organization: OrganizationReference,
+  connection: AccountConnectionId,
+) {
+  return atoms.prefetch(connectionAtom({ organization, connection }));
+}
+
 /** Resolve a handoff URL into the owning page's modal; no standalone connection screen exists. */
 export function ConnectionEntry({
   connectionId: id,
   client,
+  read,
 }: {
   readonly connectionId: AccountConnectionId;
   readonly client?: "change" | undefined;
+  readonly read: NonNullable<HostedAppReads["connection"]> | undefined;
+}) {
+  const { slug: organizationSlug } = useOrganizationRoute();
+  const navigate = useNavigate();
+  if (read === undefined) return null;
+  return (
+    <Suspense
+      fallback={
+        <ConnectionModal
+          open
+          busy={false}
+          onClose={() => {
+            void navigate({
+              to: "/org/$organizationSlug/accounts",
+              params: { organizationSlug },
+              search: {},
+              replace: true,
+            });
+          }}
+        >
+          <DialogTitle className="text-base">Connect account</DialogTitle>
+          <DialogDescription className="sr-only">
+            Open this connection in its app or account.
+          </DialogDescription>
+          <DetailSkeleton label="Loading account setup" />
+        </ConnectionModal>
+      }
+    >
+      <ConnectionHandoff connectionId={id} client={client} read={read} />
+    </Suspense>
+  );
+}
+
+function ConnectionHandoff({
+  connectionId: id,
+  client,
+  read,
+}: {
+  readonly connectionId: AccountConnectionId;
+  readonly client?: "change" | undefined;
+  readonly read: NonNullable<HostedAppReads["connection"]>;
 }) {
   const { organization, slug: organizationSlug } = useOrganizationRoute();
   const navigate = useNavigate();
-  const query = useQuery(connectionAtom({ organization, connection: id }));
+  const query = useStartedQuery({
+    source: connectionAtom({ organization, connection: id }),
+    handle: read,
+  });
   const connection = Option.getOrUndefined(query.data);
   useEffect(() => {
     if (connection === undefined) return;

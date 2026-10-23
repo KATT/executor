@@ -113,11 +113,12 @@ const runsSource = DashboardClient.query(
   "runs",
   hydrated({ query: { pending: true } }),
 ).pipe(revalidated, acknowledgedQuery);
-const runsQuery = pollingQuery(runsSource, steadyPolling);
+/** Pending scheduled runs. App names are joined from the overview by the page. */
+export const approvalRunsAtom = pollingQuery(runsSource, steadyPolling);
 /** Join safe run metadata with app names; keep either read failure visible. */
 export const pendingApprovalsAtom = DashboardClient.runtime.atom((get) =>
   Effect.gen(function* () {
-    const runs = yield* get.result(runsQuery);
+    const runs = yield* get.result(approvalRunsAtom);
     const inventory = yield* get.result(overviewAtom);
     return runs.map((run): ApprovalListItem => ({
       run,
