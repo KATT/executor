@@ -62,8 +62,7 @@ export function AppTools({
   }, [organizationSlug, app.id, version]);
   const readiness = appToolReadiness(app, requirements);
   const catalog = { organization, app: app.id, version };
-  const claims = useAccessBoundary();
-  const read = { source: claims.wrap(toolCatalogAtom(catalog)), handle: tools };
+  const read = { source: useAccessBoundary(toolCatalogAtom(catalog)), handle: tools };
   const named =
     selected === undefined
       ? undefined

@@ -1,12 +1,13 @@
-import { record } from "./failedReads.mjs";
+import { record } from "./failed-reads.mjs";
 import * as Option from "effect/Option";
 import * as Cause from "effect/Cause";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 // src/internal/wrap.ts
 /**
-* Returns a `wrap` for the errors `owns` claims, memoized per atom and per
-* family so a component reads the same derived atom on every render.
+* Returns what a boundary's hook returns for the errors `owns` claims,
+* memoized per atom and per family so a component reads the same derived
+* atom on every render.
 *
 * @internal
 */

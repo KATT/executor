@@ -1,5 +1,5 @@
 import * as Predicate from "effect/Predicate";
-// src/internal/failedReads.ts
+// src/internal/failed-reads.ts
 const failedReads = /* @__PURE__ */ new WeakMap();
 /** @internal */
 const record = (registry, error, atom) => {

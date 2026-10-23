@@ -1,6 +1,6 @@
 "use client";
-import { TypeId } from "./Claim.mjs";
-import { get } from "./internal/failedReads.mjs";
+import { TypeId } from "./claim.mjs";
+import { get } from "./internal/failed-reads.mjs";
 import { Prerendered, peek, settledError } from "./internal/prerender.mjs";
 import { node } from "./internal/refresh.mjs";
 import { variance } from "./internal/variance.mjs";
@@ -10,13 +10,13 @@ import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as React from "react";
 import { jsx } from "react/jsx-runtime";
-// src/ErrorBoundary.tsx
+// src/error-boundary.tsx
 /**
 * Error boundaries typed by an atom's error. A boundary catches failures by
 * `_tag`, with a handler per tag typed by the error with that tag, so UI code
 * never imports an error class. `AtomErrorBoundary` guards one atom;
-* `createErrorBoundary` makes a shared boundary whose hook narrows the reads
-* under it.
+* `createErrorBoundary` makes a shared boundary whose hook narrows the atoms
+* read under it.
 *
 * @stability unstable
 * @since 0.1.0
@@ -159,10 +159,10 @@ const isMounted = (at, boundary) => {
 *
 * **Details**
 *
-* A component under it reads `useBoundary().wrap(atom)`: the same atom with
-* the errors this boundary or one above it claims turned into defects, so the
-* read throws them to the nearest boundary that claims them, and the atom's
-* `AsyncResult` is typed without them. `parent` is the boundary it sits
+* A component under it reads `useBoundary(atom)`, or `useBoundary(family)`:
+* the same atom with the errors this boundary or one above it claims turned
+* into defects, so the read throws them to the nearest boundary that claims
+* them, and the atom's `AsyncResult` is typed without them. `parent` is the boundary it sits
 * under; the claimed tags add up along the chain. `catchTags`' keys are tags
 * of `errors`' error type, so a misspelled tag is a type error and each
 * handler's `error` is typed.
@@ -201,7 +201,7 @@ const isMounted = (at, boundary) => {
 * })
 *
 * function IssueTitle(props: { readonly issue: Handle<typeof issue> }) {
-*   const result = useAtomResult(useAuthBoundary().wrap(issue), props.issue)
+*   const result = useAtomResult(useAuthBoundary(issue), props.issue)
 *   // AsyncResult<Issue, IssueNotFound | RpcClientError>
 * }
 * ```
@@ -215,15 +215,11 @@ const isMounted = (at, boundary) => {
 const createErrorBoundary = (options) => {
 	const parent = options.parent ? internals.get(options.parent) : void 0;
 	const handlers = options.catchTags;
-	const owns = (error) => handlerFor(handlers, error) !== void 0 || (parent?.claims.owns(error) ?? false);
-	const claims = {
-		owns,
-		[TypeId]: variance,
-		wrap: make(owns)
-	};
+	const owns = (error) => handlerFor(handlers, error) !== void 0 || (parent?.owns(error) ?? false);
+	const wrap = make(owns);
 	const boundary = {
-		claims,
-		displayName: `${options.name}Boundary`
+		displayName: `${options.name}Boundary`,
+		owns
 	};
 	const catches = (value) => caughtBy(handlers, Option.flatMap(value, settledError));
 	const find = (registry) => {
@@ -258,10 +254,10 @@ const createErrorBoundary = (options) => {
 		[TypeId]: variance
 	});
 	internals.set(component, boundary);
-	const useBoundary = () => {
+	const useBoundary = ((source) => {
 		if (!isMounted(React.useContext(MountedBoundaries), boundary)) throw new Error(`The ${options.name} error boundary's hook found no <${boundary.displayName}> above it: wrap the tree in <${boundary.displayName}>`);
-		return claims;
-	};
+		return wrap(source);
+	});
 	return [component, useBoundary];
 };
 export { AtomErrorBoundary, createErrorBoundary };

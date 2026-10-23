@@ -1,24 +1,22 @@
-import { make } from "./internal/next.mjs";
-import { HydrateAtoms } from "./NextClient.mjs";
-import { RegistryProvider } from "./RegistryProvider.mjs";
-// src/Next.ts
+import { make } from "./internal/rsc.mjs";
+// src/Rsc.ts
 /**
-* Creates the verbs, `getRegistry` and `dehydrate` over a request registry
-* that `seed` prepares.
+* Creates the verbs and `getRegistry` over a request registry that `seed`
+* prepares.
 *
 * **When to use**
 *
 * Use when the request's atoms need something from the request before they
 * run, such as an RPC protocol that forwards the page request's cookie. Make
 * them once, in a server-only module, and call the verbs on them instead of
-* the ones `raf-effect-atom/next` exports.
+* the ones `raf-effect-atom/rsc` exports.
 *
 * **Details**
 *
 * The seed runs on each request's registry when a server component first
 * uses it. It can be async, as `headers()` is: `ensure` and `fetch` wait
 * for it, `prefetch` returns its handle at once and starts the atom once the
-* seed resolves, and `dehydrate` waits for both.
+* seed resolves, and `HydrationBoundary` waits for both.
 *
 * **Example**
 *
@@ -26,7 +24,7 @@ import { RegistryProvider } from "./RegistryProvider.mjs";
 * // src/atoms.server.ts
 * import "server-only"
 * import { headers } from "next/headers"
-* import { makeRequestAtoms } from "raf-effect-atom/next"
+* import { makeRequestAtoms } from "raf-effect-atom/rsc"
 *
 * export const atoms = makeRequestAtoms({
 *   seed: async (registry) => {
@@ -118,25 +116,4 @@ const fetch = atoms.fetch;
 * @since 0.2.3
 */
 const run = atoms.run;
-/**
-* `Hydration.dehydrate` on the request's registry, for `HydrateAtoms`.
-*
-* **Gotchas**
-*
-* Includes the atoms started so far, so call it after the server component's
-* verbs. Each `HydrateAtoms` hydrates what its own `dehydrate()` saw.
-*
-* **Example**
-*
-* ```tsx
-* <HydrateAtoms state={await dehydrate()}>
-*   <Issue issue={handle} />
-* </HydrateAtoms>
-* ```
-*
-* @stability unstable
-* @category dehydration
-* @since 0.1.0
-*/
-const dehydrate = atoms.dehydrate;
-export { HydrateAtoms, RegistryProvider, dehydrate, ensure, fetch, getRegistry, makeRequestAtoms, prefetch, prefetchInBrowser, run };
+export { ensure, fetch, getRegistry, makeRequestAtoms, prefetch, prefetchInBrowser, run };

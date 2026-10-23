@@ -1,4 +1,4 @@
-import { ErrorBoundaryClaims, TagsOf, Variance } from "./Claim.mjs";
+import { TagsOf, UseErrorBoundary, Variance } from "./claim.mjs";
 import * as React from "react";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
@@ -160,14 +160,14 @@ export interface ErrorBoundaryComponent<Tags extends string> extends Variance<Ta
   readonly displayName: string;
 }
 /**
- * A boundary component and the hook that returns its claims, named freely by
- * destructuring.
+ * A boundary component and its hook, which narrows the atoms read under it,
+ * named freely by destructuring.
  *
  * @stability unstable
  * @category models
  * @since 0.1.0
  */
-export type ErrorBoundary<Tags extends string> = readonly [Boundary: ErrorBoundaryComponent<Tags>, useBoundary: () => ErrorBoundaryClaims<Tags>];
+export type ErrorBoundary<Tags extends string> = readonly [Boundary: ErrorBoundaryComponent<Tags>, useBoundary: UseErrorBoundary<Tags>];
 /**
  * Options for `createErrorBoundary`.
  *
@@ -200,10 +200,10 @@ export interface ErrorBoundaryOptions<Source, Tags extends TagsOf<ErrorsOf<Sourc
  *
  * **Details**
  *
- * A component under it reads `useBoundary().wrap(atom)`: the same atom with
- * the errors this boundary or one above it claims turned into defects, so the
- * read throws them to the nearest boundary that claims them, and the atom's
- * `AsyncResult` is typed without them. `parent` is the boundary it sits
+ * A component under it reads `useBoundary(atom)`, or `useBoundary(family)`:
+ * the same atom with the errors this boundary or one above it claims turned
+ * into defects, so the read throws them to the nearest boundary that claims
+ * them, and the atom's `AsyncResult` is typed without them. `parent` is the boundary it sits
  * under; the claimed tags add up along the chain. `catchTags`' keys are tags
  * of `errors`' error type, so a misspelled tag is a type error and each
  * handler's `error` is typed.
@@ -242,7 +242,7 @@ export interface ErrorBoundaryOptions<Source, Tags extends TagsOf<ErrorsOf<Sourc
  * })
  *
  * function IssueTitle(props: { readonly issue: Handle<typeof issue> }) {
- *   const result = useAtomResult(useAuthBoundary().wrap(issue), props.issue)
+ *   const result = useAtomResult(useAuthBoundary(issue), props.issue)
  *   // AsyncResult<Issue, IssueNotFound | RpcClientError>
  * }
  * ```

@@ -1,3 +1,3 @@
-import { TypeId } from "./Claim.mjs";
-import { AtomErrorBoundary, createErrorBoundary } from "./ErrorBoundary.mjs";
+import { TypeId } from "./claim.mjs";
+import { AtomErrorBoundary, createErrorBoundary } from "./error-boundary.mjs";
 export { AtomErrorBoundary, TypeId, createErrorBoundary };

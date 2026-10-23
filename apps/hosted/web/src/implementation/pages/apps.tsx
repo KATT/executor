@@ -87,14 +87,14 @@ function Apps({
   const { slug: organizationSlug } = useOrganizationRoute();
   const organization = organizationFromSlug(organizationSlug);
   const navigate = useNavigate();
-  const claims = useAccessBoundary();
   const groups = useStartedQuery({
-    source: claims.wrap(groupsAtom(organization)),
+    source: useAccessBoundary(groupsAtom(organization)),
     handle: reads.groups,
   });
   const inventory = resourceInventoryAtom(organization, view, group);
+  const claimedInventory = useAccessBoundary(inventory);
   const { data } = useStartedQuery({
-    source: claims.wrap(inventory),
+    source: claimedInventory,
     handle: reads.inventory,
   });
   const apply = (next: AppsListSearch) => {
@@ -111,7 +111,7 @@ function Apps({
   return (
     <SharedPage
       query={inventory}
-      read={{ source: claims.wrap(inventory), handle: reads.inventory }}
+      read={{ source: claimedInventory, handle: reads.inventory }}
       Failure={HostedFailure}
       pending={
         Option.isSome(data) && data.value.pendingApp ? (

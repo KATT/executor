@@ -219,19 +219,18 @@ export function AppDetailPage({
   readonly overview: DashboardOverview;
 }) {
   const navigate = useNavigate();
-  const claims = useMissingBoundary();
   const [skillDirty, setSkillDirty] = useState(false);
   useBlocker({
     shouldBlockFn: () => skillDirty && !window.confirm("Discard your unsaved changes?"),
     enableBeforeUnload: skillDirty,
   });
-  const query = useStartedQuery({ source: claims.wrap(appAtom(id)), handle: reads.app });
+  const query = useStartedQuery({ source: useMissingBoundary(appAtom(id)), handle: reads.app });
   const appLinks = useStartedQuery({
-    source: claims.wrap(appLinksAtom(id)),
+    source: useMissingBoundary(appLinksAtom(id)),
     handle: reads.appLinks,
   });
   const userLinks = useStartedQuery({
-    source: claims.wrap(userLinksAtom(id)),
+    source: useMissingBoundary(userLinksAtom(id)),
     handle: reads.userLinks,
   });
   const app = Option.isSome(query.data)

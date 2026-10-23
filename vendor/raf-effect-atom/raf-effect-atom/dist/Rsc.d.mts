@@ -1,13 +1,10 @@
 import { ArgsOf, Handle, LoadedHandle, Source } from "./Handle.mjs";
 import { Loader } from "./Loader.mjs";
 import { Options } from "./RequestRegistry.mjs";
-import { HydrateAtoms } from "./NextClient.mjs";
-import { RegistryProvider } from "./RegistryProvider.mjs";
-import * as EffectHydration from "effect/reactivity/Hydration";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 /**
  * The loader verbs over the request registry of the server render in
- * progress, with its registry and `dehydrate`.
+ * progress, with its registry.
  *
  * @stability unstable
  * @category models
@@ -15,30 +12,28 @@ import * as AtomRegistry from "effect/reactivity/AtomRegistry";
  */
 export interface RequestAtoms extends Loader {
   /**
-   * `Hydration.dehydrate` on the request's registry, for `HydrateAtoms`,
-   * once its seed has settled.
+   * The request registry of the server render in progress, for
+   * `HydrationBoundary`'s `registry`.
    */
-  readonly dehydrate: () => Promise<Array<EffectHydration.DehydratedAtom>>;
-  /** The request registry of the server render in progress. */
   readonly getRegistry: () => AtomRegistry.AtomRegistry;
 }
 /**
- * Creates the verbs, `getRegistry` and `dehydrate` over a request registry
- * that `seed` prepares.
+ * Creates the verbs and `getRegistry` over a request registry that `seed`
+ * prepares.
  *
  * **When to use**
  *
  * Use when the request's atoms need something from the request before they
  * run, such as an RPC protocol that forwards the page request's cookie. Make
  * them once, in a server-only module, and call the verbs on them instead of
- * the ones `raf-effect-atom/next` exports.
+ * the ones `raf-effect-atom/rsc` exports.
  *
  * **Details**
  *
  * The seed runs on each request's registry when a server component first
  * uses it. It can be async, as `headers()` is: `ensure` and `fetch` wait
  * for it, `prefetch` returns its handle at once and starts the atom once the
- * seed resolves, and `dehydrate` waits for both.
+ * seed resolves, and `HydrationBoundary` waits for both.
  *
  * **Example**
  *
@@ -46,7 +41,7 @@ export interface RequestAtoms extends Loader {
  * // src/atoms.server.ts
  * import "server-only"
  * import { headers } from "next/headers"
- * import { makeRequestAtoms } from "raf-effect-atom/next"
+ * import { makeRequestAtoms } from "raf-effect-atom/rsc"
  *
  * export const atoms = makeRequestAtoms({
  *   seed: async (registry) => {
@@ -137,25 +132,3 @@ export declare const fetch: <S extends Source>(source: S, ...args: ArgsOf<S>) =>
  * @since 0.2.3
  */
 export declare const run: Loader["run"];
-/**
- * `Hydration.dehydrate` on the request's registry, for `HydrateAtoms`.
- *
- * **Gotchas**
- *
- * Includes the atoms started so far, so call it after the server component's
- * verbs. Each `HydrateAtoms` hydrates what its own `dehydrate()` saw.
- *
- * **Example**
- *
- * ```tsx
- * <HydrateAtoms state={await dehydrate()}>
- *   <Issue issue={handle} />
- * </HydrateAtoms>
- * ```
- *
- * @stability unstable
- * @category dehydration
- * @since 0.1.0
- */
-export declare const dehydrate: () => Promise<Array<EffectHydration.DehydratedAtom>>;
-export { HydrateAtoms, RegistryProvider };

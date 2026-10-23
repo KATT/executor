@@ -126,16 +126,18 @@ function ConnectAgent({
 }) {
   const navigate = useNavigate();
   const search = parseConnectSearch(useLocation().search);
-  const claims = useMissingBoundary();
+  const tools = useMissingBoundary(toolListAtom);
   const installation = {
-    source: claims.wrap(mcpInstallationAtom),
+    source: useMissingBoundary(mcpInstallationAtom),
     handle: reads.installation,
   };
-  const tools =
+  const overview = useMissingBoundary(overviewAtom);
+  const connections = useMissingBoundary(mcpConnectionsAtom);
+  const toolRead =
     reads.tools === undefined || search.app === undefined
       ? undefined
       : {
-          source: claims.wrap(toolListAtom({ app: search.app, version: reads.tools.version })),
+          source: tools({ app: search.app, version: reads.tools.version }),
           handle: reads.tools.handle,
         };
   return (
@@ -152,8 +154,8 @@ function ConnectAgent({
       onRevoked={() => {
         void navigate({ to: "/connect", replace: true });
       }}
-      query={{ source: claims.wrap(overviewAtom), handle: reads.overview }}
-      connections={{ source: claims.wrap(mcpConnectionsAtom), handle: reads.connections }}
+      query={{ source: overview, handle: reads.overview }}
+      connections={{ source: connections, handle: reads.connections }}
       save={saveMcpConnectionAtom}
       revoke={revokeMcpConnectionAtom}
       Failure={Failure}
@@ -170,14 +172,14 @@ function ConnectAgent({
         });
       }}
       renderTools={({ app, names, onChange }) =>
-        tools === undefined ? (
+        toolRead === undefined ? (
           <p className="px-4 py-6 text-xs text-muted-foreground">
             Deploy this app to choose its tools.
           </p>
         ) : (
           <ConnectionToolPicker
             query={toolListAtom({ app: app.id, version: app.activeVersion })}
-            read={tools}
+            read={toolRead}
             Failure={Failure}
             names={names}
             onChange={onChange}

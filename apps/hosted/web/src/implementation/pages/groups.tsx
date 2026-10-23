@@ -91,9 +91,8 @@ export function GroupsPage({
 function Groups({ id, reads }: { readonly id: string | undefined; readonly reads: GroupsReads }) {
   const { slug } = useOrganizationRoute();
   const organization = organizationFromSlug(slug);
-  const claims = useAccessBoundary();
   const { result, data, refresh } = useStartedQuery({
-    source: claims.wrap(groupsAtom(organization)),
+    source: useAccessBoundary(groupsAtom(organization)),
     handle: reads.groups,
   });
   return (
@@ -404,9 +403,8 @@ function GroupEditor({
 }) {
   const { slug } = useOrganizationRoute();
   const organization = organizationFromSlug(slug);
-  const claims = useAccessBoundary();
   const { result: latest, refresh } = useStartedQuery({
-    source: claims.wrap(groupsAtom(organization)),
+    source: useAccessBoundary(groupsAtom(organization)),
     handle: groups,
   });
   const [search, setSearch] = useState("");
@@ -657,9 +655,8 @@ function GroupApps({
 }) {
   const { slug: organizationSlug } = useOrganizationRoute();
   const organization = organizationFromSlug(organizationSlug);
-  const claims = useAccessBoundary();
   const { result, refresh } = useStartedQuery({
-    source: claims.wrap(resourceDirectoryAtom(organization)),
+    source: useAccessBoundary(resourceDirectoryAtom(organization)),
     handle: directory,
   });
   return (

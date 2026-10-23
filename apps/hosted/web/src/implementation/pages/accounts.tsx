@@ -76,11 +76,11 @@ function Accounts({
 }) {
   const { slug: organizationSlug } = useOrganizationRoute();
   const organization = organizationFromSlug(organizationSlug);
-  const claims = useAccessBoundary();
   const directory = useStartedQuery({
-    source: claims.wrap(resourceDirectoryAtom(organization)),
+    source: useAccessBoundary(resourceDirectoryAtom(organization)),
     handle: reads.directory,
   });
+  const inventory = useAccessBoundary(resourceInventoryAtom(organization));
   const [dialog, setDialog] = useState<{ account: AccountId; kind: AccountDialogKind }>();
   const role = useOrganizationDetails()?.role;
   const admin = role !== undefined && role !== "member";
@@ -94,7 +94,7 @@ function Accounts({
       <SharedPage
         query={resourceInventoryAtom(organization)}
         read={{
-          source: claims.wrap(resourceInventoryAtom(organization)),
+          source: inventory,
           handle: reads.inventory,
         }}
         Failure={HostedFailure}

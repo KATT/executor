@@ -45,8 +45,7 @@ export function InventoryLayout() {
 function InventoryReads() {
   const location = useLocation();
   const { overview } = useLoaderData({ from: "/_dashboard/_inventory" });
-  const claims = useMissingBoundary();
-  const result = useAtomResult(claims.wrap(overviewAtom), overview);
+  const result = useAtomResult(useMissingBoundary(overviewAtom), overview);
   const data = AsyncResult.value(result);
   const section = useMatches({ select: (matches) => matches.at(-1)?.staticData.section });
   if (Option.isSome(data))

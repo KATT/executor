@@ -299,7 +299,6 @@ function AppDetail({
 }) {
   const { organization, role, slug: organizationSlug } = useOrganizationRoute();
   const navigate = useNavigate();
-  const claims = useAccessBoundary();
   const [skillDirty, setSkillDirty] = useState(false);
   useBlocker({
     shouldBlockFn: () => skillDirty && !window.confirm("Discard your unsaved changes?"),
@@ -308,10 +307,13 @@ function AppDetail({
   const atoms = useDashboardAtoms();
   const key = { organization, app: appId };
   const inventory = useStartedQuery({
-    source: claims.wrap(atoms.inventory),
+    source: useAccessBoundary(atoms.inventory),
     handle: reads.inventory,
   });
-  const query = useStartedQuery({ source: claims.wrap(liveAppAtom(key)), handle: reads.record });
+  const query = useStartedQuery({
+    source: useAccessBoundary(liveAppAtom(key)),
+    handle: reads.record,
+  });
   const app = Option.isSome(query.data)
     ? query.data.value
     : Option.isSome(inventory.data)
@@ -319,17 +321,20 @@ function AppDetail({
       : undefined;
   const selectedView = view ?? (tool === undefined ? "overview" : "tools");
   const appLinks = useStartedQuery({
-    source: claims.wrap(appLinksAtom(key)),
+    source: useAccessBoundary(appLinksAtom(key)),
     handle: reads.appLinks,
   });
   const userLinks = useStartedQuery({
-    source: claims.wrap(userLinksAtom(key)),
+    source: useAccessBoundary(userLinksAtom(key)),
     handle: reads.userLinks,
   });
-  const session = useStartedQuery({ source: claims.wrap(sessionAtom), handle: reads.session });
+  const session = useStartedQuery({
+    source: useAccessBoundary(sessionAtom),
+    handle: reads.session,
+  });
   const userId = AsyncResult.isSuccess(session.result) ? session.result.value?.user.id : undefined;
   const authority = useStartedQuery({
-    source: claims.wrap(appAccessAtom(key)),
+    source: useAccessBoundary(appAccessAtom(key)),
     handle: reads.access,
   });
   const activeVersion = app?.activeVersion;

@@ -212,20 +212,21 @@ function Connect({
   const { slug: organizationSlug } = useOrganizationRoute();
   const navigate = useNavigate();
   const docs = useDocumentationUrl();
-  const claims = useAccessBoundary();
   const organizationKey = organizationFromSlug(organizationSlug);
   const search = parseConnectSearch(useLocation().search);
-  const tools =
+  const tools = useAccessBoundary(connectionToolListAtom);
+  const directory = useAccessBoundary(resourceInventoryAtom(organizationKey));
+  const connections = useAccessBoundary(mcpConnectionsAtom(organizationKey));
+  const agents = useAccessBoundary(mcpAgentsAtom(organizationKey));
+  const toolRead =
     reads.tools === undefined || search.app === undefined
       ? undefined
       : {
-          source: claims.wrap(
-            connectionToolListAtom({
-              organization: organizationKey,
-              app: search.app,
-              version: reads.tools.version,
-            }),
-          ),
+          source: tools({
+            organization: organizationKey,
+            app: search.app,
+            version: reads.tools.version,
+          }),
           handle: reads.tools.handle,
         };
   return (
@@ -248,11 +249,11 @@ function Connect({
       }}
       key={organizationKey}
       query={{
-        source: claims.wrap(resourceInventoryAtom(organizationKey)),
+        source: directory,
         handle: reads.directory,
       }}
       connections={{
-        source: claims.wrap(mcpConnectionsAtom(organizationKey)),
+        source: connections,
         handle: reads.connections,
       }}
       save={saveMcpConnectionAtom(organizationKey)}
@@ -302,7 +303,7 @@ function Connect({
       agents={
         <ConnectedAgents
           read={{
-            source: claims.wrap(mcpAgentsAtom(organizationKey)),
+            source: agents,
             handle: reads.agents,
           }}
           revoke={revokeMcpAgentAtom(organizationKey)}
@@ -317,7 +318,7 @@ function Connect({
         />
       }
       renderTools={({ app, names, onChange }) =>
-        tools === undefined ? (
+        toolRead === undefined ? (
           <p className="px-4 py-6 text-xs text-muted-foreground">
             Deploy this app to choose its tools.
           </p>
@@ -328,7 +329,7 @@ function Connect({
               app: app.id,
               version: app.activeVersion ?? undefined,
             })}
-            read={tools}
+            read={toolRead}
             Failure={HostedFailure}
             names={names}
             onChange={onChange}

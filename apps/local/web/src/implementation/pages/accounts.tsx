@@ -17,12 +17,12 @@ import {
 export function AccountsPage({ highlight }: { readonly highlight?: AccountId | undefined }) {
   const [dialog, setDialog] = useState<{ account: AccountId; kind: AccountDialogKind }>();
   const { overview } = useLoaderData({ from: "/_dashboard/_inventory" });
-  const claims = useMissingBoundary();
+  const inventory = useMissingBoundary(dashboardAtoms.inventory);
   return (
     <>
       <SharedPage
         query={dashboardAtoms.inventory}
-        read={{ source: claims.wrap(dashboardAtoms.inventory), handle: overview }}
+        read={{ source: inventory, handle: overview }}
         Failure={Failure}
         highlight={highlight}
         empty={

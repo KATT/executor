@@ -2,7 +2,6 @@ import { dehydrate } from "./Hydration.mjs";
 import { make, settled } from "./RequestRegistry.mjs";
 import { make as make$1 } from "./Loader.mjs";
 import { current } from "./internal/registry.mjs";
-import { RegistryProvider } from "./RegistryProvider.mjs";
 import * as Predicate from "effect/Predicate";
 // src/ReactRouter.ts
 /**
@@ -11,11 +10,12 @@ import * as Predicate from "effect/Predicate";
 * A root `middleware` gives each server request its own registry, under a
 * router context the app creates. Loaders start atoms with its verbs and
 * return its `dehydrate()` with their data; the route component hydrates it
-* with `HydrationBoundary`, inside the root's `RegistryProvider`. A root
-* `clientMiddleware` puts the browser's registry under the same context, so
-* one function can be both the route's `loader` and its `clientLoader`: after the first
-* page, loaders run in the browser, where `ensure` finds what the registry
-* already holds. Nothing is imported from `react-router`.
+* with `HydrationBoundary`, inside the root's `RegistryProvider`, both from
+* `raf-effect-atom`. A root `clientMiddleware` puts the browser's registry
+* under the same context, so one function can be both the route's `loader`
+* and its `clientLoader`: after the first page, loaders run in the browser,
+* where `ensure` finds what the registry already holds. Nothing is imported
+* from `react-router`.
 *
 * **Example**
 *
@@ -192,7 +192,7 @@ const disposeAfter = (body, registry) => {
 */
 const clientAtomsMiddleware = (context) => (args, next) => {
 	const registry = current();
-	if (registry === void 0) throw new Error("clientAtomsMiddleware found no mounted RegistryProvider: render raf-effect-atom/react-router's RegistryProvider around the app in the root layout.");
+	if (registry === void 0) throw new Error("clientAtomsMiddleware found no mounted RegistryProvider: render raf-effect-atom's RegistryProvider around the app in the root layout.");
 	args.context.set(context, {
 		...make$1(registry, { signal: args.request.signal }),
 		dehydrate: () => [],
@@ -200,4 +200,4 @@ const clientAtomsMiddleware = (context) => (args, next) => {
 	});
 	return next();
 };
-export { RegistryProvider, atomsMiddleware, clientAtomsMiddleware };
+export { atomsMiddleware, clientAtomsMiddleware };

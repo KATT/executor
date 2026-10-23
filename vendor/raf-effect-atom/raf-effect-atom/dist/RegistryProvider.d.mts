@@ -24,7 +24,7 @@ import * as React from "react";
  * **Example**
  *
  * ```tsx
- * import { RegistryProvider } from "raf-effect-atom/next" // or "raf-effect-atom/react-router"
+ * import { RegistryProvider } from "raf-effect-atom"
  *
  * export default function RootLayout(props: { children: React.ReactNode }) {
  *   return (

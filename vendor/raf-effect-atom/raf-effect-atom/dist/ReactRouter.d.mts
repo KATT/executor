@@ -1,5 +1,4 @@
 import { Loader } from "./Loader.mjs";
-import { RegistryProvider } from "./RegistryProvider.mjs";
 import * as EffectHydration from "effect/reactivity/Hydration";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 /**
@@ -141,4 +140,3 @@ export declare const atomsMiddleware: (context: AtomsContext, options?: AtomsMid
  * @since 0.2.1
  */
 export declare const clientAtomsMiddleware: (context: AtomsContext) => <Result>(args: MiddlewareArgs, next: () => Promise<Result>) => Promise<Result>;
-export { RegistryProvider };
