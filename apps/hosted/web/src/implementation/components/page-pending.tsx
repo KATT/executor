@@ -168,7 +168,20 @@ export function PagePending({
   if (page === "apps" && item === "add") return <PageSkeleton title="Add app" />;
   if (page === "accounts") return <PageSkeleton title="Account" />;
   if (page === "apps") return <PageSkeleton title="App" />;
-  if (page === "connect") return <PageSkeleton title="Connections" />;
+  if (page === "connect")
+    return (
+      <PageSkeleton
+        title={
+          item === "new"
+            ? "New connection"
+            : action === "edit"
+              ? "Edit connection"
+              : item === undefined
+                ? "Connections"
+                : "Connection"
+        }
+      />
+    );
   // A connection link opens a dialog over an empty page.
   return <UnknownPagePending />;
 }

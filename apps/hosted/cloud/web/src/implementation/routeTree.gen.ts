@@ -31,6 +31,9 @@ import { Route as OrgOrganizationSlugIndexRouteImport } from './routes/org.$orga
 import { Route as OrgOrganizationSlugApiKeysRouteImport } from './routes/org.$organizationSlug.api-keys'
 import { Route as OrgOrganizationSlugBillingRouteImport } from './routes/org.$organizationSlug.billing'
 import { Route as OrgOrganizationSlugConnectRouteImport } from './routes/org.$organizationSlug.connect'
+import { Route as OrgOrganizationSlugConnectNewRouteImport } from './routes/org.$organizationSlug.connect_.new'
+import { Route as OrgOrganizationSlugConnectConnectionIdRouteImport } from './routes/org.$organizationSlug.connect_.$connectionId'
+import { Route as OrgOrganizationSlugConnectConnectionIdEditRouteImport } from './routes/org.$organizationSlug.connect_.$connectionId_.edit'
 import { Route as OrgOrganizationSlugOrganizationRouteImport } from './routes/org.$organizationSlug.organization'
 import { Route as OrgOrganizationSlugSetupRouteImport } from './routes/org.$organizationSlug_.setup'
 import { Route as OrgOrganizationSlugAccountsIndexRouteImport } from './routes/org.$organizationSlug.accounts.index'
@@ -163,6 +166,24 @@ const OrgOrganizationSlugConnectRoute =
     path: '/connect',
     getParentRoute: () => OrgOrganizationSlugRoute,
   } as any)
+const OrgOrganizationSlugConnectNewRoute =
+  OrgOrganizationSlugConnectNewRouteImport.update({
+    id: '/connect_/new',
+    path: '/connect/new',
+    getParentRoute: () => OrgOrganizationSlugRoute,
+  } as any)
+const OrgOrganizationSlugConnectConnectionIdRoute =
+  OrgOrganizationSlugConnectConnectionIdRouteImport.update({
+    id: '/connect_/$connectionId',
+    path: '/connect/$connectionId',
+    getParentRoute: () => OrgOrganizationSlugRoute,
+  } as any)
+const OrgOrganizationSlugConnectConnectionIdEditRoute =
+  OrgOrganizationSlugConnectConnectionIdEditRouteImport.update({
+    id: '/connect_/$connectionId_/edit',
+    path: '/connect/$connectionId/edit',
+    getParentRoute: () => OrgOrganizationSlugRoute,
+  } as any)
 const OrgOrganizationSlugOrganizationRoute =
   OrgOrganizationSlugOrganizationRouteImport.update({
     id: '/organization',
@@ -288,6 +309,9 @@ export interface FileRoutesByFullPath {
   '/org/$organizationSlug/api-keys': typeof OrgOrganizationSlugApiKeysRoute
   '/org/$organizationSlug/billing': typeof OrgOrganizationSlugBillingRoute
   '/org/$organizationSlug/connect': typeof OrgOrganizationSlugConnectRoute
+  '/org/$organizationSlug/connect/new': typeof OrgOrganizationSlugConnectNewRoute
+  '/org/$organizationSlug/connect/$connectionId': typeof OrgOrganizationSlugConnectConnectionIdRoute
+  '/org/$organizationSlug/connect/$connectionId/edit': typeof OrgOrganizationSlugConnectConnectionIdEditRoute
   '/org/$organizationSlug/organization': typeof OrgOrganizationSlugOrganizationRoute
   '/org/$organizationSlug/setup': typeof OrgOrganizationSlugSetupRouteWithChildren
   '/org/$organizationSlug/': typeof OrgOrganizationSlugIndexRoute
@@ -327,6 +351,9 @@ export interface FileRoutesByTo {
   '/org/$organizationSlug/api-keys': typeof OrgOrganizationSlugApiKeysRoute
   '/org/$organizationSlug/billing': typeof OrgOrganizationSlugBillingRoute
   '/org/$organizationSlug/connect': typeof OrgOrganizationSlugConnectRoute
+  '/org/$organizationSlug/connect/new': typeof OrgOrganizationSlugConnectNewRoute
+  '/org/$organizationSlug/connect/$connectionId': typeof OrgOrganizationSlugConnectConnectionIdRoute
+  '/org/$organizationSlug/connect/$connectionId/edit': typeof OrgOrganizationSlugConnectConnectionIdEditRoute
   '/org/$organizationSlug/organization': typeof OrgOrganizationSlugOrganizationRoute
   '/org/$organizationSlug': typeof OrgOrganizationSlugIndexRoute
   '/org/$organizationSlug/approvals/$runId': typeof OrgOrganizationSlugApprovalsRunIdRoute
@@ -368,6 +395,9 @@ export interface FileRoutesById {
   '/org/$organizationSlug/api-keys': typeof OrgOrganizationSlugApiKeysRoute
   '/org/$organizationSlug/billing': typeof OrgOrganizationSlugBillingRoute
   '/org/$organizationSlug/connect': typeof OrgOrganizationSlugConnectRoute
+  '/org/$organizationSlug/connect_/new': typeof OrgOrganizationSlugConnectNewRoute
+  '/org/$organizationSlug/connect_/$connectionId': typeof OrgOrganizationSlugConnectConnectionIdRoute
+  '/org/$organizationSlug/connect_/$connectionId_/edit': typeof OrgOrganizationSlugConnectConnectionIdEditRoute
   '/org/$organizationSlug/organization': typeof OrgOrganizationSlugOrganizationRoute
   '/org/$organizationSlug_/setup': typeof OrgOrganizationSlugSetupRouteWithChildren
   '/org/$organizationSlug/': typeof OrgOrganizationSlugIndexRoute
@@ -411,6 +441,9 @@ export interface FileRouteTypes {
     | '/org/$organizationSlug/api-keys'
     | '/org/$organizationSlug/billing'
     | '/org/$organizationSlug/connect'
+    | '/org/$organizationSlug/connect/new'
+    | '/org/$organizationSlug/connect/$connectionId'
+    | '/org/$organizationSlug/connect/$connectionId/edit'
     | '/org/$organizationSlug/organization'
     | '/org/$organizationSlug/setup'
     | '/org/$organizationSlug/'
@@ -450,6 +483,9 @@ export interface FileRouteTypes {
     | '/org/$organizationSlug/api-keys'
     | '/org/$organizationSlug/billing'
     | '/org/$organizationSlug/connect'
+    | '/org/$organizationSlug/connect/new'
+    | '/org/$organizationSlug/connect/$connectionId'
+    | '/org/$organizationSlug/connect/$connectionId/edit'
     | '/org/$organizationSlug/organization'
     | '/org/$organizationSlug'
     | '/org/$organizationSlug/approvals/$runId'
@@ -490,6 +526,9 @@ export interface FileRouteTypes {
     | '/org/$organizationSlug/api-keys'
     | '/org/$organizationSlug/billing'
     | '/org/$organizationSlug/connect'
+    | '/org/$organizationSlug/connect_/new'
+    | '/org/$organizationSlug/connect_/$connectionId'
+    | '/org/$organizationSlug/connect_/$connectionId_/edit'
     | '/org/$organizationSlug/organization'
     | '/org/$organizationSlug_/setup'
     | '/org/$organizationSlug/'
@@ -684,6 +723,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrgOrganizationSlugConnectRouteImport
       parentRoute: typeof OrgOrganizationSlugRoute
     }
+    '/org/$organizationSlug/connect_/new': {
+      id: '/org/$organizationSlug/connect_/new'
+      path: '/connect/new'
+      fullPath: '/org/$organizationSlug/connect/new'
+      preLoaderRoute: typeof OrgOrganizationSlugConnectNewRouteImport
+      parentRoute: typeof OrgOrganizationSlugRoute
+    }
+    '/org/$organizationSlug/connect_/$connectionId': {
+      id: '/org/$organizationSlug/connect_/$connectionId'
+      path: '/connect/$connectionId'
+      fullPath: '/org/$organizationSlug/connect/$connectionId'
+      preLoaderRoute: typeof OrgOrganizationSlugConnectConnectionIdRouteImport
+      parentRoute: typeof OrgOrganizationSlugRoute
+    }
+    '/org/$organizationSlug/connect_/$connectionId_/edit': {
+      id: '/org/$organizationSlug/connect_/$connectionId_/edit'
+      path: '/connect/$connectionId/edit'
+      fullPath: '/org/$organizationSlug/connect/$connectionId/edit'
+      preLoaderRoute: typeof OrgOrganizationSlugConnectConnectionIdEditRouteImport
+      parentRoute: typeof OrgOrganizationSlugRoute
+    }
     '/org/$organizationSlug/organization': {
       id: '/org/$organizationSlug/organization'
       path: '/organization'
@@ -827,6 +887,9 @@ interface OrgOrganizationSlugRouteChildren {
   OrgOrganizationSlugApiKeysRoute: typeof OrgOrganizationSlugApiKeysRoute
   OrgOrganizationSlugBillingRoute: typeof OrgOrganizationSlugBillingRoute
   OrgOrganizationSlugConnectRoute: typeof OrgOrganizationSlugConnectRoute
+  OrgOrganizationSlugConnectNewRoute: typeof OrgOrganizationSlugConnectNewRoute
+  OrgOrganizationSlugConnectConnectionIdRoute: typeof OrgOrganizationSlugConnectConnectionIdRoute
+  OrgOrganizationSlugConnectConnectionIdEditRoute: typeof OrgOrganizationSlugConnectConnectionIdEditRoute
   OrgOrganizationSlugOrganizationRoute: typeof OrgOrganizationSlugOrganizationRoute
   OrgOrganizationSlugIndexRoute: typeof OrgOrganizationSlugIndexRoute
   OrgOrganizationSlugApprovalsRunIdRoute: typeof OrgOrganizationSlugApprovalsRunIdRoute
@@ -847,6 +910,9 @@ const OrgOrganizationSlugRouteChildren: OrgOrganizationSlugRouteChildren = {
   OrgOrganizationSlugApiKeysRoute: OrgOrganizationSlugApiKeysRoute,
   OrgOrganizationSlugBillingRoute: OrgOrganizationSlugBillingRoute,
   OrgOrganizationSlugConnectRoute: OrgOrganizationSlugConnectRoute,
+  OrgOrganizationSlugConnectNewRoute: OrgOrganizationSlugConnectNewRoute,
+  OrgOrganizationSlugConnectConnectionIdRoute: OrgOrganizationSlugConnectConnectionIdRoute,
+  OrgOrganizationSlugConnectConnectionIdEditRoute: OrgOrganizationSlugConnectConnectionIdEditRoute,
   OrgOrganizationSlugOrganizationRoute: OrgOrganizationSlugOrganizationRoute,
   OrgOrganizationSlugIndexRoute: OrgOrganizationSlugIndexRoute,
   OrgOrganizationSlugApprovalsRunIdRoute:
