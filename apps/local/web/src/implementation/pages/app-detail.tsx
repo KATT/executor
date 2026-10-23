@@ -85,11 +85,24 @@ const listedVersion = async (atoms: Loader.Loader, app: AppId, version: VersionI
 export async function loadLocalApp(
   atoms: Loader.Loader,
   app: AppId,
-  search: { readonly version?: VersionId | undefined; readonly tool?: string | undefined },
+  search: {
+    readonly version?: VersionId | undefined;
+    readonly tool?: string | undefined;
+    readonly view?: AppView | undefined;
+  },
 ) {
   const record = atoms.prefetch(appAtom(app));
   const appLinks = atoms.prefetch(appLinksAtom(app));
   const userLinks = atoms.prefetch(userLinksAtom(app));
+  const shown = search.view ?? (search.tool === undefined ? "overview" : "tools");
+  const inspecting = shown === "source" || shown === "history";
+  const workspace = inspecting
+    ? {
+        working: atoms.prefetch(appManagement.source(app)),
+        history: atoms.prefetch(appManagement.history(app)),
+      }
+    : { working: undefined, history: undefined };
+  const authoring = shown === "overview" ? atoms.prefetch(appManagement.authoring(app)) : undefined;
   const known = search.version;
   const tool =
     search.tool === undefined
@@ -108,10 +121,18 @@ export async function loadLocalApp(
         };
   const version =
     listed === undefined ? await listedVersion(atoms, app, undefined) : listed.version;
+  const liveVersion = inspecting ? await listedVersion(atoms, app, undefined) : undefined;
   return {
     app: record,
     appLinks,
     userLinks,
+    ...workspace,
+    authoring,
+    live:
+      liveVersion === undefined
+        ? undefined
+        : atoms.prefetch(sourceAtom({ app, version: liveVersion })),
+    liveVersion,
     version,
     tools:
       listed?.tools ??
@@ -278,6 +299,7 @@ export function AppDetailPage({
                 <AppVersions
                   data={current}
                   version={version ?? current.app.activeVersion ?? undefined}
+                  source={reads.source}
                   onVersionChange={(next) => {
                     void navigate({
                       to: "/apps/$appId",
@@ -288,11 +310,17 @@ export function AppDetailPage({
                   }}
                 />
               );
-            return (
+            return reads.working === undefined || reads.history === undefined ? (
+              pending
+            ) : (
               <AppSource
                 data={current}
-                version={version ?? current.app.activeVersion}
                 view={tab === "history" ? "history" : "source"}
+                working={reads.working}
+                history={reads.history}
+                {...(reads.live === undefined || reads.liveVersion === undefined
+                  ? {}
+                  : { live: reads.live, liveVersion: reads.liveVersion })}
               />
             );
           }}
@@ -435,6 +463,14 @@ export function AppDetailPage({
                   source={
                     <QueryView
                       query={appManagement.authoring(id)}
+                      {...(reads.authoring === undefined
+                        ? {}
+                        : {
+                            read: {
+                              source: appManagement.authoring(id),
+                              handle: reads.authoring,
+                            },
+                          })}
                       Failure={Failure}
                       pending={<OverviewCardLoading label="Loading source preview" />}
                     >

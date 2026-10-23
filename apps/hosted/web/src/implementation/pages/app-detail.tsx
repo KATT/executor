@@ -101,6 +101,7 @@ export async function loadHostedApp(
   search: {
     readonly version?: VersionId | undefined;
     readonly tool?: string | undefined;
+    readonly view?: AppView | undefined;
     readonly connection?: AccountConnectionId | undefined;
   },
 ) {
@@ -117,8 +118,24 @@ export async function loadHostedApp(
     search.connection === undefined
       ? undefined
       : atoms.prefetch(connectionAtom({ organization, connection: search.connection }));
+  const shown = search.view ?? (search.tool === undefined ? "overview" : "tools");
+  const management = appManagement(organization);
+  const inspecting = shown === "source" || shown === "history";
+  const workspace = inspecting
+    ? {
+        working: atoms.prefetch(management.source(app)),
+        history: atoms.prefetch(management.history(app)),
+      }
+    : { working: undefined, history: undefined };
+  const authoring = shown === "overview" ? atoms.prefetch(management.authoring(app)) : undefined;
   const tool = namedTool(search.tool);
   const known = search.version;
+  const activeVersion = async () => {
+    const loaded = await atoms.ensure(liveAppAtom(key));
+    const result = Loader.result(loaded);
+    const active = AsyncResult.isSuccess(result) ? result.value.activeVersion : undefined;
+    return active == null ? undefined : active;
+  };
   const started = (version: VersionId) => ({
     version,
     tools: atoms.prefetch(toolCatalogAtom({ ...key, version })),
@@ -126,7 +143,12 @@ export async function loadHostedApp(
     detail:
       tool === undefined ? undefined : atoms.prefetch(toolDetailAtom({ ...key, version, tool })),
   });
+  const liveSource = (version: VersionId | undefined) =>
+    inspecting && version !== undefined
+      ? atoms.prefetch(sourceAtom({ ...key, version }))
+      : undefined;
   if (known !== undefined) {
+    const liveVersion = inspecting ? await activeVersion() : undefined;
     return {
       record,
       inventory,
@@ -137,12 +159,14 @@ export async function loadHostedApp(
       versions,
       groups,
       connection,
+      ...workspace,
+      authoring,
+      live: liveSource(liveVersion),
+      liveVersion,
       ...started(known),
     };
   }
-  const loaded = await atoms.ensure(liveAppAtom(key));
-  const result = Loader.result(loaded);
-  const active = AsyncResult.isSuccess(result) ? result.value.activeVersion : undefined;
+  const active = await activeVersion();
   return {
     record,
     inventory,
@@ -153,7 +177,11 @@ export async function loadHostedApp(
     versions,
     groups,
     connection,
-    ...(active == null
+    ...workspace,
+    authoring,
+    live: liveSource(active),
+    liveVersion: inspecting ? active : undefined,
+    ...(active === undefined
       ? { version: undefined, tools: undefined, source: undefined, detail: undefined }
       : started(active)),
   };
@@ -436,9 +464,34 @@ function AppDetail({
                   The app creator and organization admins can inspect app source.
                 </p>
               ) : selectedView === "versions" ? (
-                <AppVersions key={current.id} app={current} />
+                <AppVersions
+                  key={current.id}
+                  app={current}
+                  version={version ?? reads.version}
+                  versions={reads.versions}
+                  source={reads.source}
+                  onVersionChange={(next) => {
+                    void navigate({
+                      to: "/org/$organizationSlug/apps/$appId",
+                      params: { organizationSlug, appId },
+                      search: { view: "versions", tool, version: next },
+                      replace: true,
+                    });
+                  }}
+                />
+              ) : reads.working === undefined || reads.history === undefined ? (
+                pending
               ) : (
-                <AppSource key={current.id} app={current} view={selectedView} />
+                <AppSource
+                  key={current.id}
+                  app={current}
+                  view={selectedView}
+                  working={reads.working}
+                  history={reads.history}
+                  {...(reads.live === undefined || reads.liveVersion === undefined
+                    ? {}
+                    : { live: reads.live, liveVersion: reads.liveVersion })}
+                />
               );
             return (
               <p className="p-5 text-sm text-muted-foreground">
@@ -592,6 +645,14 @@ function AppDetail({
                     canManage ? (
                       <QueryView
                         query={appManagement(organization).authoring(current.id)}
+                        {...(reads.authoring === undefined
+                          ? {}
+                          : {
+                              read: {
+                                source: appManagement(organization).authoring(current.id),
+                                handle: reads.authoring,
+                              },
+                            })}
                         Failure={HostedFailure}
                         pending={<OverviewCardLoading label="Loading source preview" />}
                       >

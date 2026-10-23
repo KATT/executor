@@ -25,6 +25,7 @@ import type {
   SourceDisplayFile,
 } from "@executor-js/app-management/contracts/source-display";
 import type { Atom, AsyncResult } from "effect/reactivity";
+import type { StartedRead } from "./started-read.ts";
 import { Schema, SchemaGetter, type Cause } from "effect";
 import type { ComponentType, ReactNode } from "react";
 import { parse } from "tldts";
@@ -81,6 +82,8 @@ export interface AppVersionsProps<E> {
   readonly version: VersionId;
   readonly onVersionChange: (version: VersionId | undefined) => void;
   readonly query: Query<VersionDisplay, E>;
+  /** Present when the route loader started this version's source. */
+  readonly read?: StartedRead<VersionDisplay, E> | undefined;
   /** Reads one file of the listed version when the listing did not inline it. */
   readonly file: (version: VersionId, path: string) => Query<SourceDisplayFile, E>;
   readonly Failure: ComponentType<FailureProps<NoInfer<E>>>;

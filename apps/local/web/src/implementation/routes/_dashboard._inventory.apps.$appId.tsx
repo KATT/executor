@@ -8,7 +8,11 @@ export const Route = createFileRoute("/_dashboard/_inventory/apps/$appId")({
   staticData: { section: "apps" },
   params: { parse: parseAppParams },
   validateSearch: parseAppSearch,
-  loaderDeps: ({ search }) => ({ version: search.version, tool: search.tool }),
+  loaderDeps: ({ search }) => ({
+    version: search.version,
+    tool: search.tool,
+    view: search.view,
+  }),
   loader: ({ context, params, deps }) => loadLocalApp(context.atoms, params.appId, deps),
   component: AppRoute,
 });

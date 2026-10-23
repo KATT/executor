@@ -1,22 +1,49 @@
 import { LocalTime, shortMoment } from "../components/local-time.tsx";
-import { QueryResult, useQuery } from "./context.tsx";
+import { QueryResult, useQuery, useStartedQuery } from "./context.tsx";
 import type { AppVersionsProps } from "../../contracts/dashboard.ts";
+import type { StartedRead } from "../../contracts/started-read.ts";
+import type { VersionDisplay } from "@executor-js/app-management/contracts/source-display";
+import { AsyncResult } from "effect/reactivity";
 import { VersionSourceLoading } from "./app-loading.tsx";
 import { SourceBrowser } from "./source-browser.tsx";
 import { cn } from "../lib/utils.ts";
 
 /** Version history and retained files occupy a full page; selection never changes the running app. */
-export function AppVersions<E>({
+export function AppVersions<E>(props: AppVersionsProps<E>) {
+  return props.read === undefined ? (
+    <VersionSource {...props} />
+  ) : (
+    <StartedVersionSource {...props} read={props.read} />
+  );
+}
+
+function StartedVersionSource<E>({
+  read,
+  ...props
+}: AppVersionsProps<E> & { readonly read: StartedRead<VersionDisplay, E> }) {
+  const { result, refresh } = useStartedQuery(read);
+  return <VersionFiles {...props} result={result} refresh={refresh} />;
+}
+
+function VersionSource<E>(props: AppVersionsProps<E>) {
+  const { result, refresh } = useQuery(props.query);
+  return <VersionFiles {...props} result={result} refresh={refresh} />;
+}
+
+function VersionFiles<E>({
   app,
   versions,
   version,
   onVersionChange,
-  query,
   file,
   Failure,
   actions,
-}: AppVersionsProps<E>) {
-  const { result, refresh } = useQuery(query);
+  result,
+  refresh,
+}: AppVersionsProps<E> & {
+  readonly result: AsyncResult.AsyncResult<VersionDisplay, E>;
+  readonly refresh: () => void;
+}) {
   const isActive = version === app.activeVersion;
   return (
     <section aria-label="App versions" className="flex min-h-0 flex-1 flex-col">

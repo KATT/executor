@@ -4,6 +4,7 @@ import { AppWorkspaceLoading, SourceHistoryLoading } from "./app-loading.tsx";
 import { AppSectionHeader, AppSectionTitle } from "./app-section-header.tsx";
 /** Inspect agent-authored source and manage app versions. */
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useAtomResult } from "raf-effect-atom";
 import { AsyncResult } from "effect/reactivity";
 import { Option } from "effect";
 import type { ReactNode } from "react";
@@ -11,7 +12,7 @@ import type { App } from "@executor-js/sdk";
 import type { AppSourceDisplay } from "@executor-js/app-management/contracts";
 import type { VersionDisplay } from "@executor-js/app-management/contracts/source-display";
 import type { AppAcknowledgement, AppManagementProps } from "../../contracts/app-management.ts";
-import type { Query } from "../../contracts/dashboard.ts";
+import type { StartedRead } from "../../contracts/started-read.ts";
 import { QueryView, useDashboard } from "./context.tsx";
 import { Button } from "../components/button.tsx";
 import { Input } from "../components/input.tsx";
@@ -27,59 +28,110 @@ import {
   Clock01Icon,
 } from "@hugeicons/core-free-icons";
 
+type HistoryEntry = {
+  readonly commit: string;
+  readonly message: string;
+  readonly author: string;
+  readonly timestamp: number;
+};
+
 /** Products supply metadata reconciliation and navigation; people edit skill files in the Skills view; agents author other source. */
-export function AppWorkspace<E>({
+export function AppWorkspace<E, History extends ReadonlyArray<HistoryEntry>, LiveE>({
   app,
   atoms,
   Failure,
   onApp,
   view,
-  live,
+  sourceRead,
+  historyRead,
+  liveRead,
 }: AppManagementProps<E> & {
   readonly app: App;
   readonly onApp: AppAcknowledgement;
   readonly view: "source" | "history";
-  /** The active version, read so the toolbar can compare it with working source. */
-  readonly live?: Query<VersionDisplay, E> | undefined;
+  /** Working source and recent commits, both started by the route loader. */
+  readonly sourceRead: StartedRead<typeof AppSourceDisplay.Type, E>;
+  readonly historyRead: StartedRead<History, E>;
+  /** The active version, started so the toolbar can compare it with working source. */
+  readonly liveRead?: StartedRead<VersionDisplay, LiveE> | undefined;
 }) {
   return (
     <QueryView
-      query={atoms.source(app.id)}
+      query={sourceRead.source}
+      read={sourceRead}
       Failure={Failure}
       pending={<AppWorkspaceLoading view={view} />}
     >
-      {(source) => (
-        <WorkspaceSource
-          key={app.id}
-          app={app}
-          atoms={atoms}
-          Failure={Failure}
-          source={source}
-          onApp={onApp}
-          view={view}
-          live={live}
-        />
-      )}
+      {(source) =>
+        liveRead === undefined ? (
+          <WorkspaceSource
+            key={app.id}
+            app={app}
+            atoms={atoms}
+            Failure={Failure}
+            source={source}
+            onApp={onApp}
+            view={view}
+            historyRead={historyRead}
+            liveCommit={undefined}
+          />
+        ) : (
+          <LiveWorkspaceSource
+            key={app.id}
+            app={app}
+            atoms={atoms}
+            Failure={Failure}
+            source={source}
+            onApp={onApp}
+            view={view}
+            historyRead={historyRead}
+            liveRead={liveRead}
+          />
+        )
+      }
     </QueryView>
   );
 }
-function WorkspaceSource<E>({
+function LiveWorkspaceSource<E, History extends ReadonlyArray<HistoryEntry>, LiveE>({
+  liveRead,
+  ...rest
+}: AppManagementProps<E> & {
+  readonly app: App;
+  readonly source: typeof AppSourceDisplay.Type;
+  readonly onApp: AppAcknowledgement;
+  readonly view: "source" | "history";
+  readonly historyRead: StartedRead<History, E>;
+  readonly liveRead: StartedRead<VersionDisplay, LiveE>;
+}) {
+  const commit = Option.getOrUndefined(
+    Option.map(
+      AsyncResult.value(useAtomResult(liveRead.source, liveRead.handle)),
+      (version) => version.sourceCommit,
+    ),
+  );
+  return <WorkspaceSource {...rest} liveCommit={commit} />;
+}
+function WorkspaceSource<E, History extends ReadonlyArray<HistoryEntry>>({
   app,
   atoms,
   Failure,
   source,
   onApp,
   view,
-  live,
+  historyRead,
+  liveCommit,
 }: AppManagementProps<E> & {
   readonly app: App;
   readonly source: typeof AppSourceDisplay.Type;
   readonly onApp: AppAcknowledgement;
   readonly view: "source" | "history";
-  readonly live?: Query<VersionDisplay, E> | undefined;
+  readonly historyRead: StartedRead<History, E>;
+  /** Undefined until the live version is known; null when it was not deployed from a commit. */
+  readonly liveCommit: string | null | undefined;
 }) {
   const deployed = useAtomValue(atoms.deploy(app.id));
   const deploy = useAtomSet(atoms.deploy(app.id), { mode: "promise" });
+  const history = useAtomResult(historyRead.source, historyRead.handle);
   const pending = deployed.waiting;
   return (
     <div className="source-section flex min-h-0 flex-1 flex-col [--source-sidebar-width:16rem]">
@@ -91,19 +143,17 @@ function WorkspaceSource<E>({
           <AppSectionTitle className="truncate text-foreground">Working source</AppSectionTitle>
         </AppSectionHeader>
         <AppSectionHeader className="min-h-0 flex-wrap border-b-0 text-muted-foreground">
-          <SourceHistoryLink app={app} atoms={atoms} Failure={Failure} />
+          <SourceHistoryLink app={app} history={history} />
           <div className="flex flex-wrap items-center gap-2">
             {app.activeVersion === null ? (
               <DeployStatus>Not deployed</DeployStatus>
             ) : (
-              live !== undefined && (
-                <LiveStatus app={app} atoms={atoms} source={source} live={live} />
-              )
+              <LiveStatus source={source} history={history} commit={liveCommit} />
             )}
             <CloneRepository source={source} />
             <DeployLatest
               source={source}
-              live={app.activeVersion === null ? undefined : live}
+              commit={app.activeVersion === null ? undefined : liveCommit}
               disabled={!source.canEdit || pending}
               onDeploy={() => {
                 void deploy({
@@ -126,7 +176,7 @@ function WorkspaceSource<E>({
         </p>
       )}
       {view === "history" ? (
-        <SourceHistory app={app} atoms={atoms} Failure={Failure} />
+        <SourceHistory app={app} historyRead={historyRead} Failure={Failure} />
       ) : (
         <div className="flex min-h-0 flex-1 overflow-auto max-[1100px]:flex-col">
           <SourceBrowser
@@ -140,12 +190,6 @@ function WorkspaceSource<E>({
     </div>
   );
 }
-/** Undefined until the live version is known; null when it was not deployed from a commit. */
-function useLiveCommit<E>(live: Query<VersionDisplay, E>) {
-  return Option.getOrUndefined(
-    Option.map(AsyncResult.value(useAtomValue(live)), (version) => version.sourceCommit),
-  );
-}
 function DeployStatus({ children }: { readonly children: ReactNode }) {
   return (
     <span role="status" className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs">
@@ -153,23 +197,21 @@ function DeployStatus({ children }: { readonly children: ReactNode }) {
     </span>
   );
 }
-function LiveStatus<E>({
-  app,
-  atoms,
+function LiveStatus<History extends ReadonlyArray<HistoryEntry>, E>({
   source,
-  live,
-}: Pick<AppManagementProps<E>, "atoms"> & {
-  readonly app: App;
+  history,
+  commit,
+}: {
   readonly source: typeof AppSourceDisplay.Type;
-  readonly live: Query<VersionDisplay, E>;
+  readonly history: AsyncResult.AsyncResult<History, E>;
+  readonly commit: string | null | undefined;
 }) {
-  const commit = useLiveCommit(live);
-  const history = AsyncResult.value(useAtomValue(atoms.history(app.id)));
+  const entries = AsyncResult.value(history);
   if (commit === undefined || commit === null) return null;
   if (commit === source.revision.commit) return <DeployStatus>Live · up to date</DeployStatus>;
   // History is newest first, so the live commit's index counts the commits saved after it.
-  const newer = Option.isSome(history)
-    ? history.value.findIndex((entry) => entry.commit === commit)
+  const newer = Option.isSome(entries)
+    ? entries.value.findIndex((entry) => entry.commit === commit)
     : -1;
   return (
     <DeployStatus>
@@ -180,37 +222,19 @@ function LiveStatus<E>({
     </DeployStatus>
   );
 }
-function DeployLatest<E>({
+function DeployLatest({
   source,
-  live,
+  commit,
   disabled,
   onDeploy,
 }: {
   readonly source: typeof AppSourceDisplay.Type;
-  readonly live: Query<VersionDisplay, E> | undefined;
+  /** Undefined when this app has no live version, or that version is still loading. */
+  readonly commit: string | null | undefined;
   readonly disabled: boolean;
   readonly onDeploy: () => void;
 }) {
-  return live === undefined ? (
-    <Button size="sm" disabled={disabled} onClick={onDeploy}>
-      Deploy latest
-    </Button>
-  ) : (
-    <DeployLiveLatest source={source} live={live} disabled={disabled} onDeploy={onDeploy} />
-  );
-}
-function DeployLiveLatest<E>({
-  source,
-  live,
-  disabled,
-  onDeploy,
-}: {
-  readonly source: typeof AppSourceDisplay.Type;
-  readonly live: Query<VersionDisplay, E>;
-  readonly disabled: boolean;
-  readonly onDeploy: () => void;
-}) {
-  const current = useLiveCommit(live) === source.revision.commit;
+  const current = commit !== undefined && commit === source.revision.commit;
   return (
     <Button
       size="sm"
@@ -264,23 +288,24 @@ function CloneDetails({ source }: { readonly source: typeof AppSourceDisplay.Typ
     </>
   );
 }
-function SourceHistoryLink<E>({
+function SourceHistoryLink<History extends ReadonlyArray<HistoryEntry>, E>({
   app,
-  atoms,
-}: AppManagementProps<E> & {
+  history,
+}: {
   readonly app: App;
+  readonly history: AsyncResult.AsyncResult<History, E>;
 }) {
   const { AppLink } = useDashboard();
-  const history = AsyncResult.value(useAtomValue(atoms.history(app.id)));
+  const entries = AsyncResult.value(history);
   // The endpoint returns recent history, not an unbounded repository-wide count.
-  const label = Option.isSome(history)
-    ? `${history.value.length} recent ${history.value.length === 1 ? "commit" : "commits"}`
+  const label = Option.isSome(entries)
+    ? `${entries.value.length} recent ${entries.value.length === 1 ? "commit" : "commits"}`
     : "History";
   return (
     <AppLink
       app={app.id}
       view="history"
-      aria-label={Option.isSome(history) ? `History: ${label}` : "History"}
+      aria-label={Option.isSome(entries) ? `History: ${label}` : "History"}
       className="inline-flex min-h-8 items-center gap-1.5 whitespace-nowrap hover:text-foreground hover:underline"
     >
       <HugeiconsIcon icon={Clock01Icon} size={14} aria-hidden />
@@ -288,7 +313,14 @@ function SourceHistoryLink<E>({
     </AppLink>
   );
 }
-function SourceHistory<E>({ app, atoms, Failure }: AppManagementProps<E> & { readonly app: App }) {
+function SourceHistory<E, History extends ReadonlyArray<HistoryEntry>>({
+  app,
+  historyRead,
+  Failure,
+}: Pick<AppManagementProps<E>, "Failure"> & {
+  readonly app: App;
+  readonly historyRead: StartedRead<History, E>;
+}) {
   const { AppLink } = useDashboard();
   return (
     <section
@@ -306,7 +338,12 @@ function SourceHistory<E>({ app, atoms, Failure }: AppManagementProps<E> & { rea
           Back to files
         </AppLink>
       </div>
-      <QueryView query={atoms.history(app.id)} Failure={Failure} pending={<SourceHistoryLoading />}>
+      <QueryView
+        query={historyRead.source}
+        read={historyRead}
+        Failure={Failure}
+        pending={<SourceHistoryLoading />}
+      >
         {(history) =>
           history.length === 0 ? (
             <EmptyState title="No saved changes yet">

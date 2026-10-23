@@ -12,6 +12,7 @@ export const Route = createFileRoute("/org/$organizationSlug/apps/$appId")({
   loaderDeps: ({ search }) => ({
     version: search.version,
     tool: search.tool,
+    view: search.view,
     connection: search.connection,
   }),
   loader: ({ context, params, deps }) =>
