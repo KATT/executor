@@ -114,7 +114,7 @@ export const liveQueryAtom = <A, I, Q, E, E2>(options: {
       schema: Schema.Option(options.success),
     }),
   );
-  return Atom.readable(
+  const view = Atom.readable(
     (get): Atom.Type<typeof live> => {
       const result = get(live);
       // Reading it on the server keeps the snapshot in the request's registry until it is sent.
@@ -128,6 +128,7 @@ export const liveQueryAtom = <A, I, Q, E, E2>(options: {
     },
     (refresh) => refresh(live),
   );
+  return Object.assign(view, { snapshot: rendered, initialValueTarget: rendered });
 };
 
 /** The inventory updates from committed storage changes, including writes made through MCP and the SDK. */
@@ -138,9 +139,13 @@ const liveOverviewAtom = liveQueryAtom({
   query: Effect.flatMap(DashboardClient, (client) => client.dashboard.liveOverview()),
 });
 
+/** The serializable first snapshot `overviewAtom` hydrates from. Loaders start this atom. */
+export const overviewSnapshotAtom = liveOverviewAtom.snapshot;
+
 /** Repaint at the next known expiry without polling the server or loading every app's tools. */
 export const overviewAtom = acknowledgedQuery(
-  Atom.readable(
+  follows(
+    Atom.readable(
     (get) => {
       const result = get(liveOverviewAtom);
       const data = AsyncResult.value(result);
@@ -172,6 +177,8 @@ export const overviewAtom = acknowledgedQuery(
       }));
     },
     (refresh) => refresh(liveOverviewAtom),
+    ),
+    liveOverviewAtom,
   ),
 );
 

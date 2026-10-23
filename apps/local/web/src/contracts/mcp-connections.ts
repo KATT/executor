@@ -6,12 +6,10 @@ import type { ConnectionSave } from "@executor-js/ui/contracts/scoped-connection
 import { acknowledge, acknowledgedQuery, upsert } from "@executor-js/ui/contracts/mutations";
 import { DashboardClient } from "./api.ts";
 
+/** The list endpoint. Loaders start this atom; `mcpConnectionsAtom` is the view over it. */
+export const mcpConnectionsQuery = DashboardClient.query("mcpConnections", "list", hydrated({}));
 /** Keep confirmed connections visible while background reconciliation runs. */
-export const mcpConnectionsAtom = DashboardClient.query(
-  "mcpConnections",
-  "list",
-  hydrated({}),
-).pipe(acknowledgedQuery);
+export const mcpConnectionsAtom = acknowledgedQuery(mcpConnectionsQuery);
 /** Create with the editor's chosen ID, or replace an existing connection's name and access. */
 export const saveMcpConnectionAtom = DashboardClient.runtime.fn(
   ({ existing, input }: ConnectionSave, get) =>

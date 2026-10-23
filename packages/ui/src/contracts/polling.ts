@@ -2,6 +2,7 @@
 import { type Duration, Effect } from "effect";
 import { AsyncResult, Atom } from "effect/reactivity";
 import type { ScheduleSettings, WebhookSubscription, WorkflowRun } from "@executor-js/sdk";
+import { follows } from "./mutations.ts";
 
 /** Idle reconciliation for writes made outside this tab; focus and acknowledged writes cover the rest. */
 const reconcileInterval: Duration.Input = "30 seconds";
@@ -31,7 +32,8 @@ export const pollingQuery = <A>(
   source: Atom.Atom<A>,
   { idle = reconcileInterval, active }: PollingOptions<A> = {},
 ): Atom.Atom<A> =>
-  Atom.readable(
+  follows(
+    Atom.readable(
     (get) => {
       const value = get(source);
       // A server render reads once; only a visible page keeps reconciling.
@@ -52,6 +54,8 @@ export const pollingQuery = <A>(
       return value;
     },
     (refresh) => refresh(source),
+  ),
+    source,
   );
 
 /** Select the faster interval while a loaded result reports unfinished server work. */

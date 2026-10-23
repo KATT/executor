@@ -37,7 +37,18 @@ export const acknowledgedQuery = <A, E>(
     },
     (refresh) => refresh(source),
   );
-  return query;
+  // Loaders start the serializable source. Reads of this view hydrate that source.
+  return follows(query, source);
+};
+
+/** Point a derived atom at the atom whose value it shows, for loader hydration. */
+export const follows = <A extends Atom.Atom<unknown>>(
+  atom: A,
+  source: Atom.Atom<unknown>,
+): A => {
+  const derived: { initialValueTarget?: Atom.Atom<unknown> } = atom;
+  derived.initialValueTarget = source;
+  return atom;
 };
 
 /** Apply a successful response to all shared readers before starting reconciliation. */
@@ -115,12 +126,15 @@ export const invalidate = <A, E>(
 
 /** Derived data cannot reuse success during refresh; a known failure stays visible while retrying. */
 export const currentQuery = <A, E>(source: Atom.Atom<AsyncResult.AsyncResult<A, E>>) =>
-  Atom.map(source, (result) =>
-    AsyncResult.isFailure(result)
-      ? AsyncResult.failure<A, E>(result.cause, { waiting: result.waiting })
-      : result.waiting
-        ? AsyncResult.initial<A, E>(true)
-        : result,
+  follows(
+    Atom.map(source, (result) =>
+      AsyncResult.isFailure(result)
+        ? AsyncResult.failure<A, E>(result.cause, { waiting: result.waiting })
+        : result.waiting
+          ? AsyncResult.initial<A, E>(true)
+          : result,
+    ),
+    source,
   );
 
 /** Reconcile one server record without moving an existing row in its list. */

@@ -11,7 +11,7 @@ import type {
   SharedAudience,
   AccessRevision,
 } from "@executor-js/hosted-server/resource-access";
-import { acknowledge } from "@executor-js/ui/contracts/mutations";
+import { acknowledge, follows } from "@executor-js/ui/contracts/mutations";
 import { providerDisplayUrl } from "@executor-js/ui/contracts/dashboard";
 import { HostedClient } from "./api.ts";
 import { protectedQuery } from "./protected-query.ts";
@@ -30,7 +30,7 @@ class AccountKey extends Data.Class<{
   readonly organization: OrganizationReference;
   readonly account: AccountId;
 }> {}
-const directory = Atom.family((key: DirectoryKey) =>
+const directoryQuery = Atom.family((key: DirectoryKey) =>
   HostedClient.query(
     "resourceAccess",
     "directory",
@@ -38,7 +38,15 @@ const directory = Atom.family((key: DirectoryKey) =>
       params: { organization: key.organization },
       query: { view: key.view },
     }),
-  ).pipe(
+  ),
+);
+/** The directory endpoint. Loaders start this atom; the page reads the inventory derived from it. */
+export const resourceDirectoryQuery = (
+  organization: OrganizationReference,
+  view: "available" | "managed" = "available",
+) => directoryQuery(new DirectoryKey({ organization, view }));
+const directory = Atom.family((key: DirectoryKey) =>
+  directoryQuery(key).pipe(
     revalidated,
     (source) => pollingQuery(source, { active: whileLoaded(({ pendingApp }) => pendingApp) }),
     protectedQuery,
@@ -163,7 +171,8 @@ class ListKey extends Data.Class<{
   readonly group: string;
 }> {}
 const inventory = Atom.family((key: ListKey) =>
-  Atom.map(
+  follows(
+    Atom.map(
     resourceDirectoryAtom(key.organization, key.view),
     AsyncResult.map((data) => {
       const apps = data.apps
@@ -190,6 +199,8 @@ const inventory = Atom.family((key: ListKey) =>
       }));
       return { apps, accounts, links, pendingApp: key.group !== "private" && data.pendingApp };
     }),
+    ),
+    resourceDirectoryAtom(key.organization, key.view),
   ),
 );
 /** A UI group filter narrows already-authorized rows; it grants no additional access. */

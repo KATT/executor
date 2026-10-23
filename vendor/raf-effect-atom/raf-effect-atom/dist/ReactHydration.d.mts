@@ -1,0 +1,58 @@
+import * as Hydration from "effect/reactivity/Hydration";
+import * as React from "react";
+/**
+ * Props for `HydrationBoundary`.
+ *
+ * @stability unstable
+ * @category models
+ * @since 0.1.0
+ */
+export interface HydrationBoundaryProps {
+  readonly children?: React.ReactNode | undefined;
+  /** The state `Hydration.dehydrate` returned on the server. */
+  readonly state?: Iterable<Hydration.DehydratedAtom> | undefined;
+}
+/**
+ * Hydrates the state a server registry dehydrated, streamed results
+ * included.
+ *
+ * **When to use**
+ *
+ * Use where the server's state reaches the React tree as a prop, such as
+ * React Server Components props or a React Router loader's data. A router
+ * that hydrates before rendering calls `Hydration.hydrate` instead.
+ *
+ * **Details**
+ *
+ * Settled values go to `@effect/atom-react`'s `HydrationBoundary`, which
+ * hydrates new atoms during render and existing ones after commit. Each
+ * streamed result is held until it arrives, so `useAtomResult` waits for it
+ * instead of requesting it again.
+ *
+ * During server rendering, when `state` is the array `dehydrate` returned,
+ * as React Router passes a loader's data to the server render, the children
+ * read the registry it came from instead of a copy. The loaders' atoms are
+ * there, so an `effect-atom-boundary` boundary sees their failures before
+ * its children read them and renders its handler on the server.
+ *
+ * **Gotchas**
+ *
+ * In development, it throws during server rendering when the registry isn't
+ * a request registry, such as `@effect/atom-react`'s default one, which
+ * every request shares: one request's state would reach the others.
+ *
+ * **Example**
+ *
+ * ```tsx
+ * import { HydrationBoundary } from "raf-effect-atom"
+ *
+ * <HydrationBoundary state={loaderData.atoms}>
+ *   <IssuePage issue={loaderData.issue} />
+ * </HydrationBoundary>
+ * ```
+ *
+ * @stability unstable
+ * @category components
+ * @since 0.1.0
+ */
+export declare const HydrationBoundary: (props: HydrationBoundaryProps) => React.ReactNode;

@@ -16,12 +16,13 @@ import { acknowledge, acknowledgedQuery, upsert } from "@executor-js/ui/contract
 import { HostedClient } from "./api.ts";
 import { resourceInventoryAtom } from "./resource-access.ts";
 
+/** The list endpoint. Loaders start this atom; `mcpConnectionsAtom` is the view over it. */
+export const mcpConnectionsQuery = Atom.family((organization: OrganizationReference) =>
+  HostedClient.query("mcpConnections", "list", hydrated({ params: { organization } })),
+);
 /** Keep confirmed connections visible while background reconciliation runs. */
 export const mcpConnectionsAtom = Atom.family((organization: OrganizationReference) =>
-  HostedClient.query("mcpConnections", "list", hydrated({ params: { organization } })).pipe(
-    revalidated,
-    acknowledgedQuery,
-  ),
+  mcpConnectionsQuery(organization).pipe(revalidated, acknowledgedQuery),
 );
 /** Create with the editor's chosen ID, or replace an existing connection's name and access. */
 export const saveMcpConnectionAtom = Atom.family((organization: OrganizationReference) =>
@@ -60,12 +61,13 @@ export const revokeMcpConnectionAtom = Atom.family((organization: OrganizationRe
   ),
 );
 
+/** The agents endpoint. Loaders start this atom; `mcpAgentsAtom` is the view over it. */
+export const mcpAgentsQuery = Atom.family((organization: OrganizationReference) =>
+  HostedClient.query("mcpConnections", "agents", hydrated({ params: { organization } })),
+);
 /** Agents the member authorized over OAuth in this organization. */
 export const mcpAgentsAtom = Atom.family((organization: OrganizationReference) =>
-  HostedClient.query("mcpConnections", "agents", hydrated({ params: { organization } })).pipe(
-    revalidated,
-    acknowledgedQuery,
-  ),
+  mcpAgentsQuery(organization).pipe(revalidated, acknowledgedQuery),
 );
 /**
  * The agents that already held a grant when a guide's baseline was read, in each of the member's

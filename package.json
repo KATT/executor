@@ -21,7 +21,9 @@
     "apps/docs",
     "e2e/viewer",
     "apps/hosted/testing",
-    "apps/cli"
+    "apps/cli",
+    "vendor/raf-effect-atom/raf-effect-atom",
+    "vendor/raf-effect-atom/effect-atom-boundary"
   ],
   "type": "module",
   "scripts": {
