@@ -13,6 +13,7 @@ import { AsyncResult, type Atom } from "effect/reactivity";
 import { Exit, Schema } from "effect";
 import { useState, type ComponentType, type ReactNode } from "react";
 import type { FailureProps, Query } from "../../contracts/dashboard.ts";
+import type { StartedRead } from "../../contracts/started-read.ts";
 import { QueryView } from "./context.tsx";
 import { Button } from "../components/button.tsx";
 import { Textarea } from "../components/textarea.tsx";
@@ -24,12 +25,15 @@ type SourceUpdate<E> = Atom.AtomResultFn<typeof ConfigureWebhookSource.Type, Web
  */
 export function AppWebhooks<E>({
   query,
+  read,
   retry,
   Failure,
   setupLink,
   children,
 }: {
   readonly query: Query<readonly WebhookSubscription[], E>;
+  /** Present when the route loader started the subscription list. */
+  readonly read?: StartedRead<readonly WebhookSubscription[], E> | undefined;
   readonly retry: (id: WebhookId) => Atom.AtomResultFn<void, WebhookSubscription, E>;
   readonly Failure: ComponentType<FailureProps<E>>;
   readonly setupLink: (subscription: WebhookSubscription) => ReactNode;
@@ -39,6 +43,7 @@ export function AppWebhooks<E>({
     <div className="space-y-4 px-5 py-3">
       <QueryView
         query={query}
+        {...(read === undefined ? {} : { read })}
         Failure={Failure}
         pending={<p className="text-sm text-muted-foreground">Loading webhooks…</p>}
       >
@@ -112,15 +117,23 @@ function WebhookRow<E>({
  */
 export function WebhookSourceConfigurations<E>({
   query,
+  read,
   configure,
   Failure,
 }: {
   readonly query: Query<readonly WebhookSourceSummary[], E>;
+  /** Present when the route loader started the source list. */
+  readonly read?: StartedRead<readonly WebhookSourceSummary[], E> | undefined;
   readonly configure: (account: AccountId) => SourceUpdate<E>;
   readonly Failure: ComponentType<FailureProps<E>>;
 }) {
   return (
-    <QueryView query={query} Failure={Failure} pending={null}>
+    <QueryView
+      query={query}
+      {...(read === undefined ? {} : { read })}
+      Failure={Failure}
+      pending={null}
+    >
       {(sources) =>
         sources.length > 0 && (
           <div className="space-y-3">

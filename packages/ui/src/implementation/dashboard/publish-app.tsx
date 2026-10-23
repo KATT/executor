@@ -9,7 +9,7 @@ import {
   type PublicationReadiness,
   sourceText,
 } from "@executor-js/sdk";
-import type { AppSourceDisplay } from "@executor-js/app-management/contracts";
+import type { AppAuthoringMetadata, AppSourceDisplay } from "@executor-js/app-management/contracts";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Alert02Icon,
@@ -19,6 +19,7 @@ import {
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import type { AppManagementProps } from "../../contracts/app-management.ts";
+import type { StartedRead } from "../../contracts/started-read.ts";
 import { Button } from "../components/button.tsx";
 import { Skeleton } from "../components/skeleton.tsx";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../components/dialog.tsx";
@@ -285,10 +286,16 @@ export function PublishApp<E>({
   app,
   atoms,
   Failure,
-}: AppManagementProps<E> & { readonly app: App }) {
+  read,
+}: AppManagementProps<E> & {
+  readonly app: App;
+  /** The route loader starts this read; the dialog's later source reads stay inside it. */
+  readonly read?: StartedRead<typeof AppAuthoringMetadata.Type, E> | undefined;
+}) {
   return (
     <QueryView
       query={atoms.authoring(app.id)}
+      {...(read === undefined ? {} : { read })}
       Failure={Failure}
       pending={
         <Skeleton className="h-9 w-26 max-[740px]:h-11" aria-label="Loading publishing access" />

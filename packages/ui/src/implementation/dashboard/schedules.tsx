@@ -12,14 +12,15 @@ import {
   type App,
   type ScheduleSettings,
 } from "@executor-js/sdk";
-import { useState, type ComponentType, type ReactNode } from "react";
+import { Suspense, useState, type ComponentType, type ReactNode } from "react";
 import type { FailureProps } from "../../contracts/dashboard.ts";
 import {
   type ScheduleBindings,
   type ScheduleControls,
   type ScheduleCopyControls,
 } from "../../contracts/schedules.ts";
-import { QueryView, useDashboard, useQuery } from "./context.tsx";
+import { QueryView, useDashboard, useQuery, useStartedQuery } from "./context.tsx";
+import type { StartedRead } from "../../contracts/started-read.ts";
 import { Alert } from "../components/alert.tsx";
 import { DisabledTooltip } from "../components/disabled-tooltip.tsx";
 import { Button } from "../components/button.tsx";
@@ -66,6 +67,9 @@ export function AppSchedules<E>({
   readonly actor: string | undefined;
   readonly bindings: ScheduleBindings<E>;
   readonly Failure: ComponentType<FailureProps<NoInfer<E>>>;
+  /** Saved settings and declarations, when the route loader started them. */
+  readonly settingsRead?: StartedRead<readonly ScheduleSettings[], E> | undefined;
+  readonly definitionsRead?: StartedRead<readonly AppSchedule[], E> | undefined;
 }) {
   const { AppLink } = useDashboard();
   if (app.activeVersion === null)
@@ -102,13 +106,48 @@ type ListProps<E> = {
   readonly actor: string | undefined;
   readonly bindings: ScheduleBindings<E>;
   readonly Failure: ComponentType<FailureProps<NoInfer<E>>>;
+  readonly settingsRead?: StartedRead<readonly ScheduleSettings[], E> | undefined;
+  readonly definitionsRead?: StartedRead<readonly AppSchedule[], E> | undefined;
 };
 function LiveSchedules<E>(props: ListProps<E>) {
+  const { settingsRead, definitionsRead } = props;
+  return settingsRead !== undefined && definitionsRead !== undefined ? (
+    <Suspense fallback={<AppSchedulesLoading />}>
+      <StartedSchedules {...props} settingsRead={settingsRead} definitionsRead={definitionsRead} />
+    </Suspense>
+  ) : (
+    <FetchedSchedules {...props} />
+  );
+}
+function FetchedSchedules<E>(props: ListProps<E>) {
   const { bindings, Failure } = props;
   const discovery = useQuery(bindings.definitions);
   return (
     <SchedulesLayout>
       <QueryView query={bindings.settings} Failure={Failure} pending={<SchedulesPending />}>
+        {(saved) => <ScheduleList {...props} saved={saved} discovery={discovery} />}
+      </QueryView>
+    </SchedulesLayout>
+  );
+}
+function StartedSchedules<E>({
+  settingsRead,
+  definitionsRead,
+  ...props
+}: ListProps<E> & {
+  readonly settingsRead: StartedRead<readonly ScheduleSettings[], E>;
+  readonly definitionsRead: StartedRead<readonly AppSchedule[], E>;
+}) {
+  const { bindings, Failure } = props;
+  const discovery = useStartedQuery(definitionsRead);
+  return (
+    <SchedulesLayout>
+      <QueryView
+        query={bindings.settings}
+        read={settingsRead}
+        Failure={Failure}
+        pending={<SchedulesPending />}
+      >
         {(saved) => <ScheduleList {...props} saved={saved} discovery={discovery} />}
       </QueryView>
     </SchedulesLayout>

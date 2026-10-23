@@ -10,6 +10,7 @@ import {
 import { appBrowserBindings } from "../../contracts/app-browser.ts";
 import { AppSchedules } from "@executor-js/ui/dashboard/schedules";
 import { scheduleBindings } from "../../contracts/schedules.ts";
+import { webhookBindings, workflowBindings } from "../../contracts/resources.ts";
 import {
   allResults,
   QueryResult,
@@ -65,12 +66,17 @@ class PreviewKey extends Data.Class<{
   readonly app: AppId;
   readonly version: App["activeVersion"];
 }> {}
-const overviewToolsAtom = Atom.family((key: PreviewKey) =>
-  Atom.map(
-    toolsAtom(key),
-    AsyncResult.map((data) => ({ items: data.tools })),
-  ),
-);
+const overviewToolsAtom = Atom.family((key: PreviewKey) => {
+  const query = toolsAtom(key);
+  // Point at the serializable catalog so the loader can start this preview.
+  return Object.assign(
+    Atom.map(
+      query,
+      AsyncResult.map((data) => ({ items: data.tools })),
+    ),
+    { initialValueTarget: query },
+  );
+});
 
 /** The version this page's tools and source were started with. */
 const listedVersion = async (atoms: Loader.Loader, app: AppId, version: VersionId | undefined) => {
@@ -119,15 +125,45 @@ export async function loadLocalApp(
           source: atoms.prefetch(sourceAtom({ app, version: known })),
           detail: detailFor(known),
         };
-  const version =
-    listed === undefined ? await listedVersion(atoms, app, undefined) : listed.version;
-  const liveVersion = inspecting ? await listedVersion(atoms, app, undefined) : undefined;
+  const needsActive =
+    known === undefined ||
+    inspecting ||
+    shown === "overview" ||
+    shown === "skills" ||
+    shown === "workflows";
+  const active = needsActive ? await listedVersion(atoms, app, undefined) : undefined;
+  const version = known ?? active;
+  const liveVersion = inspecting ? active : undefined;
+  const browser =
+    active === undefined ? undefined : appBrowserBindings({ id: app, activeVersion: active });
+  const flows = workflowBindings({ app, version: active });
+  const hooks = webhookBindings({ app });
+  const schedules = scheduleBindings({ app });
   return {
     app: record,
     appLinks,
     userLinks,
     ...workspace,
     authoring,
+    skillBundle:
+      shown === "skills" && browser !== undefined ? atoms.prefetch(browser.bundle) : undefined,
+    skillWorkspace: shown === "skills" ? atoms.prefetch(appManagement.workspace(app)) : undefined,
+    skillList:
+      shown === "overview" && browser !== undefined ? atoms.prefetch(browser.skills) : undefined,
+    workflowList:
+      (shown === "overview" || shown === "workflows") && active !== undefined
+        ? atoms.prefetch(flows.workflows)
+        : undefined,
+    workflowRuns:
+      shown === "workflows" ? atoms.prefetch(flows.runs(undefined, undefined)) : undefined,
+    overviewTools:
+      shown === "overview" && active !== undefined
+        ? atoms.prefetch(overviewToolsAtom(new PreviewKey({ app, version: active })))
+        : undefined,
+    scheduleSettings: shown === "schedules" ? atoms.prefetch(schedules.settings) : undefined,
+    scheduleDefinitions: shown === "schedules" ? atoms.prefetch(schedules.definitions) : undefined,
+    webhooks: shown === "webhooks" ? atoms.prefetch(hooks.query) : undefined,
+    webhookSources: shown === "webhooks" ? atoms.prefetch(hooks.sources) : undefined,
     live:
       liveVersion === undefined
         ? undefined
@@ -356,20 +392,33 @@ export function AppDetailPage({
                       (entry) => entry.requirement.scope === "app",
                     ),
                   );
-            if (tab === "skills")
+            if (tab === "skills") {
+              const browser = appBrowserBindings(current.app);
               return gate(
                 <AppSkills
                   canEdit
                   app={current.app}
-                  bindings={appBrowserBindings(current.app)}
+                  bindings={browser}
                   Failure={Failure}
                   editing={{
                     atoms: appManagement,
                     onApp: acknowledgeApp,
                     onDirty: setSkillDirty,
                   }}
+                  {...(reads.skillWorkspace === undefined
+                    ? {}
+                    : {
+                        workspaceRead: {
+                          source: appManagement.workspace(current.app.id),
+                          handle: reads.skillWorkspace,
+                        },
+                      })}
+                  {...(reads.skillBundle === undefined
+                    ? {}
+                    : { bundleRead: { source: browser.bundle, handle: reads.skillBundle } })}
                 />,
               );
+            }
             if (tab === "tools") {
               const selectedVersion = version ?? reads.version;
               return gate(
@@ -387,17 +436,71 @@ export function AppDetailPage({
                 ),
               );
             }
-            if (tab === "workflows")
-              return gate(<AppResources app={current.app} view="workflows" />);
-            if (tab === "webhooks") return <AppResources app={current.app} view="webhooks" />;
+            if (tab === "workflows") {
+              const flows = workflowBindings({
+                app: current.app.id,
+                version: current.app.activeVersion ?? undefined,
+              });
+              return gate(
+                <AppResources
+                  app={current.app}
+                  view="workflows"
+                  {...(reads.workflowList === undefined
+                    ? {}
+                    : { definitions: { source: flows.workflows, handle: reads.workflowList } })}
+                  {...(reads.workflowRuns === undefined
+                    ? {}
+                    : {
+                        runs: {
+                          source: flows.runs(undefined, undefined),
+                          handle: reads.workflowRuns,
+                        },
+                      })}
+                />,
+              );
+            }
+            if (tab === "webhooks") {
+              const hooks = webhookBindings({ app: current.app.id });
+              return (
+                <AppResources
+                  app={current.app}
+                  view="webhooks"
+                  {...(reads.webhooks === undefined
+                    ? {}
+                    : { webhooks: { source: hooks.query, handle: reads.webhooks } })}
+                  {...(reads.webhookSources === undefined
+                    ? {}
+                    : {
+                        webhookSources: { source: hooks.sources, handle: reads.webhookSources },
+                      })}
+                />
+              );
+            }
             if (tab === "schedules") {
+              const schedules = scheduleBindings({ app: current.app.id });
               return (
                 <AppSchedules
                   app={current.app}
                   canEdit
                   actor={undefined}
-                  bindings={scheduleBindings({ app: current.app.id })}
+                  bindings={schedules}
                   Failure={Failure}
+                  {...(reads.scheduleSettings === undefined
+                    ? {}
+                    : {
+                        settingsRead: {
+                          source: schedules.settings,
+                          handle: reads.scheduleSettings,
+                        },
+                      })}
+                  {...(reads.scheduleDefinitions === undefined
+                    ? {}
+                    : {
+                        definitionsRead: {
+                          source: schedules.definitions,
+                          handle: reads.scheduleDefinitions,
+                        },
+                      })}
                 />
               );
             }
@@ -406,28 +509,29 @@ export function AppDetailPage({
                 Connect an account in Accounts to load this preview.
               </p>
             );
-            if (tab === "overview")
+            if (tab === "overview") {
+              const browser = appBrowserBindings(current.app);
+              const listedTools = overviewToolsAtom(
+                new PreviewKey({ app: id, version: current.app.activeVersion }),
+              );
               return (
                 <AppOverview
                   app={current.app}
                   entries={
                     <AppOverviewEntries
                       app={current.app}
-                      bindings={appBrowserBindings(current.app)}
+                      bindings={browser}
+                      {...(reads.skillList === undefined
+                        ? {}
+                        : { skillsRead: { source: browser.skills, handle: reads.skillList } })}
                       workflows={
                         <AppWorkflowPreview
                           empty={previewEmpty}
                           Failure={Failure}
-                          sources={
-                            ready
-                              ? [
-                                  {
-                                    key: versionKey,
-                                    query: appBrowserBindings(current.app).workflows,
-                                  },
-                                ]
-                              : []
-                          }
+                          sources={ready ? [{ key: versionKey, query: browser.workflows }] : []}
+                          {...(reads.workflowList === undefined
+                            ? {}
+                            : { read: { source: browser.workflows, handle: reads.workflowList } })}
                         />
                       }
                       Failure={Failure}
@@ -443,21 +547,10 @@ export function AppDetailPage({
                         emptyManyRequirements(requirements).length === requirements.length &&
                         requirements.length > 0
                       }
-                      sources={
-                        ready
-                          ? [
-                              {
-                                key: versionKey,
-                                query: overviewToolsAtom(
-                                  new PreviewKey({
-                                    app: id,
-                                    version: current.app.activeVersion,
-                                  }),
-                                ),
-                              },
-                            ]
-                          : []
-                      }
+                      sources={ready ? [{ key: versionKey, query: listedTools }] : []}
+                      {...(reads.overviewTools === undefined
+                        ? {}
+                        : { read: { source: listedTools, handle: reads.overviewTools } })}
                     />
                   }
                   source={
@@ -479,6 +572,7 @@ export function AppDetailPage({
                   }
                 />
               );
+            }
             return (
               <div className="max-w-3xl space-y-4 p-5 max-[740px]:p-4">
                 <AppAccounts

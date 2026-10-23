@@ -21,6 +21,7 @@ import {
 } from "@executor-js/ui/contracts/dashboard";
 import { AppSchedules, AppSchedulesLoading } from "@executor-js/ui/dashboard/schedules";
 import { scheduleBindings } from "../../contracts/schedules.ts";
+import { webhookBindings, workflowBindings } from "../../contracts/resources.ts";
 import { sessionAtom } from "../../contracts/auth.ts";
 import { groupsAtom } from "../../contracts/groups.ts";
 import { AppDetailLoading, OverviewCardLoading } from "@executor-js/ui/dashboard/app-loading";
@@ -127,7 +128,8 @@ export async function loadHostedApp(
         history: atoms.prefetch(management.history(app)),
       }
     : { working: undefined, history: undefined };
-  const authoring = shown === "overview" ? atoms.prefetch(management.authoring(app)) : undefined;
+  // Publishing reads authoring on every tab, and the overview previews the same record.
+  const authoring = atoms.prefetch(management.authoring(app));
   const tool = namedTool(search.tool);
   const known = search.version;
   const activeVersion = async () => {
@@ -147,8 +149,42 @@ export async function loadHostedApp(
     inspecting && version !== undefined
       ? atoms.prefetch(sourceAtom({ ...key, version }))
       : undefined;
+  const needsActive =
+    known === undefined ||
+    inspecting ||
+    shown === "overview" ||
+    shown === "skills" ||
+    shown === "workflows";
+  const active = needsActive ? await activeVersion() : undefined;
+  const browser =
+    active === undefined
+      ? undefined
+      : appBrowserBindings(organization, { id: app, activeVersion: active });
+  const flows = workflowBindings({ organization, app, version: active });
+  const hooks = webhookBindings({ organization, app });
+  const schedules = scheduleBindings({ organization, app });
+  const sections = {
+    skillBundle:
+      shown === "skills" && browser !== undefined ? atoms.prefetch(browser.bundle) : undefined,
+    skillWorkspace: shown === "skills" ? atoms.prefetch(management.workspace(app)) : undefined,
+    skillList:
+      shown === "overview" && browser !== undefined ? atoms.prefetch(browser.skills) : undefined,
+    workflowList:
+      (shown === "overview" || shown === "workflows") && active !== undefined
+        ? atoms.prefetch(flows.workflows)
+        : undefined,
+    workflowRuns:
+      shown === "workflows" ? atoms.prefetch(flows.runs(undefined, undefined)) : undefined,
+    overviewTools:
+      shown === "overview" && active !== undefined
+        ? atoms.prefetch(toolsAtom({ ...key, version: active }))
+        : undefined,
+    scheduleSettings: shown === "schedules" ? atoms.prefetch(schedules.settings) : undefined,
+    scheduleDefinitions: shown === "schedules" ? atoms.prefetch(schedules.definitions) : undefined,
+    webhooks: shown === "webhooks" ? atoms.prefetch(hooks.query) : undefined,
+    webhookSources: shown === "webhooks" ? atoms.prefetch(hooks.sources) : undefined,
+  };
   if (known !== undefined) {
-    const liveVersion = inspecting ? await activeVersion() : undefined;
     return {
       record,
       inventory,
@@ -161,12 +197,12 @@ export async function loadHostedApp(
       connection,
       ...workspace,
       authoring,
-      live: liveSource(liveVersion),
-      liveVersion,
+      live: liveSource(active),
+      liveVersion: inspecting ? active : undefined,
+      ...sections,
       ...started(known),
     };
   }
-  const active = await activeVersion();
   return {
     record,
     inventory,
@@ -181,6 +217,7 @@ export async function loadHostedApp(
     authoring,
     live: liveSource(active),
     liveVersion: inspecting ? active : undefined,
+    ...sections,
     ...(active === undefined
       ? { version: undefined, tools: undefined, source: undefined, detail: undefined }
       : started(active)),
@@ -368,7 +405,15 @@ function AppDetail({
           <>
             {canUse && openApp?.(app)}
             {canManage && (role === "owner" || role === "admin") ? (
-              <PublishApp app={app} atoms={appManagement(organization)} Failure={HostedFailure} />
+              <PublishApp
+                app={app}
+                atoms={appManagement(organization)}
+                Failure={HostedFailure}
+                read={{
+                  source: appManagement(organization).authoring(app.id),
+                  handle: reads.authoring,
+                }}
+              />
             ) : (
               <Button
                 variant="outline"
@@ -535,24 +580,38 @@ function AppDetail({
                       (entry) => entry.requirement.scope === "app",
                     ),
                   );
-            if (selectedView === "skills")
+            if (selectedView === "skills") {
+              const browser = appBrowserBindings(organization, current);
+              const management = appManagement(organization);
               return gate(
                 <AppSkills
                   canEdit={canManage}
                   app={current}
-                  bindings={appBrowserBindings(organization, current)}
+                  bindings={browser}
                   Failure={HostedFailure}
                   editing={
                     canManage
                       ? {
-                          atoms: appManagement(organization),
+                          atoms: management,
                           onDirty: setSkillDirty,
                           onApp: (get, saved) => acknowledgeApp(get, organization, saved),
                         }
                       : undefined
                   }
+                  {...(canManage && reads.skillWorkspace !== undefined
+                    ? {
+                        workspaceRead: {
+                          source: management.workspace(current.id),
+                          handle: reads.skillWorkspace,
+                        },
+                      }
+                    : {})}
+                  {...(reads.skillBundle === undefined
+                    ? {}
+                    : { bundleRead: { source: browser.bundle, handle: reads.skillBundle } })}
                 />,
               );
+            }
             if (selectedView === "tools") {
               const selectedVersion = version ?? reads.version;
               return gate(
@@ -570,10 +629,56 @@ function AppDetail({
                 ),
               );
             }
-            if (selectedView === "workflows")
-              return gate(<AppResources app={current} view="workflows" />);
-            if (selectedView === "webhooks") return <AppResources app={current} view="webhooks" />;
+            if (selectedView === "workflows") {
+              const flows = workflowBindings({
+                organization,
+                app: current.id,
+                version: current.activeVersion ?? undefined,
+              });
+              return gate(
+                <AppResources
+                  app={current}
+                  view="workflows"
+                  {...(reads.workflowList === undefined
+                    ? {}
+                    : {
+                        definitions: {
+                          source: flows.workflows,
+                          handle: reads.workflowList,
+                        },
+                      })}
+                  {...(reads.workflowRuns === undefined
+                    ? {}
+                    : {
+                        runs: {
+                          source: flows.runs(undefined, undefined),
+                          handle: reads.workflowRuns,
+                        },
+                      })}
+                />,
+              );
+            }
+            if (selectedView === "webhooks") {
+              const hooks = webhookBindings({ organization, app: current.id });
+              return (
+                <AppResources
+                  app={current}
+                  view="webhooks"
+                  {...(reads.webhooks === undefined
+                    ? {}
+                    : { webhooks: { source: hooks.query, handle: reads.webhooks } })}
+                  {...(reads.webhookSources === undefined
+                    ? {}
+                    : { webhookSources: { source: hooks.sources, handle: reads.webhookSources } })}
+                />
+              );
+            }
             if (selectedView === "schedules") {
+              const schedules = scheduleBindings(
+                { organization, app: current.id },
+                true,
+                canManage,
+              );
               return userId === undefined ? (
                 <AppSchedulesLoading />
               ) : (
@@ -581,8 +686,24 @@ function AppDetail({
                   app={current}
                   canEdit={canManage}
                   actor={userId}
-                  bindings={scheduleBindings({ organization, app: current.id }, true, canManage)}
+                  bindings={schedules}
                   Failure={HostedFailure}
+                  {...(reads.scheduleSettings === undefined
+                    ? {}
+                    : {
+                        settingsRead: {
+                          source: schedules.settings,
+                          handle: reads.scheduleSettings,
+                        },
+                      })}
+                  {...(reads.scheduleDefinitions === undefined
+                    ? {}
+                    : {
+                        definitionsRead: {
+                          source: schedules.definitions,
+                          handle: reads.scheduleDefinitions,
+                        },
+                      })}
                 />
               );
             }
@@ -591,14 +712,19 @@ function AppDetail({
                 Link an account in Accounts to load this preview.
               </p>
             );
-            if (selectedView === "overview")
+            if (selectedView === "overview") {
+              const browser = appBrowserBindings(organization, current);
+              const listedTools = toolsAtom({ organization, app: current.id, version });
               return (
                 <AppOverview
                   app={current}
                   entries={
                     <AppOverviewEntries
                       app={current}
-                      bindings={appBrowserBindings(organization, current)}
+                      bindings={browser}
+                      {...(reads.skillList === undefined
+                        ? {}
+                        : { skillsRead: { source: browser.skills, handle: reads.skillList } })}
                       workflows={
                         <AppWorkflowPreview
                           empty={previewEmpty}
@@ -608,11 +734,16 @@ function AppDetail({
                               ? [
                                   {
                                     key: String(version),
-                                    query: appBrowserBindings(organization, current).workflows,
+                                    query: browser.workflows,
                                   },
                                 ]
                               : []
                           }
+                          {...(reads.workflowList === undefined
+                            ? {}
+                            : {
+                                read: { source: browser.workflows, handle: reads.workflowList },
+                              })}
                         />
                       }
                       Failure={HostedFailure}
@@ -633,11 +764,14 @@ function AppDetail({
                           ? [
                               {
                                 key: String(version),
-                                query: toolsAtom({ organization, app: current.id, version }),
+                                query: listedTools,
                               },
                             ]
                           : []
                       }
+                      {...(reads.overviewTools === undefined
+                        ? {}
+                        : { read: { source: listedTools, handle: reads.overviewTools } })}
                     />
                   }
                   sourceDisabledReason={sourceReason}
@@ -664,6 +798,7 @@ function AppDetail({
                   }
                 />
               );
+            }
             return (
               <div className="max-w-3xl space-y-4 p-5 max-[740px]:p-4">
                 <AppAccounts

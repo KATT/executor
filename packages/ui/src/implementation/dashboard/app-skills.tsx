@@ -15,7 +15,8 @@ import { Option } from "effect";
 import { Atom, AsyncResult } from "effect/reactivity";
 import { useAtomMount } from "@effect/atom-react";
 import type { AppSourceView } from "@executor-js/app-management/contracts";
-import { QueryView, usePreload, useQuery } from "./context.tsx";
+import { QueryView, usePreload, useQuery, useStartedQuery } from "./context.tsx";
+import type { StartedRead } from "../../contracts/started-read.ts";
 import { SkillBrowserLoading } from "./app-browser-loading.tsx";
 import { CopyButton } from "./code.tsx";
 import { EmptyStatePanel } from "./empty-state.tsx";
@@ -40,6 +41,8 @@ export function AppSkills<E>({
   Failure,
   canEdit,
   editing,
+  workspaceRead,
+  bundleRead,
 }: {
   readonly app: App;
   readonly canEdit: boolean;
@@ -47,6 +50,9 @@ export function AppSkills<E>({
   readonly Failure: ComponentType<FailureProps<E>>;
   /** Present when this viewer may manage app source; the server still authorizes each commit. */
   readonly editing?: SkillEditing<E> | undefined;
+  /** Working source and the deployed catalog, when the route loader started them. */
+  readonly workspaceRead?: StartedRead<typeof AppSourceView.Type, E> | undefined;
+  readonly bundleRead?: StartedRead<AppSkillBundle, E> | undefined;
 }) {
   // Outside the catalog query, so the status and its deploy survive the catalog reloading.
   const [committed, setCommitted] = useState<Committed>();
@@ -73,6 +79,7 @@ export function AppSkills<E>({
       {editable ? (
         <QueryView
           query={editing.atoms.workspace(app.id)}
+          {...(workspaceRead === undefined ? {} : { read: workspaceRead })}
           Failure={Failure}
           pending={<SkillBrowserLoading />}
         >
@@ -84,6 +91,7 @@ export function AppSkills<E>({
               editing={editing}
               Failure={Failure}
               onCommitted={setCommitted}
+              {...(bundleRead === undefined ? {} : { bundleRead })}
             />
           )}
         </QueryView>
@@ -92,7 +100,12 @@ export function AppSkills<E>({
           The app owner needs to deploy this app before its skills are available.
         </EmptyStatePanel>
       ) : (
-        <QueryView query={bindings.bundle} Failure={Failure} pending={<SkillBrowserLoading />}>
+        <QueryView
+          query={bindings.bundle}
+          {...(bundleRead === undefined ? {} : { read: bundleRead })}
+          Failure={Failure}
+          pending={<SkillBrowserLoading />}
+        >
           {(catalog) => (
             <SkillCatalog
               app={app}
@@ -111,12 +124,8 @@ export function AppSkills<E>({
 const undeployedCatalog = Atom.make(AsyncResult.success(undefined));
 
 function EditableSkills<E>({
-  app,
-  source,
-  bindings,
-  editing,
-  Failure,
-  onCommitted,
+  bundleRead,
+  ...props
 }: {
   readonly app: App;
   readonly source: typeof AppSourceView.Type;
@@ -124,10 +133,62 @@ function EditableSkills<E>({
   readonly editing: SkillEditing<E>;
   readonly Failure: ComponentType<FailureProps<E>>;
   readonly onCommitted: (result: Committed) => void;
+  readonly bundleRead?: StartedRead<AppSkillBundle, E> | undefined;
 }) {
-  const { result, data, refresh } = useQuery<AppSkillBundle | undefined, E>(
-    app.activeVersion === null ? undeployedCatalog : bindings.bundle,
+  return bundleRead === undefined ? (
+    <CatalogSkills {...props} />
+  ) : (
+    <StartedCatalogSkills {...props} bundleRead={bundleRead} />
   );
+}
+function CatalogSkills<E>(props: {
+  readonly app: App;
+  readonly source: typeof AppSourceView.Type;
+  readonly bindings: SkillBindings<E>;
+  readonly editing: SkillEditing<E>;
+  readonly Failure: ComponentType<FailureProps<E>>;
+  readonly onCommitted: (result: Committed) => void;
+}) {
+  const catalog = useQuery<AppSkillBundle | undefined, E>(
+    props.app.activeVersion === null ? undeployedCatalog : props.bindings.bundle,
+  );
+  return <SkillEditor {...props} bundle={catalog} />;
+}
+function StartedCatalogSkills<E>({
+  bundleRead,
+  ...props
+}: {
+  readonly app: App;
+  readonly source: typeof AppSourceView.Type;
+  readonly bindings: SkillBindings<E>;
+  readonly editing: SkillEditing<E>;
+  readonly Failure: ComponentType<FailureProps<E>>;
+  readonly onCommitted: (result: Committed) => void;
+  readonly bundleRead: StartedRead<AppSkillBundle, E>;
+}) {
+  return <SkillEditor {...props} bundle={useStartedQuery(bundleRead)} />;
+}
+function SkillEditor<E>({
+  app,
+  source,
+  editing,
+  Failure,
+  onCommitted,
+  bundle,
+}: {
+  readonly app: App;
+  readonly source: typeof AppSourceView.Type;
+  readonly bindings: SkillBindings<E>;
+  readonly editing: SkillEditing<E>;
+  readonly Failure: ComponentType<FailureProps<E>>;
+  readonly onCommitted: (result: Committed) => void;
+  readonly bundle: {
+    readonly result: AsyncResult.AsyncResult<AppSkillBundle | undefined, E>;
+    readonly data: Option.Option<AppSkillBundle | undefined>;
+    readonly refresh: () => void;
+  };
+}) {
+  const { result, data, refresh } = bundle;
   // The catalog atom is keyed by version, so every deploy (including the one after Save)
   // starts a new atom at Initial. Keep the last loaded catalog until the new one arrives;
   // replacing the workspace with the skeleton would remount the open editor.
