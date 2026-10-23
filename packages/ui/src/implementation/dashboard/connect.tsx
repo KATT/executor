@@ -509,7 +509,7 @@ export function AssistantChoices(
   const { selected } = props;
   const guides = assistantGuides("");
   const className =
-    "flex min-w-0 items-center gap-2 rounded-lg border py-1 pr-3 pl-1 text-[13px] leading-4 @md:flex-col @md:gap-1.5 @md:not-aria-pressed:border-transparent @md:px-1 @md:pt-2.5 @md:pb-2 @md:text-[12px] text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-pressed:border-foreground/20 aria-pressed:bg-muted aria-pressed:text-foreground aria-[current=page]:border-foreground/20 aria-[current=page]:bg-muted aria-[current=page]:text-foreground max-[740px]:min-h-11";
+    "flex min-w-0 items-center gap-2 rounded-lg border py-1 pr-3 pl-1 text-[13px] leading-4 @md:flex-col @md:gap-1.5 @md:not-aria-pressed:not-aria-[current=page]:border-transparent @md:px-1 @md:pt-2.5 @md:pb-2 @md:text-[12px] text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-pressed:border-foreground/20 aria-pressed:bg-muted aria-pressed:text-foreground aria-[current=page]:border-foreground/20 aria-[current=page]:bg-muted aria-[current=page]:text-foreground max-[740px]:min-h-11";
   return (
     <div
       className="flex flex-wrap gap-1.5 @md:grid @md:grid-cols-5"
