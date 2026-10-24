@@ -131,7 +131,7 @@
         "better-auth": "1.7.5",
         "effect": "4.0.6",
         "posthog-js": "1.434.7",
-        "raf-effect-atom": "workspace:*",
+        "raf-effect-atom": "0.3.0",
         "react": "19.3.0",
         "react-dom": "19.3.0",
       },
@@ -193,7 +193,7 @@
         "@tanstack/react-router": "1.170.41",
         "@tanstack/react-start": "1.168.60",
         "effect": "4.0.6",
-        "raf-effect-atom": "workspace:*",
+        "raf-effect-atom": "0.3.0",
         "react": "19.3.0",
         "react-dom": "19.3.0",
       },
@@ -266,8 +266,8 @@
         "@tanstack/react-start": "1.168.60",
         "better-auth": "1.7.5",
         "effect": "4.0.6",
-        "effect-atom-boundary": "workspace:*",
-        "raf-effect-atom": "workspace:*",
+        "effect-atom-boundary": "0.3.0",
+        "raf-effect-atom": "0.3.0",
         "react": "19.3.0",
         "react-dom": "19.3.0",
       },
@@ -354,8 +354,8 @@
         "@tanstack/react-router": "1.170.41",
         "@tanstack/react-start": "1.168.60",
         "effect": "4.0.6",
-        "effect-atom-boundary": "workspace:*",
-        "raf-effect-atom": "workspace:*",
+        "effect-atom-boundary": "0.3.0",
+        "raf-effect-atom": "0.3.0",
         "react": "19.3.0",
         "react-dom": "19.3.0",
         "scheduler": "0.27.0",
@@ -557,7 +557,7 @@
         "@tanstack/react-router": "1.170.41",
         "@tanstack/react-start": "1.168.60",
         "effect": "4.0.6",
-        "raf-effect-atom": "workspace:*",
+        "raf-effect-atom": "0.3.0",
         "react": "19.3.0",
         "react-dom": "19.3.0",
       },
@@ -724,7 +724,7 @@
         "mdast-util-gfm": "3.1.0",
         "micromark-extension-gfm": "3.0.0",
         "radix-ui": "1.6.7",
-        "raf-effect-atom": "workspace:*",
+        "raf-effect-atom": "0.3.0",
         "react-markdown": "10.1.0",
         "remark-gfm": "4.0.1",
         "shiki": "3.23.0",
@@ -835,28 +835,6 @@
         "apps": "workspace:*",
         "effect": "4.0.6",
         "fumadb-effect": "workspace:*",
-      },
-    },
-    "vendor/raf-effect-atom/effect-atom-boundary": {
-      "name": "effect-atom-boundary",
-      "version": "0.3.0",
-      "dependencies": {
-        "react": "19.3.0",
-      },
-      "peerDependencies": {
-        "@effect/atom-react": "^4.0.6",
-        "effect": "^4.0.6",
-      },
-    },
-    "vendor/raf-effect-atom/raf-effect-atom": {
-      "name": "raf-effect-atom",
-      "version": "0.3.0",
-      "dependencies": {
-        "react": "19.3.0",
-      },
-      "peerDependencies": {
-        "@effect/atom-react": "^4.0.6",
-        "effect": "^4.0.6",
       },
     },
   },
@@ -3400,7 +3378,7 @@
 
     "effect": ["effect@4.0.6", "", {}, "sha512-Tc3mkzuLR6t6P9dhLt0D2GrxYtmU5td4XEJEiXCmILz53IRIfJyHsKZWjTA3xEjiwpNTtXBgI4iqYPxMztBDrw=="],
 
-    "effect-atom-boundary": ["effect-atom-boundary@workspace:vendor/raf-effect-atom/effect-atom-boundary"],
+    "effect-atom-boundary": ["effect-atom-boundary@0.3.0", "", { "peerDependencies": { "@effect/atom-react": "^4.0.6", "effect": "^4.0.6", "react": "^19.0.0" } }, "sha512-Ge+GqIzgXTRnEo4ViThea/TwSgErgJDOPeOJRKaYuZU42XDhKsMWSWUA3iWwNt4HsnjGIM4ukVIjpfyDGxiY8A=="],
 
     "ejs": ["ejs@3.1.10", "", { "dependencies": { "jake": "^10.8.5" }, "bin": { "ejs": "bin/cli.js" } }, "sha512-UeJmFfOrAQS8OJWPZ4qtgHyWExa088/MtK5UEyoJGFH67cDEXkZSviOiKRCZ4Xij0zxI3JECgYs3oKx+AizQBA=="],
 
@@ -4468,7 +4446,7 @@
 
     "radix3": ["radix3@1.1.2", "", {}, "sha512-b484I/7b8rDEdSDKckSSBA8knMpcdsXudlE/LNL639wFoHKwLbEkQFZHWEYwDC0wa0FKUcCY+GAF73Z7wxNVFA=="],
 
-    "raf-effect-atom": ["raf-effect-atom@workspace:vendor/raf-effect-atom/raf-effect-atom"],
+    "raf-effect-atom": ["raf-effect-atom@0.3.0", "", { "peerDependencies": { "@effect/atom-react": "^4.0.6", "@tanstack/react-router": "^1.170.46", "effect": "^4.0.6", "react": "^19.2.0" }, "optionalPeers": ["@tanstack/react-router"] }, "sha512-5PZf4qoiWdlUHS+BDcn/SOpvTTkOZMPzULun5uDLRdW/ec3wYQmko+poWCIrxnnaBmU+El4wgqBMpAxUab+DEw=="],
 
     "ramda": ["ramda@0.30.1", "", {}, "sha512-tEF5I22zJnuclswcZMc8bDIrwRHRzf+NqVEmqg50ShAZMP7MWeR/RGDthfM/p+BlqvF2fXAzpn8i+SJcYD3alw=="],
 

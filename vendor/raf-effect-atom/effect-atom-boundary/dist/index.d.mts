@@ -1,3 +1,0 @@
-import { TagsOf, TypeId, Unclaimed, UnclaimedResult, UseErrorBoundary, Variance } from "./claim.mjs";
-import { AtomErrorBoundary, AtomErrorBoundaryProps, CatchTagProps, CatchTags, ErrorBoundary, ErrorBoundaryComponent, ErrorBoundaryOptions, ErrorsOf, createErrorBoundary } from "./error-boundary.mjs";
-export { AtomErrorBoundary, AtomErrorBoundaryProps, CatchTagProps, CatchTags, ErrorBoundary, ErrorBoundaryComponent, ErrorBoundaryOptions, ErrorsOf, TagsOf, TypeId, Unclaimed, UnclaimedResult, UseErrorBoundary, Variance, createErrorBoundary };

@@ -1,2 +1,4 @@
 [install]
 minimumReleaseAge = 86400
+# Both packages were first published within the age window. Executor tracks their current release.
+minimumReleaseAgeExcludes = ["raf-effect-atom", "effect-atom-boundary"]

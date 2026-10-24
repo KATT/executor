@@ -1,6 +1,6 @@
 import { Suspense, createContext, useContext, type ReactNode } from "react";
 import { RegistryContext, useAtomMount, useAtomRefresh, useAtomValue } from "@effect/atom-react";
-import { Hydration, releaseLease, useAtomResult, useWaterfall } from "raf-effect-atom";
+import { Hydration, useAtomResult, useWaterfall } from "raf-effect-atom";
 import { Cause, Option } from "effect";
 import { Skeleton } from "../components/skeleton.tsx";
 import { AsyncResult, Atom } from "effect/reactivity";
@@ -167,11 +167,10 @@ export function useStartedQuery<A, E>(read: StartedRead<A, E>) {
   if (kept.pin !== kept.read) registry.get(kept.pin);
   useAtomMount(kept.read);
   const result = useAtomValue(kept.read);
-  // The loader leases the serializable atom until this view reads it. A later prefetch of the
-  // same mounted view takes that lease again. Releasing it on each browser render, after the
-  // subscription above, leaves that subscription as the only owner: once the view closes, a
-  // refresh waits until the view reads the atom again. The server keeps its lease for the request.
-  if (typeof window !== "undefined") releaseLease(registry, kept.pin);
+  // The loader lease stays until `useAtomResult` mounts this atom, or until `Loader.LeaseTTL`
+  // (30 seconds) on a browser registry. A request registry keeps it until that registry is
+  // disposed. `useAtomValue` does not end the lease, and the published package does not export
+  // a release for this read.
   const refresh = useAtomRefresh(kept.read);
   if (read.handle.inBrowser !== true) suspendIfUnsettled(registry, kept.read, result);
   return { result, data: AsyncResult.value(result), refresh };
