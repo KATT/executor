@@ -2630,3 +2630,46 @@ index 18a202341..5c7c3b652 100644
      });
    } else {
      const errors = Cause.prettyErrors(status.exit.cause, {
+diff --git a/src/http/HttpClient.ts b/src/http/HttpClient.ts
+index 6c10c1e23..2b753bb72 100644
+--- a/src/http/HttpClient.ts
++++ b/src/http/HttpClient.ts
+@@ -2261,7 +2261,7 @@ export const TracerPropagationEnabled = Context.Reference<boolean>("effect/http/
+  *
+  * **Details**
+  *
+- * Defaults to the request method unchanged.
++ * Defaults to `http.client` plus the request method, the name Executor's traces record.
+  *
+  * @stability unstable
+  * @category services
+@@ -2270,7 +2270,7 @@ export const TracerPropagationEnabled = Context.Reference<boolean>("effect/http/
+ export const SpanNameGenerator = Context.Reference<
+   (request: HttpClientRequest.HttpClientRequest) => string
+ >("effect/http/HttpClient/SpanNameGenerator", {
+-  defaultValue: () => (request) => request.method
++  defaultValue: () => (request) => `http.client ${request.method}`
+ })
+ 
+ /**
+diff --git a/dist/http/HttpClient.js b/dist/http/HttpClient.js
+index 91cbe18ba..8ee445bdf 100644
+--- a/dist/http/HttpClient.js
++++ b/dist/http/HttpClient.js
+@@ -832,14 +832,14 @@ export const TracerPropagationEnabled = /*#__PURE__*/Context.Reference("effect/h
+  *
+  * **Details**
+  *
+- * Defaults to the request method unchanged.
++ * Defaults to `http.client` plus the request method, the name Executor's traces record.
+  *
+  * @stability unstable
+  * @category services
+  * @since 4.0.0
+  */
+ export const SpanNameGenerator = /*#__PURE__*/Context.Reference("effect/http/HttpClient/SpanNameGenerator", {
+-  defaultValue: () => request => request.method
++  defaultValue: () => request => `http.client ${request.method}`
+ });
+ /**
+  * Creates an `HttpClient` layer and merges the layer construction context into client response effects.
