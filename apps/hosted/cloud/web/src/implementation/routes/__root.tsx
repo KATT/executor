@@ -5,6 +5,8 @@ import { ExecutorDevtools } from "@executor-js/devtools";
 import { ErrorReportingIdentity } from "../error-reporting.tsx";
 import { AnalyticsIdentity } from "../analytics.tsx";
 import { ClientOnly, createRootRouteWithContext, Outlet } from "@tanstack/react-router";
+import { createMiddleware } from "@tanstack/react-start";
+import { signInLocation } from "@executor-js/dashboard-start/document";
 import type { Loader } from "raf-effect-atom";
 import { PageError, PageNotFound } from "@executor-js/hosted-web/route-fallbacks";
 import { AuthBoundary } from "@executor-js/hosted-web/auth";
@@ -19,6 +21,18 @@ import { fontPreloads } from "@executor-js/ui/lib/fonts";
 import { requireSession, restoreLastOrganization } from "@executor-js/hosted-web/document";
 import { serverDocument } from "../document.ts";
 
+const publicPaths = ["/login", "/login/sso", "/email/unsubscribe"];
+
+/**
+ * Sign-in is decided before the router canonicalizes search. A rewritten query would otherwise
+ * replace the address sign-in returns to.
+ */
+const signedOut = createMiddleware({ type: "request" }).server(({ pathname, next }) => {
+  const href = signInLocation(serverDocument(), pathname, publicPaths);
+  if (href === undefined) return next();
+  return new Response(null, { status: 307, headers: { location: href } });
+});
+
 /** Global auth, invitation and callback routes have no selected organization. */
 export const Route = createRootRouteWithContext<{
   readonly atoms: Loader.Loader;
@@ -28,7 +42,8 @@ export const Route = createRootRouteWithContext<{
     meta: [{ title: "Executor" }],
   }),
   shellComponent: DashboardDocument,
-  // Sign-in is decided before any HTML; the browser's session check only revalidates.
+  server: { middleware: [signedOut] },
+  // The browser's session check only revalidates. The server already redirected above.
   loader: ({ context, location }) =>
     location.pathname === "/create" ||
     location.pathname === "/mcp/authorize" ||
@@ -37,11 +52,7 @@ export const Route = createRootRouteWithContext<{
       : { team: undefined },
   beforeLoad: async ({ location }) => {
     if (!import.meta.env.SSR) return;
-    requireSession(serverDocument(), location.pathname, [
-      "/login",
-      "/login/sso",
-      "/email/unsubscribe",
-    ]);
+    requireSession(serverDocument(), location.pathname, publicPaths);
     await restoreLastOrganization(serverDocument(), location.pathname);
   },
   component: () => <Root />,

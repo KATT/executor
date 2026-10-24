@@ -30,8 +30,9 @@ const documentHeaders = {
 } as const;
 
 /**
- * Where a signed-out document request should go, before the router rewrites its search. The
- * address is the request's own path and query. Public pages render without a session.
+ * Where a signed-out document request should go. The address is the request's own path and
+ * query, so a search rewrite cannot replace it. Public pages render without a session. The
+ * web router calls this before it canonicalizes search.
  */
 export const signInLocation = (
   document: { readonly session: unknown; readonly path: string },
@@ -56,11 +57,6 @@ export const dashboardDocument = <Context, E, R, E2, R2>(options: {
   readonly server: Effect.Effect<DashboardServer<Context & DocumentApi>, E, R>;
   readonly context: (api: DocumentApi) => Effect.Effect<Context, E2, R2>;
   readonly headers?: Readonly<Record<string, string>>;
-  /**
-   * A signed-out request's sign-in address, decided before the router canonicalizes search.
-   * Omitting it leaves that decision to the renderer.
-   */
-  readonly signedOut?: (context: Context & DocumentApi) => string | undefined;
 }) =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
@@ -73,12 +69,6 @@ export const dashboardDocument = <Context, E, R, E2, R2>(options: {
       .context(api.document)
       .pipe(Effect.mapError(() => new DashboardUnavailable()));
     const documentContext = { ...context, ...api.document };
-    const signedOut = options.signedOut?.(documentContext);
-    if (signedOut !== undefined)
-      return HttpServerResponse.redirect(signedOut, { status: 307 }).pipe(
-        HttpServerResponse.setHeaders({ ...options.headers, ...documentHeaders }),
-        HttpServerResponse.mergeCookies(Cookies.fromSetCookie(api.seal())),
-      );
     // The render outlives this call: Start returns once headers are ready and keeps streaming.
     // A signal tied to this promise would abort it then, so the render stops only when the
     // response body is cancelled, as when the browser disconnects.
