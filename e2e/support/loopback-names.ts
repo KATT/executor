@@ -5,6 +5,7 @@
  * cookies that belong to the original name. Playwright would otherwise match cookies to 127.0.0.1.
  * Page navigations stay on the original name, which the browser resolves itself.
  */
+import { request as httpRequest } from "node:http";
 
 type HeaderList = ReadonlyArray<{ readonly name: string; readonly value: string }>;
 type HeaderMap = { readonly [key: string]: string };
@@ -81,6 +82,127 @@ const cookieHeader = (cookies: ReadonlyArray<StoredCookie>, url: URL) =>
     .join("; ");
 
 let routed = false;
+
+/**
+ * Effect's HTTP client uses Node's fetch, which resolves names itself. Send `*.localhost` to
+ * loopback and keep the virtual host, the same way an API client does, without a DNS override.
+ */
+export const routeNodeFetchToLoopback = () => {
+  if (nodeFetchRouted) return;
+  nodeFetchRouted = true;
+  const nativeFetch = globalThis.fetch;
+  globalThis.fetch = (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input instanceof Request
+            ? input.url
+            : undefined;
+    if (url === undefined || !loopbackHttp(url)) return nativeFetch(input, init);
+    const request = input instanceof Request ? input : undefined;
+    const method = init?.method ?? request?.method ?? "GET";
+    const headers = new Headers(request?.headers);
+    new Headers(init?.headers).forEach((value, key) => headers.set(key, value));
+    return bodyBytes(init?.body).then((bytes) =>
+      loopbackFetch(url, method, headers, bytes, init?.redirect ?? "follow", init?.signal, 0),
+    );
+  };
+};
+
+let nodeFetchRouted = false;
+
+const loopbackHttp = (url: string) => {
+  const parsed = loopbackUrl(url);
+  return parsed !== undefined && new URL(url).protocol === "http:";
+};
+
+const bodyBytes = (body: BodyInit | null | undefined): Promise<Uint8Array | undefined> => {
+  if (body == null) return Promise.resolve(undefined);
+  if (typeof body === "string") return Promise.resolve(new TextEncoder().encode(body));
+  if (body instanceof URLSearchParams)
+    return Promise.resolve(new TextEncoder().encode(body.toString()));
+  if (body instanceof Uint8Array) return Promise.resolve(body);
+  if (body instanceof ArrayBuffer) return Promise.resolve(new Uint8Array(body));
+  if (body instanceof Blob) return body.arrayBuffer().then((buffer) => new Uint8Array(buffer));
+  return Promise.reject(new Error("A loopback request can send text or bytes only"));
+};
+
+const loopbackFetch = (
+  url: string,
+  method: string,
+  headers: { forEach: (callback: (value: string, key: string) => void) => void },
+  body: Uint8Array | undefined,
+  redirect: RequestRedirect,
+  signal: AbortSignal | null | undefined,
+  hops: number,
+): Promise<Response> =>
+  new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const outgoing: Record<string, string> = { host: parsed.host };
+    headers.forEach((value, key) => {
+      if (key !== "host") outgoing[key] = value;
+    });
+    const req = httpRequest(
+      {
+        hostname: "127.0.0.1",
+        port: parsed.port === "" ? 80 : Number(parsed.port),
+        path: `${parsed.pathname}${parsed.search}`,
+        method,
+        headers: outgoing,
+        signal: signal ?? undefined,
+      },
+      (message) => {
+        const chunks: Array<Buffer> = [];
+        message.on("data", (chunk: Buffer) => chunks.push(chunk));
+        message.on("end", () => {
+          const responseHeaders = new Headers();
+          for (const [key, value] of Object.entries(message.headers)) {
+            if (value === undefined) continue;
+            if (Array.isArray(value)) for (const item of value) responseHeaders.append(key, item);
+            else responseHeaders.append(key, value);
+          }
+          const response = new Response(Buffer.concat(chunks), {
+            status: message.statusCode ?? 0,
+            headers: responseHeaders,
+          });
+          if (
+            redirect === "manual" ||
+            hops >= 5 ||
+            ![301, 302, 303, 307, 308].includes(response.status)
+          ) {
+            resolve(response);
+            return;
+          }
+          const location = response.headers.get("location");
+          if (location === null) {
+            resolve(response);
+            return;
+          }
+          const next = new URL(location, url).href;
+          if (!loopbackHttp(next)) {
+            resolve(response);
+            return;
+          }
+          const nextMethod = response.status === 307 || response.status === 308 ? method : "GET";
+          loopbackFetch(
+            next,
+            nextMethod,
+            headers,
+            nextMethod === method ? body : undefined,
+            redirect,
+            signal,
+            hops + 1,
+          ).then(resolve, reject);
+        });
+        message.on("error", reject);
+      },
+    );
+    req.on("error", reject);
+    if (body !== undefined) req.write(body);
+    req.end();
+  });
 
 /** Patch every API client, including contexts a test opens later, without touching DNS. */
 export const routeAppHostsToLoopback = (request: RequestClient) => {

@@ -1,9 +1,12 @@
 /** Shared test runtime: native services and a real clock, with no application imports. */
+import { routeNodeFetchToLoopback } from "./loopback-names.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Config, Context, Effect, FileSystem, Layer, Redacted, Schema } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { RunMetadata } from "../report-model.ts";
 import { FixtureControl, PreparedScenarios } from "../sdk/contracts.ts";
+
+routeNodeFetchToLoopback();
 
 /** Per-action capture delay; zero keeps unattended runs at full speed. */
 export const RecordingPaceMs = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 3000 }));
