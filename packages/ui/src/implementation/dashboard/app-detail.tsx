@@ -35,6 +35,19 @@ const sections = [
   { view: "settings", label: "Settings" },
 ] as const;
 /**
+ * Sections that name one deployment. Accounts, settings, schedules and webhooks keep the address
+ * they were opened with; putting the active version on those links changes an address that named
+ * only the view.
+ */
+const versionInAddress = new Set<(typeof sections)[number]["view"]>([
+  "overview",
+  "tools",
+  "skills",
+  "workflows",
+  "source",
+  "versions",
+]);
+/**
  * Read at render. Server bundles can split icons into a chunk that imports this one back, so a
  * module-level table could capture them before that chunk initializes.
  */
@@ -182,7 +195,9 @@ export function AppDetailLayout({
               <BoundAppLink
                 key={section.view}
                 app={app.id}
-                version={app.activeVersion ?? undefined}
+                version={
+                  versionInAddress.has(section.view) ? (app.activeVersion ?? undefined) : undefined
+                }
                 view={section.view}
                 className={classes}
                 aria-current={
