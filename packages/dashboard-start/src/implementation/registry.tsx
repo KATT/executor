@@ -8,7 +8,7 @@
  */
 import { RegistryContext, scheduleTask } from "@effect/atom-react";
 import type { AnyRouter } from "@tanstack/react-router";
-import { Cause } from "effect";
+import { Cause, Schema } from "effect";
 import { AsyncResult, Atom, AtomRegistry, Hydration } from "effect/reactivity";
 import { Loader, RequestRegistry, WaterfallDetection } from "raf-effect-atom";
 import type { ReactNode } from "react";
@@ -122,7 +122,8 @@ const applyAtoms = (
     if (node === undefined || !Atom.isSerializable(node.atom)) return true;
     const atom = node.atom;
     if (Atom.isWritable(atom)) {
-      registry.set(atom, atom[Atom.SerializableTypeId].decode(entry.value));
+      if (Schema.is(Schema.Json)(entry.value))
+        registry.set(atom, atom[Atom.SerializableTypeId].decode(entry.value));
       return false;
     }
     // A node that has not been read yet takes the preloaded value when it is.

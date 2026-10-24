@@ -326,9 +326,12 @@ export const makeMcp = (options: McpOptions) =>
           Effect.orDie,
         );
       }).pipe(
-        Effect.updateContext((context: Context.Context<Scope.Scope>) =>
-          Context.omit(Tracer.ParentSpan)(context),
-        ),
+        Effect.updateContext((context: Context.Context<Scope.Scope>) => {
+          // Tool handlers read the request when a call arrives. `toHttpEffect` also places that
+          // requirement on this build, which only reads Scope. The returned handler carries it.
+          const kept = Context.omit(Tracer.ParentSpan)(context);
+          return kept as Context.Context<HttpServerRequest.HttpServerRequest | Scope.Scope>;
+        }),
       );
     // Each mode's protocol server is built on its first request. A client keeps one
     // mode, so a host does not build all three. The build replaces the request's

@@ -4,7 +4,7 @@
 but its physical PostgreSQL connection acquisition has no span. A slow first
 transaction therefore includes an unexplained interval before its first query.
 
-`@effect%2Fsql-pg@4.0.1.patch` adds a client `sql.connect` span around the
+`@effect%2Fsql-pg@4.0.6.patch` adds a client `sql.connect` span around the
 driver's existing network connection and authentication effect. It ends when
 PostgreSQL sends `ReadyForQuery`, or on failure or interruption. It adds no URL,
 credentials, query text, or connection attributes. Password/config resolution

@@ -6,7 +6,7 @@ Effect 4.0.1 annotates the current span with every tool call's raw input:
 exported its full arguments. For Executor those are code-mode programs, resume
 answers and skill selections: caller content, up to tens of kilobytes per span.
 
-`effect@4.0.1.patch` removes `parameters` from that annotation in source and
+`effect@4.0.6.patch` removes `parameters` from that annotation in source and
 distributed JavaScript. The span keeps `tool` and its status. A refused call's
 exception would still quote the caller: Effect's `ProtocolError` names an unknown
 tool, and on 2025-06-18 and older an invalid argument's path, which can be a key

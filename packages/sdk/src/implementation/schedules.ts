@@ -71,7 +71,7 @@ export const makeSchedules = (
   const db = database(storage);
   const approvals = makeToolApprovals(db, credentials, crypto, storage.reactivity.inTransaction);
   const now = Effect.map(Clock.currentTimeMillis, (value) => new Date(value));
-  const uuid = crypto.randomUUIDv4.pipe(Effect.mapError(() => new StorageError()));
+  const uuid = crypto.randomUUIDv4().pipe(Effect.mapError(() => new StorageError()));
   const parse = <A>(schema: Schema.Decoder<A>, value: unknown) =>
     Schema.decodeUnknownEffect(schema)(value).pipe(Effect.mapError(() => new StorageError()));
   const readSettings = (id: ScheduleId, owner?: OwnerId) =>

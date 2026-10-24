@@ -1,5 +1,5 @@
 diff --git a/dist/PgliteClient.d.ts b/dist/PgliteClient.d.ts
-index e70c359..838369a 100644
+index 217e7cb..b7042b8 100644
 --- a/dist/PgliteClient.d.ts
 +++ b/dist/PgliteClient.d.ts
 @@ -147,6 +147,17 @@ export declare namespace PgliteClientConfig {
@@ -21,20 +21,21 @@ index e70c359..838369a 100644
   * Builds a `PgliteClient` around an existing PGlite instance, adding SQL client operations, LISTEN/NOTIFY, dump helpers, and serialized access.
   *
 diff --git a/dist/PgliteClient.js b/dist/PgliteClient.js
-index 5cc9fdf..c6ea8f5 100644
+index 4eab0b8..62eddfa 100644
 --- a/dist/PgliteClient.js
 +++ b/dist/PgliteClient.js
-@@ -15,7 +15,9 @@
+@@ -15,7 +15,10 @@
  import { PGlite } from "@electric-sql/pglite";
  import * as Config from "effect/Config";
  import * as Context from "effect/Context";
 +import * as Deferred from "effect/Deferred";
  import * as Effect from "effect/Effect";
 +import * as Exit from "effect/Exit";
- import * as Fiber from "effect/Fiber";
++import * as Fiber from "effect/Fiber";
  import * as Layer from "effect/Layer";
  import * as Queue from "effect/Queue";
-@@ -46,6 +48,88 @@ export const TypeId = "~@effect/sql-pglite/PgliteClient";
+ import * as Reactivity from "effect/reactivity/Reactivity";
+@@ -44,6 +47,88 @@ export const TypeId = "~@effect/sql-pglite/PgliteClient";
   * @since 4.0.0
   */
  export const PgliteClient = /*#__PURE__*/Context.Service("@effect/sql-pglite/PgliteClient");
@@ -123,9 +124,9 @@ index 5cc9fdf..c6ea8f5 100644
  /**
   * Creates a scoped PGlite SQL client. When no live client is supplied it creates and closes a PGlite instance; when `liveClient` is supplied, the caller retains ownership.
   *
-@@ -92,8 +176,28 @@ export const fromClient = options => Effect.gen(function* () {
-     return Effect.as(Effect.tap(restore(semaphore.take(1)), () => Scope.addFinalizer(scope, semaphore.release(1))), connection);
-   });
+@@ -89,9 +174,29 @@ export const fromClient = options => Effect.gen(function* () {
+     interruptible: true
+   }), connection);
    const config = options;
 +  // Statements held by `pipelined`, run under the lock a transaction takes, in
 +  // order: `outside` first, then `inside` in one transaction when `begin` is set.
@@ -147,8 +148,9 @@ index 5cc9fdf..c6ea8f5 100644
 +    yield* Effect.exit(connection.executeRaw("COMMIT", []));
 +  })));
    const client = yield* Client.make({
+     driver: "pglite",
      acquirer,
 +    borrower: f => Effect.flatMap(PipelineCapture, capture => capture !== undefined && capture.claim() ? capture.submit(runBatch, f) : Effect.scoped(Effect.flatMap(acquirer, f))),
      compiler,
-     transactionAcquirer,
      releaseSavepoint: name => `RELEASE SAVEPOINT ${name}`,
+     spanAttributes,

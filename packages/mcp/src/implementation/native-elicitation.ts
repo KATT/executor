@@ -1,4 +1,5 @@
 /** Native approval delivery holds only the active MCP request; codemode remains parked while the user decides. */
+import { ElicitationResponse } from "apps/contracts";
 import { Clock, Effect, Option, Schema } from "effect";
 import { McpSchema } from "effect/ai";
 import { NativeElicitationFailed } from "../contracts/elicitation.ts";
@@ -49,9 +50,12 @@ export const executeNative = (
               orElse: () => Effect.fail(new NativeElicitationFailed({ reason: "expired" })),
             }),
           );
+          const accepted = yield* Schema.decodeUnknownEffect(ElicitationResponse)(response).pipe(
+            Effect.mapError(() => new NativeElicitationFailed({ reason: "transport" })),
+          );
           return yield* executions.resume(caller, backend, {
             requestId: request.requestId,
-            response,
+            response: accepted,
           });
         }).pipe(Effect.ensuring(executions.discard(caller, request.requestId)));
       }

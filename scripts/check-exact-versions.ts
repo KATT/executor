@@ -31,6 +31,16 @@ const peerRanges: PeerRanges = {
     graphql: "optional peer of `apps/graphql`",
     react: "optional peer of `apps/react`",
   },
+  // Vendored from the published packages. Their peers stay the published ranges; executor's
+  // overrides select the installed effect.
+  "vendor/raf-effect-atom/raf-effect-atom/package.json": {
+    "@effect/atom-react": "published peer of raf-effect-atom",
+    effect: "published peer of raf-effect-atom",
+  },
+  "vendor/raf-effect-atom/effect-atom-boundary/package.json": {
+    "@effect/atom-react": "published peer of effect-atom-boundary",
+    effect: "published peer of effect-atom-boundary",
+  },
 };
 
 const dependencyFields = [

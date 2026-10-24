@@ -7,7 +7,7 @@ after about 70–140 s without a request and restarts on every deploy. The
 client's next request then gets `404`, and it must initialize again, which costs
 it about 3 s.
 
-`effect@4.0.1.patch` adds a `sessions` option to `McpServer.layerHttp`, a
+`effect@4.0.6.patch` adds a `sessions` option to `McpServer.layerHttp`, a
 `SessionStore` with `save` and `load`. It changes `ai/McpServer` and
 `ai/internal/mcpRuntime` / `mcpStatefulRuntime` in source and in the distributed
 JavaScript and types:

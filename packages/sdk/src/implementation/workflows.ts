@@ -420,7 +420,7 @@ export const makeWorkflowRuns = (
       if (backend === undefined) return yield* unavailable();
       yield* storedApp(db, { app: input.app });
       const id = WorkflowRunId.make(
-        `wfr_${yield* crypto.randomUUIDv4.pipe(Effect.mapError(() => new StorageError()))}`,
+        `wfr_${yield* crypto.randomUUIDv4().pipe(Effect.mapError(() => new StorageError()))}`,
       );
       const key = input.key ?? id;
       const actor = inherited === undefined ? yield* CurrentActor : inherited.actor;

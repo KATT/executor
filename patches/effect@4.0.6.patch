@@ -1,8 +1,8 @@
 diff --git a/dist/JsonSchema.d.ts b/dist/JsonSchema.d.ts
-index 2c0ee00..43599b1 100644
+index 2187a62..ce6e24b 100644
 --- a/dist/JsonSchema.d.ts
 +++ b/dist/JsonSchema.d.ts
-@@ -16,6 +16,21 @@
+@@ -17,6 +17,21 @@
  export interface JsonSchema {
      [x: string]: unknown;
  }
@@ -24,7 +24,7 @@ index 2c0ee00..43599b1 100644
  /**
   * The set of JSON Schema dialects supported by this module.
   *
-@@ -320,7 +335,7 @@ export declare function fromSchemaDraft2020_12(js: JsonSchema): Document<"draft-
+@@ -332,7 +347,7 @@ export declare function fromSchemaDraft2020_12(js: JsonSchema): Document<"draft-
   * @category decoding
   * @since 4.0.0
   */
@@ -33,7 +33,7 @@ index 2c0ee00..43599b1 100644
  /**
   * Parses a raw OpenAPI 3.0 JSON Schema into a `Document<"draft-2020-12">`.
   *
-@@ -364,7 +379,7 @@ export declare function fromSchemaOpenApi3_1(js: JsonSchema): Document<"draft-20
+@@ -383,7 +398,7 @@ export declare function fromSchemaOpenApi3_1(js: JsonSchema): Document<"draft-20
   * @category decoding
   * @since 4.0.0
   */
@@ -43,10 +43,10 @@ index 2c0ee00..43599b1 100644
   * Converts a `Document<"draft-2020-12">` to a `Document<"draft-07">`.
   *
 diff --git a/dist/JsonSchema.js b/dist/JsonSchema.js
-index 4bb8146..dfb763b 100644
+index 70bc2de..9e05166 100644
 --- a/dist/JsonSchema.js
 +++ b/dist/JsonSchema.js
-@@ -215,9 +215,11 @@ export function fromSchemaDraft2020_12(js) {
+@@ -222,9 +222,11 @@ export function fromSchemaDraft2020_12(js) {
   * @category decoding
   * @since 4.0.0
   */
@@ -59,7 +59,7 @@ index 4bb8146..dfb763b 100644
      if (!isRootResource && !inEmbeddedResource) rewriteSchemaRef(schema, rewriteOpenApiComponentsReference);
      if (isMetaSchemaUri(schema.$schema, META_SCHEMA_URI_OPEN_API_3_1)) {
        InternalRecord.assignProperty(schema, "$schema", META_SCHEMA_URI_DRAFT_2020_12);
-@@ -275,8 +277,8 @@ export function fromSchemaOpenApi3_1(js) {
+@@ -289,8 +291,8 @@ export function fromSchemaOpenApi3_1(js) {
   * @category decoding
   * @since 4.0.0
   */
@@ -70,7 +70,7 @@ index 4bb8146..dfb763b 100644
  }
  /**
   * Converts a `Document<"draft-2020-12">` to a `Document<"draft-07">`.
-@@ -925,10 +927,11 @@ function convertDependencies(source, out, context, targetDialect) {
+@@ -942,10 +944,11 @@ function convertDependencies(source, out, context, targetDialect) {
    }
    if (Object.keys(dependencies).length > 0) InternalRecord.assignProperty(out, "dependencies", dependencies);
  }
@@ -84,10 +84,10 @@ index 4bb8146..dfb763b 100644
        return out;
      }
 diff --git a/dist/ai/McpSchema.d.ts b/dist/ai/McpSchema.d.ts
-index 40565fd..62f7a1f 100644
+index 5b6715e..be80508 100644
 --- a/dist/ai/McpSchema.d.ts
 +++ b/dist/ai/McpSchema.d.ts
-@@ -4433,5 +4433,204 @@ declare const EnabledWhen_base: Context.ServiceClass<EnabledWhen, "effect/ai/Mcp
+@@ -4566,5 +4566,204 @@ declare const EnabledWhen_base: Context.ServiceClass<EnabledWhen, "effect/ai/Mcp
   */
  export declare class EnabledWhen extends EnabledWhen_base {
  }
@@ -294,10 +294,10 @@ index 40565fd..62f7a1f 100644
  //# sourceMappingURL=McpSchema.d.ts.map
 \ No newline at end of file
 diff --git a/dist/ai/McpSchema.js b/dist/ai/McpSchema.js
-index 615a9f9..7874d1c 100644
+index 0997f57..39b468e 100644
 --- a/dist/ai/McpSchema.js
 +++ b/dist/ai/McpSchema.js
-@@ -2563,4 +2563,133 @@ export function param(name, schema) {
+@@ -2633,4 +2633,133 @@ export function param(name, schema) {
   * @since 4.0.0
   */
  export class EnabledWhen extends /*#__PURE__*/Context.Service()("effect/ai/McpSchema/EnabledWhen") {}
@@ -433,7 +433,7 @@ index 615a9f9..7874d1c 100644
  //# sourceMappingURL=McpSchema.js.map
 \ No newline at end of file
 diff --git a/dist/ai/McpServer.d.ts b/dist/ai/McpServer.d.ts
-index 63727e7..4d600ec 100644
+index 36a1a22..85ef141 100644
 --- a/dist/ai/McpServer.d.ts
 +++ b/dist/ai/McpServer.d.ts
 @@ -256,6 +256,39 @@ export declare const layerStdio: (options: {
@@ -476,10 +476,10 @@ index 63727e7..4d600ec 100644
  /**
   * Registers a Streamable HTTP MCP endpoint at `options.path`.
   *
-@@ -298,6 +331,11 @@ export declare const layerHttp: (options: {
-     readonly protocols: Arr.NonEmptyReadonlyArray<McpProtocol.ProtocolAdapter>;
-     readonly extensions?: ServerExtensions | undefined;
+@@ -323,6 +356,11 @@ export declare const layerHttp: (options: {
      readonly allowedOrigins?: ReadonlyArray<string> | undefined;
+     readonly allowSessionTermination?: boolean | undefined;
+     readonly allowSubscriptions?: boolean | undefined;
 +    /**
 +     * Keeps sessions beyond this server's memory, so a client continues its session after the
 +     * server restarts. Without one, a restart forgets every session (`404`).
@@ -487,11 +487,11 @@ index 63727e7..4d600ec 100644
 +    readonly sessions?: SessionStore | undefined;
  }) => Layer.Layer<McpServer | McpServerClient, Cause.IllegalArgumentError, HttpRouter.HttpRouter>;
  /**
-  * Registers a `Toolkit` with the `McpServer`.
-@@ -315,6 +353,40 @@ export declare const registerToolkit: <Tools extends Record<string, Tool.Any>>(t
+  * Registers a request-scoped Streamable HTTP MCP endpoint at `options.path`.
+@@ -386,6 +424,40 @@ export declare const registerToolkit: <Tools extends Record<string, Tool.Any>>(t
   * @since 4.0.0
   */
- export declare const toolkit: <Tools extends Record<string, Tool.Any>>(toolkit: Toolkit.Toolkit<Tools>) => Layer.Layer<never, never, Tool.HandlersFor<Tools> | Exclude<Tool.HandlerServices<Tools>, McpRequestContext>>;
+ export declare const toolkit: <Tools extends Record<string, Tool.Any>>(toolkit: Toolkit.Toolkit<Tools>) => Layer.Layer<never, never, Tool.HandlersFor<Tools> | Exclude<Tool.HandlerServices<Tools[keyof Tools]>, McpRequestContext>>;
 +/**
 + * Handlers for the draft MCP events extension: listing event types and managing webhook
 + * subscriptions. Each handler runs with the request's `McpRequestContext`, so it can
@@ -530,14 +530,15 @@ index 63727e7..4d600ec 100644
   * Utility type that validates a completion-handler record against the allowed
   * parameter keys.
 diff --git a/dist/ai/McpServer.js b/dist/ai/McpServer.js
-index 2da5941..63c4447 100644
+index 3f02d2d..e8e059d 100644
 --- a/dist/ai/McpServer.js
 +++ b/dist/ai/McpServer.js
-@@ -423,8 +423,15 @@ export class McpServer extends /*#__PURE__*/Context.Service()("effect/ai/McpServ
+@@ -448,9 +448,15 @@ export class McpServer extends /*#__PURE__*/Context.Service()("effect/ai/McpServ
  const MCP_SESSION_ID_HEADER = "mcp-session-id";
  const MCP_PROTOCOL_VERSION_HEADER = "mcp-protocol-version";
  const MCP_INVALID_BATCH_METHOD = "invalid/json-rpc-batch";
 -const cancelledResponses = /*#__PURE__*/new WeakMap();
+-const httpPostResponses = /*#__PURE__*/new WeakMap();
  const requestKey = requestId => `${typeof requestId}:${requestId}`;
 +const httpPostRequests = /*#__PURE__*/new WeakMap();
 +// A cancelled request's exit, and where the encoder records that it withheld the response.
@@ -550,7 +551,7 @@ index 2da5941..63c4447 100644
  class McpClientKey extends Data.Class {}
  /**
   * Runs an MCP server over the current `RpcServer.Protocol`.
-@@ -509,6 +516,8 @@ const runWithRuntime = /*#__PURE__*/Effect.fnUntraced(function* (options, runtim
+@@ -535,6 +541,8 @@ const runWithRuntime = /*#__PURE__*/Effect.fnUntraced(function* (options, runtim
      if (!cancelRequest(clientId, requestId)) {
        return Effect.void;
      }
@@ -559,18 +560,11 @@ index 2da5941..63c4447 100644
      return isHttp ? protocol.end(clientId) : sendNotification(protocolVersion, clientId, {
        tag: "notifications/cancelled",
        payload: {
-@@ -636,13 +645,16 @@ const runWithRuntime = /*#__PURE__*/Effect.fnUntraced(function* (options, runtim
-       if (response._tag === "Exit") {
-         const requests = activeRequests.get(clientId);
-         const key = requestKey(response.requestId);
--        const cancelled = requests?.get(key)?.cancelled;
-+        const active = requests?.get(key);
-         if (requests !== undefined && requests.delete(key) && requests.size === 0) {
-           activeRequests.delete(clientId);
+@@ -677,8 +685,10 @@ const runWithRuntime = /*#__PURE__*/Effect.fnUntraced(function* (options, runtim
          }
--        if (cancelled === true) {
-+        if (active?.cancelled === true) {
+         if (active?.cancelled === true) {
            if (transport === "custom") return Effect.void;
+-          if (active.httpPost !== undefined) active.httpPost.expected--;
 -          cancelledResponses.set(response, response.requestId);
 +          cancelledResponses.set(response, {
 +            requestId: response.requestId,
@@ -579,48 +573,65 @@ index 2da5941..63c4447 100644
            return protocol.send(clientId, response);
          }
          if (response.exit._tag === "Failure" && !response.exit.cause.some(failure => failure._tag === "Fail")) {
-@@ -769,9 +781,19 @@ const runWithRuntime = /*#__PURE__*/Effect.fnUntraced(function* (options, runtim
-               }
-               if (request.isNotification !== true) {
-                 const requests = activeRequests.get(clientId) ?? new Map();
-+                let post;
-+                if (httpRequest !== undefined) {
-+                  post = httpPostRequests.get(httpRequest) ?? {
-+                    requests: new Set(),
-+                    withheld: new Set()
-+                  };
-+                  post.requests.add(requestKey(request.id));
-+                  httpPostRequests.set(httpRequest, post);
-+                }
-                 requests.set(requestKey(request.id), {
-                   prepared,
--                  cancelled: false
-+                  cancelled: false,
-+                  post
-                 });
-                 activeRequests.set(clientId, requests);
-               }
-@@ -1083,16 +1105,14 @@ const mcpStdioSerialization = protocols => {
+@@ -714,13 +724,6 @@ const runWithRuntime = /*#__PURE__*/Effect.fnUntraced(function* (options, runtim
+         switch (request._tag) {
+           case "Request":
+             {
+-              if (httpRequest !== undefined && request.isNotification !== true) {
+-                const httpPost = httpPostResponses.get(httpRequest) ?? {
+-                  expected: 0
+-                };
+-                httpPost.expected++;
+-                httpPostResponses.set(httpRequest, httpPost);
+-              }
+               const headers = isHttp ? Context.getUnsafe(Fiber.getCurrent().context, HttpServerRequest.HttpServerRequest).headers : Headers.fromInput(request.headers);
+               const cancellationRequest = request.tag === "notifications/cancelled" && typeof request.payload === "object" && request.payload !== null && "requestId" in request.payload && (typeof request.payload.requestId === "string" || typeof request.payload.requestId === "number") ? activeRequests.get(clientId)?.get(requestKey(request.payload.requestId)) : undefined;
+               const prepare = cancellationRequest === undefined ? runtime.prepareRequest(clientId, headers, request) : Effect.succeed(cancellationRequest.prepared);
+@@ -814,11 +817,20 @@ const runWithRuntime = /*#__PURE__*/Effect.fnUntraced(function* (options, runtim
+                 }
+                 if (request.isNotification !== true) {
+                   const requests = activeRequests.get(clientId) ?? new Map();
++                  let post;
++                  if (httpRequest !== undefined) {
++                    post = httpPostRequests.get(httpRequest) ?? {
++                      requests: new Set(),
++                      withheld: new Set()
++                    };
++                    post.requests.add(requestKey(request.id));
++                    httpPostRequests.set(httpRequest, post);
++                  }
+                   requests.set(requestKey(request.id), {
+                     requestId: RpcMessage.RequestId(request.id),
+                     prepared,
+                     cancelled: false,
+-                    httpPost: httpRequest === undefined ? undefined : httpPostResponses.get(httpRequest)
++                    post
+                   });
+                   activeRequests.set(clientId, requests);
+                 }
+@@ -1176,7 +1188,7 @@ const mcpStdioSerialization = protocols => {
   * @since 4.0.0
   */
  export const layerHttp = options => {
 -  const runtime = McpRuntime.layer(options.protocols);
 +  const runtime = McpRuntime.layer(options.protocols, options.sessions);
-   const methodNotAllowedResponse = HttpServerResponse.empty({
-     status: 405,
-     headers: {
-       allow: "POST"
-     }
-   });
--  const methodNotAllowed = request => isAllowedMcpOrigin(request, options.allowedOrigins) ? Effect.succeed(methodNotAllowedResponse) : Effect.succeed(HttpServerResponse.empty({
+   return layerWithRuntime(options, "http").pipe(Layer.provide(layerMcpProtocolHttp(options)), Layer.provide(runtime), Layer.provide(RpcSerialization.layerJsonRpc()));
+ };
+ /**
+@@ -1268,10 +1280,7 @@ const addMcpHttpRoutes = /*#__PURE__*/Effect.fnUntraced(function* (options, http
+   const runtime = yield* McpRuntime.ServerRuntime;
+   const router = yield* HttpRouter.HttpRouter;
+   const allowSessionTermination = options.allowSessionTermination === true && runtime.protocols.some(protocol => protocol.runtime._tag === "Stateful");
+-  const forbidden = Effect.succeed(HttpServerResponse.empty({
 -    status: 403
 -  }));
-+  const methodNotAllowed = request => isAllowedMcpOrigin(request, options.allowedOrigins) ? Effect.succeed(methodNotAllowedResponse) : Effect.succeed(forbiddenOrigin(request));
-   const routes = Layer.mergeAll(HttpRouter.add("GET", options.path, methodNotAllowed), HttpRouter.add("PUT", options.path, methodNotAllowed), HttpRouter.add("PATCH", options.path, methodNotAllowed), HttpRouter.add("DELETE", options.path, methodNotAllowed), HttpRouter.add("OPTIONS", options.path, methodNotAllowed));
-   return Layer.merge(layerWithRuntime(options, "http"), routes).pipe(Layer.provide(layerMcpProtocolHttp(options)), Layer.provide(runtime), Layer.provide(RpcSerialization.layerJsonRpc()));
- };
-@@ -1105,31 +1125,43 @@ const layerMcpProtocolHttp = options => Layer.effect(RpcServer.Protocol)(Effect.
-   const router = yield* HttpRouter.HttpRouter;
+-  const withAllowedOrigin = handler => request => isAllowedMcpOrigin(request, options.allowedOrigins) ? handler(request) : forbidden;
++  const withAllowedOrigin = handler => request => isAllowedMcpOrigin(request, options.allowedOrigins) ? handler(request) : Effect.succeed(forbiddenOrigin(request));
+   const methodNotAllowedResponse = Effect.succeed(HttpServerResponse.empty({
+     status: 405,
+     headers: {
+@@ -1285,23 +1294,19 @@ const addMcpHttpRoutes = /*#__PURE__*/Effect.fnUntraced(function* (options, http
+   yield* router.add("DELETE", options.path, allowSessionTermination ? withAllowedOrigin(request => runtime.terminateHttpSession(request.headers)) : methodNotAllowed);
    yield* router.add("POST", options.path, request => {
      if (!isAllowedMcpOrigin(request, options.allowedOrigins)) {
 -      return Effect.succeed(HttpServerResponse.empty({
@@ -648,33 +659,29 @@ index 2da5941..63c4447 100644
        const admission = runtime.admitHttp(request.headers, parsed);
        if (admission._tag === "Rejected") {
          return admission.response;
-       }
--      const response = Effect.map(httpEffect, response => {
-+      // The protocol registers this POST's requests under the request in the current context.
-+      const httpRequest = yield* HttpServerRequest.HttpServerRequest;
-+      const response = Effect.flatMap(httpEffect, response => {
-+        if (!admission.acknowledge && response.body._tag === "Uint8Array" && response.body.body.length === 0) {
-+          // A POST with a request must answer with JSON or SSE. Without a response, that is only
-+          // correct when the server withheld every request's response after its cancellation.
-+          // https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#sending-messages-to-the-server
-+          const post = httpPostRequests.get(httpRequest);
-+          return post !== undefined && post.requests.size > 0 && Array.from(post.requests).every(key => post.withheld.has(key)) ? Effect.succeed(HttpServerResponse.stream(Stream.empty, {
-+            status: response.status,
-+            headers: Headers.remove(response.headers, "content-type"),
-+            cookies: response.cookies,
-+            contentType: "text/event-stream"
-+          })) : Effect.die(new McpResponseNotWritten({
-+            message: "The MCP request ended without writing its response"
-+          }));
-+        }
-         // Completed responses may already contain notifications followed by the result.
-         const hasMultipleMessages = response.body._tag === "Uint8Array" && response.body.body.subarray(0, -1).includes(10);
--        return admission.isSubscription || response.body._tag === "Stream" || hasMultipleMessages ? toServerSentEvents(response, admission.isSubscription) : response;
-+        return Effect.succeed(admission.isSubscription || response.body._tag === "Stream" || hasMultipleMessages ? toServerSentEvents(response, admission.isSubscription) : response);
+@@ -1320,11 +1325,18 @@ const addMcpHttpRoutes = /*#__PURE__*/Effect.fnUntraced(function* (options, http
+         if (response.body._tag !== "Uint8Array" || response.body.body.length > 0) {
+           return Effect.succeed(toResponse(response));
+         }
+-        // Only fully cancelled request POSTs may return an empty SSE response.
++        // A POST with a request must answer with JSON or SSE. Without a response, that is only
++        // correct when the server withheld every request's response after its cancellation.
+         // https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#sending-messages-to-the-server
+-        return httpPostResponses.get(request)?.expected === 0 ? Effect.succeed(HttpServerResponse.stream(Stream.empty, {
++        const post = httpPostRequests.get(request);
++        return post !== undefined && post.requests.size > 0 && Array.from(post.requests).every(key => post.withheld.has(key)) ? Effect.succeed(HttpServerResponse.stream(Stream.empty, {
++          status: response.status,
++          headers: Headers.remove(response.headers, "content-type"),
++          cookies: response.cookies,
+           contentType: "text/event-stream"
+-        })) : Effect.die(new Error("MCP request ended without writing its response"));
++        })) : Effect.die(new McpResponseNotWritten({
++          message: "The MCP request ended without writing its response"
++        }));
        });
-       return yield* admission.acknowledge ? Effect.catchCause(response, () => Effect.succeed(HttpServerResponse.empty({
-         status: 202
-@@ -1180,15 +1212,16 @@ function mcpJsonRpcSerialization(options) {
+     });
+   });
+@@ -1371,15 +1383,16 @@ function mcpJsonRpcSerialization(options) {
      ...serialization,
      makeUnsafe: () => {
        const parser = serialization.makeUnsafe();
@@ -695,13 +702,13 @@ index 2da5941..63c4447 100644
              }
            }
            const encoded = parser.encode(response);
-@@ -1198,7 +1231,12 @@ function mcpJsonRpcSerialization(options) {
+@@ -1389,7 +1402,12 @@ function mcpJsonRpcSerialization(options) {
            if (cancelledIds.size > 0) {
              // Count cancelled completions toward the batch, but never write their responses.
              // https://modelcontextprotocol.io/specification/2025-03-26/basic/utilities/cancellation
 -            const keep = message => !(Predicate.isReadonlyObject(message) && !Predicate.hasProperty(message, "method") && (typeof message.id === "string" || typeof message.id === "number") && cancelledIds.delete(message.id));
 +            const keep = message => {
-+              if (!Predicate.isReadonlyObject(message) || Predicate.hasProperty(message, "method") || typeof message.id !== "string" && typeof message.id !== "number" || !cancelledIds.has(message.id)) return true;
++              if (!(Predicate.isReadonlyObject(message) && !Predicate.hasProperty(message, "method") && (typeof message.id === "string" || typeof message.id === "number") && cancelledIds.has(message.id))) return true;
 +              cancelledIds.get(message.id)?.withheld.add(requestKey(message.id));
 +              cancelledIds.delete(message.id);
 +              return false;
@@ -709,7 +716,7 @@ index 2da5941..63c4447 100644
              if (Array.isArray(message)) {
                const remaining = message.filter(keep);
                if (remaining.length === 0) return undefined;
-@@ -1244,6 +1282,19 @@ const isAllowedMcpOrigin = (request, allowedOrigins) => {
+@@ -1435,6 +1453,19 @@ const isAllowedMcpOrigin = (request, allowedOrigins) => {
    const origin = request.headers["origin"];
    return origin === undefined || (allowedOrigins ?? []).includes(origin);
  };
@@ -729,7 +736,7 @@ index 2da5941..63c4447 100644
  const mcpMediaTypes = header => header === undefined ? [] : header.split(",").flatMap(part => {
    const [mediaType, ...parameters] = part.split(";");
    const quality = parameters.map(parameter => parameter.trim().toLowerCase()).find(parameter => parameter.startsWith("q="));
-@@ -1400,6 +1451,32 @@ const toolJsonSchema = (schema, strict) => {
+@@ -1599,6 +1630,32 @@ const toolJsonSchema = (schema, strict) => {
   * @since 4.0.0
   */
  export const toolkit = toolkit => Layer.effectDiscard(registerToolkit(toolkit)).pipe(Layer.provide(McpServer.layer));
@@ -763,10 +770,10 @@ index 2da5941..63c4447 100644
   * Registers an MCP resource or resource template from an Effect program.
   *
 diff --git a/dist/ai/Toolkit.js b/dist/ai/Toolkit.js
-index 31c84bb..6ef5ff2 100644
+index d9dfcb8..847440f 100644
 --- a/dist/ai/Toolkit.js
 +++ b/dist/ai/Toolkit.js
-@@ -101,9 +101,9 @@ const Proto = {
+@@ -150,9 +150,9 @@ const Proto = {
        };
        const handle = Effect.fnUntraced(function* (name, params, toolCallId, options) {
          const tool = Object.hasOwn(tools, name) ? tools[name] : undefined;
@@ -810,10 +817,10 @@ index 063320c..8f089b7 100644
    };
  });
 diff --git a/dist/ai/internal/mcpProtocol/v2026_07_28.js b/dist/ai/internal/mcpProtocol/v2026_07_28.js
-index 0161147..e83835d 100644
+index 326ea69..60b2cdf 100644
 --- a/dist/ai/internal/mcpProtocol/v2026_07_28.js
 +++ b/dist/ai/internal/mcpProtocol/v2026_07_28.js
-@@ -219,6 +219,14 @@ export const makeHandlers = (core, _lifecycle, context) => {
+@@ -216,6 +216,14 @@ export const makeHandlers = (core, _lifecycle, context) => {
    const decodePromptOutcome = Schema.decodeUnknownEffect(Schema.Union([McpSchema.GetPromptResult, McpSchema.InputRequiredResult]));
    const decodeCompleteResult = Schema.decodeUnknownEffect(McpSchema.CompleteResult);
    const decodeListToolsResult = Schema.decodeUnknownEffect(McpSchema.ListToolsResult);
@@ -828,7 +835,7 @@ index 0161147..e83835d 100644
    const sendNotification = context.sendNotification;
    const supportsSubscriptions = sendNotification !== undefined;
    // Older adapters accept arbitrary JSON; this binding requires extension settings objects.
-@@ -241,6 +249,7 @@ export const makeHandlers = (core, _lifecycle, context) => {
+@@ -238,6 +246,7 @@ export const makeHandlers = (core, _lifecycle, context) => {
      if (presence.prompts) capabilities.prompts = {
        listChanged: supportsSubscriptions
      };
@@ -836,7 +843,7 @@ index 0161147..e83835d 100644
      return {
        supportedVersions: context.supportedVersions,
        capabilities,
-@@ -535,6 +544,40 @@ export const makeHandlers = (core, _lifecycle, context) => {
+@@ -537,6 +546,40 @@ export const makeHandlers = (core, _lifecycle, context) => {
          _meta: toolResult._meta
        }), context.serverInfo);
      }, Effect.mapError(projectError)),
@@ -878,20 +885,19 @@ index 0161147..e83835d 100644
        return yield* Effect.void;
      })
 diff --git a/dist/ai/internal/mcpRuntime.js b/dist/ai/internal/mcpRuntime.js
-index 06370fd..c93d955 100644
+index b5cfbc8..4224da0 100644
 --- a/dist/ai/internal/mcpRuntime.js
 +++ b/dist/ai/internal/mcpRuntime.js
-@@ -6,7 +6,9 @@ import * as HttpServerRequest from "../../http/HttpServerRequest.js";
- import * as HttpServerResponse from "../../http/HttpServerResponse.js";
+@@ -7,6 +7,8 @@ import * as HttpServerResponse from "../../http/HttpServerResponse.js";
  import * as Layer from "../../Layer.js";
  import * as Predicate from "../../Predicate.js";
-+import { CurrentLogLevel } from "../../References.js";
  import * as Result from "../../Result.js";
 +import * as Schema from "../../Schema.js";
++import { CurrentLogLevel } from "../../References.js";
  import * as RpcGroup from "../../rpc/RpcGroup.js";
  import * as PublicMcpSchema from "../McpSchema.js";
  import * as McpProtocol from "./mcpProtocol.js";
-@@ -72,9 +74,52 @@ export const selectStatefulProtocol = (protocols, offeredVersion) => protocols.f
+@@ -71,9 +73,52 @@ export const selectStatefulProtocol = (protocols, offeredVersion) => protocols.f
  /**
   * @internal
   */
@@ -932,7 +938,7 @@ index 06370fd..c93d955 100644
 +          clientInfo: initializePayload.clientInfo,
 +          requestMetadata: initializePayload._meta
 +        },
-+        protocol: protocol,
++        protocol,
 +        supportsResourceSubscriptions: false,
 +        logLevel: defaultLogLevel ?? currentLevel,
 +        ...(decoded.value.logLevel === undefined ? {} : {
@@ -945,43 +951,20 @@ index 06370fd..c93d955 100644
    const protocolVersions = protocols.map(protocol => protocol.protocolVersion);
    let statelessDescriptor;
    let statelessProtocol;
-@@ -89,6 +134,14 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
-     statelessProtocol = protocol;
-   }
-   const registry = yield* McpProtocolRegistry.make(protocols);
-+  const unsupportedProtocolVersion = requested => ({
-+    code: UNSUPPORTED_PROTOCOL_VERSION_ERROR_CODE,
+@@ -91,7 +136,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
+   const sessionTerminationListeners = new Set();
+   const unsupportedProtocolVersion = requested => ({
+     code: PublicMcpSchema.UNSUPPORTED_PROTOCOL_VERSION_ERROR_CODE,
+-    message: `Unsupported protocol version '${requested}'`,
 +    message: `Unsupported protocol version '${requested}'. Supported versions: ${protocolVersions.join(", ")}`,
-+    data: {
-+      supported: protocolVersions,
-+      requested
-+    }
-+  });
-   const selectHttpProtocol = (headers, input) => {
-     const protocolVersion = headers[MCP_PROTOCOL_VERSION_HEADER];
+     data: {
+       supported: protocolVersions,
+       requested
+@@ -102,9 +147,14 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
      const sessionId = headers[MCP_SESSION_ID_HEADER];
-@@ -130,14 +183,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
-         return {
-           _tag: "Rejected",
-           status: 400,
--          error: {
--            code: UNSUPPORTED_PROTOCOL_VERSION_ERROR_CODE,
--            message: `Unsupported protocol version '${protocolVersion}'`,
--            data: {
--              supported: protocolVersions,
--              requested: protocolVersion
--            }
--          }
-+          error: unsupportedProtocolVersion(protocolVersion)
-         };
-       }
-       const method = inputRecord?.method;
-@@ -159,23 +205,28 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
-       };
-     }
      const binding = sessionId === undefined ? undefined : stateful?.resolveSessionId(sessionId);
-+    // A forgotten session is 404, and the client must initialize again (MCP 2025-11-25, Session Management).
      if (sessionId !== undefined && binding === undefined) {
++      // A forgotten session is 404, and the client must initialize again (MCP 2025-11-25, Session Management).
        return {
          _tag: "Rejected",
 -        status: 404
@@ -992,27 +975,17 @@ index 06370fd..c93d955 100644
 +        }
        };
      }
-     if (!isInitialize && protocolVersion !== undefined && !registry.protocols.some(protocol => protocol.protocolVersion === protocolVersion)) {
-       return {
-         _tag: "Rejected",
--        status: 400
-+        status: 400,
-+        error: unsupportedProtocolVersion(protocolVersion)
-       };
-     }
--    if (!isInitialize && binding?.protocol.runtime.transport.http.requiresVersionHeader === true && protocolVersion !== binding.protocol.protocolVersion) {
--      return {
--        _tag: "Rejected",
--        status: 400
--      };
-+    // Without the header, a session keeps the version negotiated at initialization
-+    // (MCP 2025-11-25, Protocol Version Header). A header naming another version is rejected.
-+    if (!isInitialize && protocolVersion !== undefined && binding?.protocol.runtime.transport.http.requiresVersionHeader === true && protocolVersion !== binding.protocol.protocolVersion) {
-+      return headerMismatch(`MCP-Protocol-Version header '${protocolVersion}' does not match protocol version '${binding.protocol.protocolVersion}' negotiated for this session`);
+     if (!isInitialize && protocolVersion !== undefined) {
+@@ -116,7 +166,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
+         };
+       }
+       if (binding?.protocol.runtime.transport.http.requiresVersionHeader === true && protocolVersion !== binding.protocol.protocolVersion) {
+-        return headerMismatch(`MCP-Protocol-Version header '${protocolVersion}' does not match negotiated protocol version '${binding.protocol.protocolVersion}'`);
++        return headerMismatch(`MCP-Protocol-Version header '${protocolVersion}' does not match protocol version '${binding.protocol.protocolVersion}' negotiated for this session`);
+       }
      }
      return {
-       _tag: "Accepted",
-@@ -260,6 +311,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
+@@ -258,6 +308,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
        };
      }),
      resolveRequest: (clientId, headers) => stateful?.resolve(clientId, headers),
@@ -1020,55 +993,31 @@ index 06370fd..c93d955 100644
      admitHttp: (headers, parsed) => {
        const reject = (status, error, id = null) => ({
          _tag: "Rejected",
-@@ -276,10 +328,11 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
-       if (Result.isFailure(parsed)) {
-         const version = headers[MCP_PROTOCOL_VERSION_HEADER];
-         if (version !== undefined && !registry.protocols.some(protocol => protocol.protocolVersion === version)) {
--          return reject(400);
-+          return reject(400, unsupportedProtocolVersion(version));
+@@ -278,7 +329,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
          }
          const admission = selectHttpProtocol(headers, undefined);
--        return admission._tag === "Rejected" && admission.error === undefined ? reject(admission.status) : reject(200, new PublicMcpSchema.ParseError({
-+        // Session and session-version failures do not depend on the body; they precede the parse error.
-+        return admission._tag === "Rejected" && (admission.status === 404 || admission.error.code === PublicMcpSchema.HEADER_MISMATCH_ERROR_CODE) ? reject(admission.status, admission.error) : reject(200, new PublicMcpSchema.ParseError({
+         // Session and protocol-header errors take precedence over parse errors.
+-        return admission._tag === "Rejected" && (admission.error === undefined || admission.error.code === PublicMcpSchema.HEADER_MISMATCH_ERROR_CODE) ? reject(admission.status, admission.error) : reject(200, new PublicMcpSchema.ParseError({
++        return admission._tag === "Rejected" && (admission.status === 404 || admission.error?.code === PublicMcpSchema.HEADER_MISMATCH_ERROR_CODE) ? reject(admission.status, admission.error) : reject(200, new PublicMcpSchema.ParseError({
            message: "Parse error"
          }));
        }
-@@ -291,8 +344,13 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
-           }));
-         }
-         const admission = selectHttpProtocol(headers, input);
--        if (admission._tag === "Rejected" || input.some(hasRequestProtocolVersion) || input.some(message => Predicate.hasProperty(message, "method") && message.method === "initialize") || admission.binding?.protocol.runtime.transport.jsonRpc.acceptsBatches !== true) {
--          return reject(400);
-+        if (admission._tag === "Rejected") {
-+          return reject(admission.status, admission.error);
-+        }
-+        if (input.some(hasRequestProtocolVersion) || input.some(message => Predicate.hasProperty(message, "method") && message.method === "initialize") || admission.binding?.protocol.runtime.transport.jsonRpc.acceptsBatches !== true) {
-+          return reject(400, new PublicMcpSchema.InvalidRequest({
-+            message: "JSON-RPC batches are not accepted here; send each message in its own POST request"
-+          }));
-         }
-         return {
-           _tag: "Accepted",
-@@ -320,8 +378,15 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
-       }
-       const isInitialize = Predicate.hasProperty(input, "method") && input.method === "initialize";
+@@ -321,12 +372,12 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
        const hasSession = headers[MCP_SESSION_ID_HEADER] !== undefined;
--      if (isInitialize ? hasSession : !hasSession && admission.protocol?.runtime._tag !== "Stateless") {
--        return reject(400);
-+      if (isInitialize && hasSession) {
-+        return reject(400, new PublicMcpSchema.InvalidRequest({
+       if (isInitialize && hasSession) {
+         return reject(400, new PublicMcpSchema.InvalidRequest({
+-          message: "initialize must not include an MCP-Session-Id header"
 +          message: "initialize starts a new session; send it without an Mcp-Session-Id header"
-+        }), id);
-+      }
-+      if (!isInitialize && !hasSession && admission.protocol?.runtime._tag !== "Stateless") {
-+        return reject(400, stateful === undefined ? undefined : new PublicMcpSchema.InvalidRequest({
+         }), id);
+       }
+       if (!isInitialize && !hasSession && admission.protocol?.runtime._tag !== "Stateless") {
+         return reject(400, stateful === undefined ? undefined : new PublicMcpSchema.InvalidRequest({
+-          message: "MCP-Session-Id header is required; send initialize to start a session"
 +          message: "Mcp-Session-Id header is required; send initialize first and include the Mcp-Session-Id it returns on later requests"
-+        }), id);
+         }), id);
        }
        if (isRequest && admission.protocol?.runtime._tag === "Stateless" && !(admission.protocol.handlerRpcs?.requests.has(input.method) ?? admission.protocol.clientRpcs.requests.has(input.method))) {
-         return reject(404, new PublicMcpSchema.MethodNotFound({
-@@ -339,6 +404,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
+@@ -371,6 +422,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
      deliveryClientIds: () => stateful?.initializedClientIds() ?? [],
      canDeliver: (clientId, headers, notification, fallback) => stateful?.canDeliver(clientId, headers, notification, fallback) ?? true,
      installHandlers: Effect.fnUntraced(function* (options) {
@@ -1076,7 +1025,7 @@ index 06370fd..c93d955 100644
        const contextMap = new Map();
        const installationContext = {
          subscribeServerNotifications: options.subscribeServerNotifications,
-@@ -408,9 +474,13 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
+@@ -441,9 +493,13 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
                  supportsResourceSubscriptions: httpRequest === undefined && capabilities.resources?.subscribe === true,
                  logLevel: options.defaultLogLevel
                };
@@ -1088,10 +1037,10 @@ index 06370fd..c93d955 100644
 +                // Kept before the client learns the id, so a server that restarts right after
 +                // still knows it.
 +                if (sessions !== undefined) saved = sessions.save(sessionId, storedSession(session, undefined));
-                 appendPreResponseHandlerUnsafe(httpRequest, (_request, response) => Effect.succeed(HttpServerResponse.setHeaders(response, {
+                 appendPreResponseHandlerUnsafe(fiber.context, (_request, response) => Effect.succeed(HttpServerResponse.setHeaders(response, {
                    [MCP_SESSION_ID_HEADER]: sessionId,
                    [MCP_PROTOCOL_VERSION_HEADER]: protocol.protocolVersion
-@@ -418,7 +488,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
+@@ -451,7 +507,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
                } else {
                  stateful.registerConnection(clientId, registration);
                }
@@ -1100,7 +1049,7 @@ index 06370fd..c93d955 100644
                  capabilities,
                  instructions: options.serverInfo.instructions,
                  serverInfo: PublicMcpSchema.Implementation.make({
-@@ -431,7 +501,11 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
+@@ -464,7 +520,11 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
                });
              });
            }),
@@ -1113,7 +1062,7 @@ index 06370fd..c93d955 100644
            subscribe: stateful.subscribe,
            unsubscribe: stateful.unsubscribe,
            clientNotification: Effect.fnUntraced(function* (notification, clientId) {
-@@ -449,5 +523,5 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
+@@ -482,5 +542,5 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
  /**
   * @internal
   */
@@ -1122,20 +1071,20 @@ index 06370fd..c93d955 100644
  //# sourceMappingURL=mcpRuntime.js.map
 \ No newline at end of file
 diff --git a/dist/ai/internal/mcpSchema/v2026_07_28.js b/dist/ai/internal/mcpSchema/v2026_07_28.js
-index 5f32a89..c35f862 100644
+index ae95dad..29edf9a 100644
 --- a/dist/ai/internal/mcpSchema/v2026_07_28.js
 +++ b/dist/ai/internal/mcpSchema/v2026_07_28.js
-@@ -67,6 +67,9 @@ export const ServerCapabilities = /*#__PURE__*/Schema.StructWithRest(/*#__PURE__
+@@ -68,6 +68,9 @@ export const ServerCapabilities = /*#__PURE__*/Schema.StructWithRest(/*#__PURE__
    tools: /*#__PURE__*/optional(/*#__PURE__*/Schema.Struct({
      listChanged: /*#__PURE__*/optional(Schema.Boolean)
    })),
 +  events: /*#__PURE__*/optional(/*#__PURE__*/Schema.Struct({
 +    listChanged: /*#__PURE__*/optional(Schema.Boolean)
 +  })),
-   extensions: /*#__PURE__*/optional(/*#__PURE__*/Schema.Record(Schema.String, Schema.JsonObject))
- }), [Schema.JsonObject]);
+   extensions: /*#__PURE__*/optional(/*#__PURE__*/Schema.Record(Schema.String, UnknownObject))
+ }), [UnknownObject]);
  /**
-@@ -724,7 +727,88 @@ export class SubscriptionsAcknowledgedNotification extends /*#__PURE__*/Rpc.make
+@@ -725,7 +728,88 @@ export class SubscriptionsAcknowledgedNotification extends /*#__PURE__*/Rpc.make
  /**
   * @internal
   */
@@ -1226,7 +1175,7 @@ index 5f32a89..c35f862 100644
   * @internal
   */
 diff --git a/dist/ai/internal/mcpStatefulRuntime.js b/dist/ai/internal/mcpStatefulRuntime.js
-index 9471bdf..befa961 100644
+index 4558603..e265713 100644
 --- a/dist/ai/internal/mcpStatefulRuntime.js
 +++ b/dist/ai/internal/mcpStatefulRuntime.js
 @@ -5,6 +5,7 @@
@@ -1264,26 +1213,11 @@ index 9471bdf..befa961 100644
  /**
   * @internal
   */
-diff --git a/dist/rpc/RpcServer.js b/dist/rpc/RpcServer.js
-index 709efbf..b94b832 100644
---- a/dist/rpc/RpcServer.js
-+++ b/dist/rpc/RpcServer.js
-@@ -759,7 +759,9 @@ export const makeProtocolWithHttpEffect = /*#__PURE__*/Effect.fnUntraced(functio
-         contentType: serialization.contentType
-       });
-     }
--    const initialChunk = yield* Queue.takeAll(queue);
-+    // A queue that ends without messages gives an empty body, as a buffered response without
-+    // messages does, rather than a `Done` failure. The caller decides whether that is correct.
-+    const initialChunk = yield* Effect.orElseSucceed(Queue.takeAll(queue), () => []);
-     if (queue.state._tag === "Done") {
-       return HttpServerResponse.uint8Array(mergeUint8Arrays(initialChunk), {
-         contentType: serialization.contentType
 diff --git a/src/JsonSchema.ts b/src/JsonSchema.ts
-index 133d409..44e28bd 100644
+index 98ba4dd..ced57b6 100644
 --- a/src/JsonSchema.ts
 +++ b/src/JsonSchema.ts
-@@ -31,6 +31,21 @@ export interface JsonSchema {
+@@ -33,6 +33,21 @@ export interface JsonSchema {
    [x: string]: unknown
  }
  
@@ -1305,7 +1239,7 @@ index 133d409..44e28bd 100644
  /**
   * The set of JSON Schema dialects supported by this module.
   *
-@@ -368,9 +383,11 @@ export function fromSchemaDraft2020_12(js: JsonSchema): Document<"draft-2020-12"
+@@ -381,9 +396,11 @@ export function fromSchemaDraft2020_12(js: JsonSchema): Document<"draft-2020-12"
   * @category decoding
   * @since 4.0.0
   */
@@ -1318,7 +1252,7 @@ index 133d409..44e28bd 100644
      if (!isRootResource && !inEmbeddedResource) rewriteSchemaRef(schema, rewriteOpenApiComponentsReference)
      if (isMetaSchemaUri(schema.$schema, META_SCHEMA_URI_OPEN_API_3_1)) {
        InternalRecord.assignProperty(schema, "$schema", META_SCHEMA_URI_DRAFT_2020_12)
-@@ -429,8 +446,8 @@ export function fromSchemaOpenApi3_1(js: JsonSchema): Document<"draft-2020-12">
+@@ -449,8 +466,8 @@ export function fromSchemaOpenApi3_1(js: JsonSchema): Document<"draft-2020-12">
   * @category decoding
   * @since 4.0.0
   */
@@ -1329,7 +1263,7 @@ index 133d409..44e28bd 100644
  }
  
  /**
-@@ -1304,11 +1321,12 @@ function convertDependencies(
+@@ -1327,11 +1344,12 @@ function convertDependencies(
    if (Object.keys(dependencies).length > 0) InternalRecord.assignProperty(out, "dependencies", dependencies)
  }
  
@@ -1344,10 +1278,10 @@ index 133d409..44e28bd 100644
        return out
      }
 diff --git a/src/ai/McpSchema.ts b/src/ai/McpSchema.ts
-index 02fa724..c316c3a 100644
+index f15d16d..21cec0e 100644
 --- a/src/ai/McpSchema.ts
 +++ b/src/ai/McpSchema.ts
-@@ -3387,3 +3387,213 @@ export class EnabledWhen extends Context.Service<
+@@ -3505,3 +3505,213 @@ export class EnabledWhen extends Context.Service<
  >()(
    "effect/ai/McpSchema/EnabledWhen"
  ) {}
@@ -1562,7 +1496,7 @@ index 02fa724..c316c3a 100644
 + */
 +export type UnsubscribeEventParams = typeof UnsubscribeEventParams.Type
 diff --git a/src/ai/McpServer.ts b/src/ai/McpServer.ts
-index 8c601ab..fd5df94 100644
+index b75c689..17d6610 100644
 --- a/src/ai/McpServer.ts
 +++ b/src/ai/McpServer.ts
 @@ -50,6 +50,7 @@ import * as AiError from "./AiError.ts"
@@ -1573,11 +1507,12 @@ index 8c601ab..fd5df94 100644
  import * as InternalStructuredOutput from "./internal/structured-output.ts"
  import type * as McpProtocol from "./McpProtocol.ts"
  import * as McpSchema from "./McpSchema.ts"
-@@ -650,14 +651,37 @@ export class McpServer extends Context.Service<McpServer, {
+@@ -677,17 +678,38 @@ export class McpServer extends Context.Service<McpServer, {
  const MCP_SESSION_ID_HEADER = "mcp-session-id"
  const MCP_PROTOCOL_VERSION_HEADER = "mcp-protocol-version"
  const MCP_INVALID_BATCH_METHOD = "invalid/json-rpc-batch"
 -const cancelledResponses = new WeakMap<object, string | number>()
+-const httpPostResponses = new WeakMap<HttpServerRequest.HttpServerRequest, { expected: number }>()
  const requestKey = (requestId: string | number): string => `${typeof requestId}:${requestId}`
  
 +/**
@@ -1596,8 +1531,10 @@ index 8c601ab..fd5df94 100644
 +}>()
 +
  interface ActiveRequest {
+   readonly requestId: RpcMessage.RequestId
    readonly prepared: McpRuntime.PreparedRequest
    readonly cancelled: boolean
+-  readonly httpPost: { expected: number } | undefined
 +  readonly post: HttpPostRequests | undefined
  }
  
@@ -1612,7 +1549,7 @@ index 8c601ab..fd5df94 100644
  class McpClientKey extends Data.Class<{
    readonly clientId: number
    readonly profile: McpCore.NegotiatedProtocolProfile<string>
-@@ -798,6 +822,8 @@ const runWithRuntime = Effect.fnUntraced(function*(
+@@ -833,6 +855,8 @@ const runWithRuntime = Effect.fnUntraced(function*(
        if (!cancelRequest(clientId, requestId)) {
          return Effect.void
        }
@@ -1621,39 +1558,48 @@ index 8c601ab..fd5df94 100644
        return isHttp
          ? protocol.end(clientId)
          : sendNotification(protocolVersion, clientId, {
-@@ -948,13 +974,13 @@ const runWithRuntime = Effect.fnUntraced(function*(
-       if (response._tag === "Exit") {
-         const requests = activeRequests.get(clientId)
-         const key = requestKey(response.requestId)
--        const cancelled = requests?.get(key)?.cancelled
-+        const active = requests?.get(key)
-         if (requests !== undefined && requests.delete(key) && requests.size === 0) {
-           activeRequests.delete(clientId)
+@@ -992,8 +1016,7 @@ const runWithRuntime = Effect.fnUntraced(function*(
          }
--        if (cancelled === true) {
-+        if (active?.cancelled === true) {
+         if (active?.cancelled === true) {
            if (transport === "custom") return Effect.void
+-          if (active.httpPost !== undefined) active.httpPost.expected--
 -          cancelledResponses.set(response, response.requestId)
 +          cancelledResponses.set(response, { requestId: response.requestId, post: active.post })
            return protocol.send(clientId, response)
          }
          if (
-@@ -1130,7 +1156,13 @@ const runWithRuntime = Effect.fnUntraced(function*(
+@@ -1040,11 +1063,6 @@ const runWithRuntime = Effect.fnUntraced(function*(
+         }
+         switch (request._tag) {
+           case "Request": {
+-            if (httpRequest !== undefined && request.isNotification !== true) {
+-              const httpPost = httpPostResponses.get(httpRequest) ?? { expected: 0 }
+-              httpPost.expected++
+-              httpPostResponses.set(httpRequest, httpPost)
+-            }
+             const headers = isHttp
+               ? Context.getUnsafe(
+                 Fiber.getCurrent()!.context,
+@@ -1175,11 +1193,17 @@ const runWithRuntime = Effect.fnUntraced(function*(
                }
                if (request.isNotification !== true) {
                  const requests = activeRequests.get(clientId) ?? new Map<string, ActiveRequest>()
--                requests.set(requestKey(request.id), { prepared, cancelled: false })
 +                let post: HttpPostRequests | undefined
 +                if (httpRequest !== undefined) {
 +                  post = httpPostRequests.get(httpRequest) ?? { requests: new Set(), withheld: new Set() }
 +                  post.requests.add(requestKey(request.id))
 +                  httpPostRequests.set(httpRequest, post)
 +                }
-+                requests.set(requestKey(request.id), { prepared, cancelled: false, post })
+                 requests.set(requestKey(request.id), {
+                   requestId: RpcMessage.RequestId(request.id),
+                   prepared,
+                   cancelled: false,
+-                  httpPost: httpRequest === undefined ? undefined : httpPostResponses.get(httpRequest)
++                  post
+                 })
                  activeRequests.set(clientId, requests)
                }
-               const handled = f(clientId, routedRequest)
-@@ -1516,6 +1548,35 @@ const mcpStdioSerialization = (
+@@ -1583,6 +1607,35 @@ const mcpStdioSerialization = (
    })
  }
  
@@ -1689,10 +1635,10 @@ index 8c601ab..fd5df94 100644
  /**
   * Registers a Streamable HTTP MCP endpoint at `options.path`.
   *
-@@ -1558,8 +1619,13 @@ export const layerHttp = (options: {
-   readonly protocols: Arr.NonEmptyReadonlyArray<McpProtocol.ProtocolAdapter>
-   readonly extensions?: ServerExtensions | undefined
+@@ -1650,8 +1703,13 @@ export const layerHttp = (options: {
    readonly allowedOrigins?: ReadonlyArray<string> | undefined
+   readonly allowSessionTermination?: boolean | undefined
+   readonly allowSubscriptions?: boolean | undefined
 +  /**
 +   * Keeps sessions beyond this server's memory, so a client continues its session after the
 +   * server restarts. Without one, a restart forgets every session (`404`).
@@ -1701,87 +1647,84 @@ index 8c601ab..fd5df94 100644
  }): Layer.Layer<McpServer | McpServerClient, Cause.IllegalArgumentError, HttpRouter.HttpRouter> => {
 -  const runtime = McpRuntime.layer(options.protocols)
 +  const runtime = McpRuntime.layer(options.protocols, options.sessions)
-   const methodNotAllowedResponse = HttpServerResponse.empty({
-     status: 405,
-     headers: { allow: "POST" }
-@@ -1567,7 +1633,7 @@ export const layerHttp = (options: {
-   const methodNotAllowed = (request: HttpServerRequest.HttpServerRequest) =>
-     isAllowedMcpOrigin(request, options.allowedOrigins)
-       ? Effect.succeed(methodNotAllowedResponse)
--      : Effect.succeed(HttpServerResponse.empty({ status: 403 }))
+   return layerWithRuntime(options, "http").pipe(
+     Layer.provide(layerMcpProtocolHttp(options)),
+     Layer.provide(runtime),
+@@ -1791,12 +1849,13 @@ const addMcpHttpRoutes = Effect.fnUntraced(function*(
+   const router = yield* HttpRouter.HttpRouter
+   const allowSessionTermination = options.allowSessionTermination === true &&
+     runtime.protocols.some((protocol) => protocol.runtime._tag === "Stateful")
+-  const forbidden = Effect.succeed(HttpServerResponse.empty({ status: 403 }))
+   const withAllowedOrigin = (
+     handler: (request: HttpServerRequest.HttpServerRequest) => Effect.Effect<HttpServerResponse.HttpServerResponse>
+   ) =>
+   (request: HttpServerRequest.HttpServerRequest) =>
+-    isAllowedMcpOrigin(request, options.allowedOrigins) ? handler(request) : forbidden
++    isAllowedMcpOrigin(request, options.allowedOrigins)
++      ? handler(request)
 +      : Effect.succeed(forbiddenOrigin(request))
-   const routes = Layer.mergeAll(
-     HttpRouter.add("GET", options.path, methodNotAllowed),
-     HttpRouter.add("PUT", options.path, methodNotAllowed),
-@@ -1598,30 +1664,60 @@ const layerMcpProtocolHttp = (options: {
-     const router = yield* HttpRouter.HttpRouter
-     yield* router.add("POST", options.path, (request) => {
-       if (!isAllowedMcpOrigin(request, options.allowedOrigins)) {
--        return Effect.succeed(HttpServerResponse.empty({ status: 403 }))
-+        return Effect.succeed(forbiddenOrigin(request))
-       }
-       if (mcpMediaTypes(request.headers["content-type"])[0] !== "application/json") {
--        return Effect.succeed(HttpServerResponse.empty({ status: 415 }))
-+        return Effect.succeed(
-+          transportRejection(415, "Unsupported Media Type: send JSON-RPC messages with Content-Type: application/json")
+   const methodNotAllowedResponse = Effect.succeed(HttpServerResponse.empty({
+     status: 405,
+     headers: { allow: allowSessionTermination ? "POST, DELETE" : "POST" }
+@@ -1814,19 +1873,28 @@ const addMcpHttpRoutes = Effect.fnUntraced(function*(
+   )
+   yield* router.add("POST", options.path, (request) => {
+     if (!isAllowedMcpOrigin(request, options.allowedOrigins)) {
+-      return Effect.succeed(HttpServerResponse.empty({ status: 403 }))
++      return Effect.succeed(forbiddenOrigin(request))
+     }
+     if (mcpMediaTypes(request.headers["content-type"])[0] !== "application/json") {
+-      return Effect.succeed(HttpServerResponse.empty({ status: 415 }))
++      return Effect.succeed(
++        transportRejection(415, "Unsupported Media Type: send JSON-RPC messages with Content-Type: application/json")
++      )
+     }
+     const accepted = mcpMediaTypes(request.headers["accept"])
+     if (!accepted.includes("application/json") || !accepted.includes("text/event-stream")) {
+-      return Effect.succeed(HttpServerResponse.empty({ status: 406 }))
++      return Effect.succeed(
++        transportRejection(
++          406,
++          "Not Acceptable: the Accept header must list both application/json and text/event-stream"
 +        )
-       }
-       const accepted = mcpMediaTypes(request.headers["accept"])
-       if (!accepted.includes("application/json") || !accepted.includes("text/event-stream")) {
--        return Effect.succeed(HttpServerResponse.empty({ status: 406 }))
-+        return Effect.succeed(
-+          transportRejection(
-+            406,
-+            "Not Acceptable: the Accept header must list both application/json and text/event-stream"
-+          )
-+        )
-       }
-       return Effect.gen(function*() {
-         const parsed = yield* Effect.result(
-           Effect.flatMap(request.text, Schema.decodeEffect(Schema.UnknownFromJsonString))
-         )
-+        const sessionId = request.headers[MCP_SESSION_ID_HEADER]
-+        if (sessionId !== undefined) yield* runtime.restoreHttp(sessionId)
-         const admission = runtime.admitHttp(request.headers, parsed)
-         if (admission._tag === "Rejected") {
-           return admission.response
++      )
+     }
+     return Effect.gen(function*() {
+       const parsed = yield* Effect.result(
+         Effect.flatMap(request.text, Schema.decodeEffect(Schema.UnknownFromJsonString))
+       )
++      const sessionId = request.headers[MCP_SESSION_ID_HEADER]
++      if (sessionId !== undefined) yield* runtime.restoreHttp(sessionId)
+       const admission = runtime.admitHttp(request.headers, parsed)
+       if (admission._tag === "Rejected") {
+         return admission.response
+@@ -1849,11 +1917,21 @@ const addMcpHttpRoutes = Effect.fnUntraced(function*(
+         if (response.body._tag !== "Uint8Array" || response.body.body.length > 0) {
+           return Effect.succeed(toResponse(response))
          }
--        const response = Effect.map(httpEffect, (response) => {
-+        // The protocol registers this POST's requests under the request in the current context.
-+        const httpRequest = yield* HttpServerRequest.HttpServerRequest
-+        const response = Effect.flatMap(httpEffect, (response) => {
-+          if (!admission.acknowledge && response.body._tag === "Uint8Array" && response.body.body.length === 0) {
-+            // A POST with a request must answer with JSON or SSE. Without a response, that is only
-+            // correct when the server withheld every request's response after its cancellation.
-+            // https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#sending-messages-to-the-server
-+            const post = httpPostRequests.get(httpRequest)
-+            return post !== undefined && post.requests.size > 0 &&
-+                Array.from(post.requests).every((key) => post.withheld.has(key))
-+              ? Effect.succeed(HttpServerResponse.stream(Stream.empty, {
-+                status: response.status,
-+                headers: Headers.remove(response.headers, "content-type"),
-+                cookies: response.cookies,
-+                contentType: "text/event-stream"
-+              }))
-+              : Effect.die(
-+                new McpResponseNotWritten({ message: "The MCP request ended without writing its response" })
-+              )
-+          }
-           // Completed responses may already contain notifications followed by the result.
-           const hasMultipleMessages = response.body._tag === "Uint8Array" &&
-             response.body.body.subarray(0, -1).includes(10)
--          return admission.isSubscription || response.body._tag === "Stream" || hasMultipleMessages
--            ? toServerSentEvents(response, admission.isSubscription)
--            : response
-+          return Effect.succeed(
-+            admission.isSubscription || response.body._tag === "Stream" || hasMultipleMessages
-+              ? toServerSentEvents(response, admission.isSubscription)
-+              : response
+-        // Only fully cancelled request POSTs may return an empty SSE response.
++        // A POST with a request must answer with JSON or SSE. Without a response, that is only
++        // correct when the server withheld every request's response after its cancellation.
+         // https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#sending-messages-to-the-server
+-        return httpPostResponses.get(request)?.expected === 0
+-          ? Effect.succeed(HttpServerResponse.stream(Stream.empty, { contentType: "text/event-stream" }))
+-          : Effect.die(new Error("MCP request ended without writing its response"))
++        const post = httpPostRequests.get(request)
++        return post !== undefined && post.requests.size > 0 &&
++            Array.from(post.requests).every((key) => post.withheld.has(key))
++          ? Effect.succeed(HttpServerResponse.stream(Stream.empty, {
++            status: response.status,
++            headers: Headers.remove(response.headers, "content-type"),
++            cookies: response.cookies,
++            contentType: "text/event-stream"
++          }))
++          : Effect.die(
++            new McpResponseNotWritten({ message: "The MCP request ended without writing its response" })
 +          )
-         })
-         return yield* admission.acknowledge
-           ? Effect.catchCause(response, () => Effect.succeed(HttpServerResponse.empty({ status: 202 })))
-@@ -1677,15 +1773,16 @@ function mcpJsonRpcSerialization(options?: {
+       })
+     })
+   })
+@@ -1905,15 +1983,16 @@ function mcpJsonRpcSerialization(options?: {
      ...serialization,
      makeUnsafe: () => {
        const parser = serialization.makeUnsafe()
@@ -1802,7 +1745,7 @@ index 8c601ab..fd5df94 100644
              }
            }
            const encoded = parser.encode(response)
-@@ -1695,9 +1792,15 @@ function mcpJsonRpcSerialization(options?: {
+@@ -1923,9 +2002,15 @@ function mcpJsonRpcSerialization(options?: {
            if (cancelledIds.size > 0) {
              // Count cancelled completions toward the batch, but never write their responses.
              // https://modelcontextprotocol.io/specification/2025-03-26/basic/utilities/cancellation
@@ -1821,7 +1764,7 @@ index 8c601ab..fd5df94 100644
              if (Array.isArray(message)) {
                const remaining = message.filter(keep)
                if (remaining.length === 0) return undefined
-@@ -1751,6 +1854,18 @@ const isAllowedMcpOrigin = (
+@@ -1979,6 +2064,18 @@ const isAllowedMcpOrigin = (
    return origin === undefined || (allowedOrigins ?? []).includes(origin)
  }
  
@@ -1840,7 +1783,7 @@ index 8c601ab..fd5df94 100644
  const mcpMediaTypes = (header: string | undefined): ReadonlyArray<string> =>
    header === undefined
      ? []
-@@ -1979,6 +2094,72 @@ export const toolkit = <Tools extends Record<string, Tool.Any>>(
+@@ -2217,6 +2314,72 @@ export const toolkit = <Tools extends Record<string, Tool.Any>>(
      Layer.provide(McpServer.layer)
    )
  
@@ -1914,10 +1857,10 @@ index 8c601ab..fd5df94 100644
   * Utility type that validates a completion-handler record against the allowed
   * parameter keys.
 diff --git a/src/ai/Toolkit.ts b/src/ai/Toolkit.ts
-index c017c35..072f6ea 100644
+index 5872416..99738bb 100644
 --- a/src/ai/Toolkit.ts
 +++ b/src/ai/Toolkit.ts
-@@ -344,9 +344,9 @@ const Proto = {
+@@ -396,9 +396,9 @@ const Proto = {
        ) {
          const tool = Object.hasOwn(tools, name) ? tools[name] : undefined
  
@@ -1930,10 +1873,10 @@ index c017c35..072f6ea 100644
  
          if (Predicate.isUndefined(tool)) {
 diff --git a/src/ai/internal/mcpCore.ts b/src/ai/internal/mcpCore.ts
-index a7d200d..c6ef344 100644
+index b384c43..da556e8 100644
 --- a/src/ai/internal/mcpCore.ts
 +++ b/src/ai/internal/mcpCore.ts
-@@ -386,6 +386,35 @@ export type ServerNotification = Data.TaggedEnum<{
+@@ -385,6 +385,35 @@ export type ServerNotification = Data.TaggedEnum<{
   */
  export const ServerNotification = Data.taggedEnum<ServerNotification>()
  
@@ -1969,7 +1912,7 @@ index a7d200d..c6ef344 100644
  /**
   * @internal
   */
-@@ -394,10 +423,12 @@ export interface McpCore {
+@@ -393,10 +422,12 @@ export interface McpCore {
    readonly resources: Resources
    readonly prompts: Prompts
    readonly completions: Completions
@@ -1982,7 +1925,7 @@ index a7d200d..c6ef344 100644
    }>
  }
  
-@@ -536,11 +567,21 @@ export const make: Effect.Effect<McpCore> = Effect.sync(() => {
+@@ -535,11 +566,21 @@ export const make: Effect.Effect<McpCore> = Effect.sync(() => {
      })
    }
  
@@ -2007,10 +1950,10 @@ index a7d200d..c6ef344 100644
 +  return { tools, resources, prompts, completions, events, registrationPresence }
  })
 diff --git a/src/ai/internal/mcpProtocol.ts b/src/ai/internal/mcpProtocol.ts
-index 1426562..a28f3f7 100644
+index dccd8b0..4714815 100644
 --- a/src/ai/internal/mcpProtocol.ts
 +++ b/src/ai/internal/mcpProtocol.ts
-@@ -411,6 +411,7 @@ export interface HandlerInstallationContext {
+@@ -433,6 +433,7 @@ export interface HandlerInstallationContext {
      readonly tools: boolean
      readonly resources: boolean
      readonly prompts: boolean
@@ -2019,10 +1962,10 @@ index 1426562..a28f3f7 100644
  }
  
 diff --git a/src/ai/internal/mcpProtocol/v2026_07_28.ts b/src/ai/internal/mcpProtocol/v2026_07_28.ts
-index c1cce20..37dfe24 100644
+index 11fe397..52d3bff 100644
 --- a/src/ai/internal/mcpProtocol/v2026_07_28.ts
 +++ b/src/ai/internal/mcpProtocol/v2026_07_28.ts
-@@ -322,6 +322,20 @@ export const makeHandlers = (
+@@ -320,6 +320,20 @@ export const makeHandlers = (
    ]))
    const decodeCompleteResult = Schema.decodeUnknownEffect(McpSchema.CompleteResult)
    const decodeListToolsResult = Schema.decodeUnknownEffect(McpSchema.ListToolsResult)
@@ -2043,7 +1986,7 @@ index c1cce20..37dfe24 100644
    const sendNotification = context.sendNotification
    const supportsSubscriptions = sendNotification !== undefined
    // Older adapters accept arbitrary JSON; this binding requires extension settings objects.
-@@ -337,6 +351,7 @@ export const makeHandlers = (
+@@ -335,6 +349,7 @@ export const makeHandlers = (
        capabilities.resources = { listChanged: supportsSubscriptions, subscribe: supportsSubscriptions }
      }
      if (presence.prompts) capabilities.prompts = { listChanged: supportsSubscriptions }
@@ -2051,7 +1994,7 @@ index c1cce20..37dfe24 100644
      return { supportedVersions: context.supportedVersions, capabilities, serverInfo: context.serverInfo }
    })
    const getInvocation = PublicMcpSchema.McpRequestContext.useSync(
-@@ -665,6 +680,42 @@ export const makeHandlers = (
+@@ -668,6 +683,42 @@ export const makeHandlers = (
          context.serverInfo
        )
      }, Effect.mapError(projectError)),
@@ -2095,7 +2038,7 @@ index c1cce20..37dfe24 100644
        _request: typeof McpSchema.CancelledNotification.payloadSchema.Type
      ) {
 diff --git a/src/ai/internal/mcpRuntime.ts b/src/ai/internal/mcpRuntime.ts
-index b388d17..a1d2665 100644
+index de80666..592e4af 100644
 --- a/src/ai/internal/mcpRuntime.ts
 +++ b/src/ai/internal/mcpRuntime.ts
 @@ -15,6 +15,8 @@ import * as Layer from "../../Layer.ts"
@@ -2106,7 +2049,7 @@ index b388d17..a1d2665 100644
 +import { CurrentLogLevel } from "../../References.ts"
  import * as RpcGroup from "../../rpc/RpcGroup.ts"
  import type * as RpcMessage from "../../rpc/RpcMessage.ts"
- import type * as PublicMcpProtocol from "../McpProtocol.ts"
+ import type * as Scope from "../../Scope.ts"
 @@ -96,11 +98,11 @@ type HttpProtocolSelection =
    | {
      readonly _tag: "Rejected"
@@ -2121,7 +2064,7 @@ index b388d17..a1d2665 100644
    }
  
  /**
-@@ -168,6 +170,11 @@ export interface ServerRuntimeShape {
+@@ -169,6 +171,11 @@ export interface ServerRuntimeShape {
      request: RpcMessage.RequestEncoded
    ) => Effect.Effect<PreparedRequest, unknown>
    readonly resolveRequest: (clientId: number, headers: Headers.Headers) => RequestBinding | undefined
@@ -2133,7 +2076,7 @@ index b388d17..a1d2665 100644
    readonly admitHttp: (headers: Headers.Headers, input: Result.Result<unknown, unknown>) => HttpAdmission
    readonly effectLogLevel: (
      clientId: number,
-@@ -208,10 +215,56 @@ export const selectStatefulProtocol = <Protocol extends PublicMcpProtocol.AnyPro
+@@ -213,10 +220,56 @@ export const selectStatefulProtocol = <Protocol extends PublicMcpProtocol.AnyPro
   * @internal
   */
  export const make = Effect.fnUntraced(function*(
@@ -2191,45 +2134,21 @@ index b388d17..a1d2665 100644
    const protocolVersions = protocols.map((protocol) => protocol.protocolVersion)
    let statelessDescriptor: PublicMcpProtocol.StatelessRuntimeDescriptor | undefined
    let statelessProtocol: PublicMcpProtocol.AnyProtocolAdapter | undefined
-@@ -228,6 +281,11 @@ export const make = Effect.fnUntraced(function*(
-     statelessProtocol = protocol
-   }
-   const registry = yield* McpProtocolRegistry.make(protocols)
-+  const unsupportedProtocolVersion = (requested: string) => ({
-+    code: UNSUPPORTED_PROTOCOL_VERSION_ERROR_CODE,
+@@ -236,7 +289,7 @@ export const make = Effect.fnUntraced(function*(
+   const sessionTerminationListeners = new Set<(binding: RequestBinding) => Effect.Effect<void>>()
+   const unsupportedProtocolVersion = (requested: string) => ({
+     code: PublicMcpSchema.UNSUPPORTED_PROTOCOL_VERSION_ERROR_CODE,
+-    message: `Unsupported protocol version '${requested}'`,
 +    message: `Unsupported protocol version '${requested}'. Supported versions: ${protocolVersions.join(", ")}`,
-+    data: { supported: protocolVersions, requested }
-+  })
-   const selectHttpProtocol = (headers: Headers.Headers, input: unknown): HttpProtocolSelection => {
-     const protocolVersion = headers[MCP_PROTOCOL_VERSION_HEADER]
+     data: { supported: protocolVersions, requested }
+   })
+   const selectHttpSession = (headers: Headers.Headers, isInitialize: boolean): HttpProtocolSelection => {
+@@ -244,18 +297,29 @@ export const make = Effect.fnUntraced(function*(
      const sessionId = headers[MCP_SESSION_ID_HEADER]
-@@ -272,18 +330,7 @@ export const make = Effect.fnUntraced(function*(
-         }
-       }
-       if (statelessProtocol === undefined || protocolVersion !== statelessProtocol.protocolVersion) {
--        return {
--          _tag: "Rejected",
--          status: 400,
--          error: {
--            code: UNSUPPORTED_PROTOCOL_VERSION_ERROR_CODE,
--            message: `Unsupported protocol version '${protocolVersion}'`,
--            data: {
--              supported: protocolVersions,
--              requested: protocolVersion
--            }
--          }
--        }
-+        return { _tag: "Rejected", status: 400, error: unsupportedProtocolVersion(protocolVersion) }
-       }
-       const method = inputRecord?.method
-       if (typeof method !== "string" || headers[MCP_METHOD_HEADER] !== method) {
-@@ -300,22 +347,36 @@ export const make = Effect.fnUntraced(function*(
-       return { _tag: "Accepted", binding: undefined, protocol: statelessProtocol }
-     }
      const binding = sessionId === undefined ? undefined : stateful?.resolveSessionId(sessionId)
-+    // A forgotten session is 404, and the client must initialize again (MCP 2025-11-25, Session Management).
      if (sessionId !== undefined && binding === undefined) {
 -      return { _tag: "Rejected", status: 404 }
++      // A forgotten session is 404, and the client must initialize again (MCP 2025-11-25, Session Management).
 +      return {
 +        _tag: "Rejected",
 +        status: 404,
@@ -2240,30 +2159,23 @@ index b388d17..a1d2665 100644
 +        }
 +      }
      }
-     if (
-       !isInitialize &&
-       protocolVersion !== undefined &&
-       !registry.protocols.some((protocol) => protocol.protocolVersion === protocolVersion)
-     ) {
--      return { _tag: "Rejected", status: 400 }
-+      return { _tag: "Rejected", status: 400, error: unsupportedProtocolVersion(protocolVersion) }
+     if (!isInitialize && protocolVersion !== undefined) {
+       if (!protocolVersions.includes(protocolVersion)) {
+         return { _tag: "Rejected", status: 400, error: unsupportedProtocolVersion(protocolVersion) }
+       }
++      // Without the header, a session keeps the version negotiated at initialization
++      // (MCP 2025-11-25, Protocol Version Header). A header naming another version is rejected.
+       if (
+         binding?.protocol.runtime.transport.http.requiresVersionHeader === true &&
+         protocolVersion !== binding.protocol.protocolVersion
+       ) {
+         return headerMismatch(
+-          `MCP-Protocol-Version header '${protocolVersion}' does not match negotiated protocol version '${binding.protocol.protocolVersion}'`
++          `MCP-Protocol-Version header '${protocolVersion}' does not match protocol version '${binding.protocol.protocolVersion}' negotiated for this session`
+         )
+       }
      }
-+    // Without the header, a session keeps the version negotiated at initialization
-+    // (MCP 2025-11-25, Protocol Version Header). A header naming another version is rejected.
-     if (
-       !isInitialize &&
-+      protocolVersion !== undefined &&
-       binding?.protocol.runtime.transport.http.requiresVersionHeader === true &&
-       protocolVersion !== binding.protocol.protocolVersion
-     ) {
--      return { _tag: "Rejected", status: 400 }
-+      return headerMismatch(
-+        `MCP-Protocol-Version header '${protocolVersion}' does not match protocol version '${binding.protocol.protocolVersion}' negotiated for this session`
-+      )
-     }
-     return { _tag: "Accepted", binding, protocol: binding?.protocol }
-   }
-@@ -385,6 +446,7 @@ export const make = Effect.fnUntraced(function*(
+@@ -384,6 +448,7 @@ export const make = Effect.fnUntraced(function*(
        return { protocol, profile, requestContext }
      }),
      resolveRequest: (clientId, headers) => stateful?.resolve(clientId, headers),
@@ -2271,24 +2183,16 @@ index b388d17..a1d2665 100644
      admitHttp: (headers, parsed) => {
        const reject = (status: number, error?: unknown, id: string | number | null = null): HttpAdmission => ({
          _tag: "Rejected",
-@@ -395,11 +457,13 @@ export const make = Effect.fnUntraced(function*(
-       if (Result.isFailure(parsed)) {
-         const version = headers[MCP_PROTOCOL_VERSION_HEADER]
-         if (version !== undefined && !registry.protocols.some((protocol) => protocol.protocolVersion === version)) {
--          return reject(400)
-+          return reject(400, unsupportedProtocolVersion(version))
-         }
+@@ -399,7 +464,7 @@ export const make = Effect.fnUntraced(function*(
          const admission = selectHttpProtocol(headers, undefined)
--        return admission._tag === "Rejected" && admission.error === undefined
--          ? reject(admission.status)
-+        // Session and session-version failures do not depend on the body; they precede the parse error.
-+        return admission._tag === "Rejected" &&
-+            (admission.status === 404 || admission.error.code === PublicMcpSchema.HEADER_MISMATCH_ERROR_CODE)
-+          ? reject(admission.status, admission.error)
+         // Session and protocol-header errors take precedence over parse errors.
+         return admission._tag === "Rejected" &&
+-            (admission.error === undefined || admission.error.code === PublicMcpSchema.HEADER_MISMATCH_ERROR_CODE)
++            (admission.status === 404 || admission.error?.code === PublicMcpSchema.HEADER_MISMATCH_ERROR_CODE)
+           ? reject(admission.status, admission.error)
            : reject(200, new PublicMcpSchema.ParseError({ message: "Parse error" }))
        }
-       const input = parsed.success
-@@ -408,13 +472,20 @@ export const make = Effect.fnUntraced(function*(
+@@ -409,13 +474,20 @@ export const make = Effect.fnUntraced(function*(
            return reject(400, new PublicMcpSchema.InvalidRequest({ message: "Invalid Request" }))
          }
          const admission = selectHttpProtocol(headers, input)
@@ -2311,34 +2215,28 @@ index b388d17..a1d2665 100644
          }
          return {
            _tag: "Accepted",
-@@ -444,8 +515,24 @@ export const make = Effect.fnUntraced(function*(
-       }
-       const isInitialize = Predicate.hasProperty(input, "method") && input.method === "initialize"
-       const hasSession = headers[MCP_SESSION_ID_HEADER] !== undefined
--      if (isInitialize ? hasSession : !hasSession && admission.protocol?.runtime._tag !== "Stateless") {
--        return reject(400)
-+      if (isInitialize && hasSession) {
-+        return reject(
-+          400,
+@@ -448,7 +520,9 @@ export const make = Effect.fnUntraced(function*(
+       if (isInitialize && hasSession) {
+         return reject(
+           400,
+-          new PublicMcpSchema.InvalidRequest({ message: "initialize must not include an MCP-Session-Id header" }),
 +          new PublicMcpSchema.InvalidRequest({
 +            message: "initialize starts a new session; send it without an Mcp-Session-Id header"
 +          }),
-+          id
-+        )
-+      }
-+      if (!isInitialize && !hasSession && admission.protocol?.runtime._tag !== "Stateless") {
-+        return reject(
-+          400,
-+          stateful === undefined ? undefined : new PublicMcpSchema.InvalidRequest({
+           id
+         )
+       }
+@@ -456,7 +530,8 @@ export const make = Effect.fnUntraced(function*(
+         return reject(
+           400,
+           stateful === undefined ? undefined : new PublicMcpSchema.InvalidRequest({
+-            message: "MCP-Session-Id header is required; send initialize to start a session"
 +            message:
 +              "Mcp-Session-Id header is required; send initialize first and include the Mcp-Session-Id it returns on later requests"
-+          }),
-+          id
-+        )
-       }
-       if (
-         isRequest && admission.protocol?.runtime._tag === "Stateless" &&
-@@ -468,6 +555,7 @@ export const make = Effect.fnUntraced(function*(
+           }),
+           id
+         )
+@@ -509,6 +584,7 @@ export const make = Effect.fnUntraced(function*(
      canDeliver: (clientId, headers, notification, fallback) =>
        stateful?.canDeliver(clientId, headers, notification, fallback) ?? true,
      installHandlers: Effect.fnUntraced(function*(options) {
@@ -2346,7 +2244,7 @@ index b388d17..a1d2665 100644
        const contextMap = new Map<string, unknown>()
        const installationContext: McpProtocol.HandlerInstallationContext = {
          subscribeServerNotifications: options.subscribeServerNotifications,
-@@ -521,9 +609,13 @@ export const make = Effect.fnUntraced(function*(
+@@ -563,9 +639,13 @@ export const make = Effect.fnUntraced(function*(
                    capabilities.resources?.subscribe === true,
                  logLevel: options.defaultLogLevel
                }
@@ -2359,9 +2257,9 @@ index b388d17..a1d2665 100644
 +                // still knows it.
 +                if (sessions !== undefined) saved = sessions.save(sessionId, storedSession(session, undefined))
                  appendPreResponseHandlerUnsafe(
-                   httpRequest,
+                   fiber.context,
                    (_request, response) =>
-@@ -535,7 +627,7 @@ export const make = Effect.fnUntraced(function*(
+@@ -577,7 +657,7 @@ export const make = Effect.fnUntraced(function*(
                } else {
                  stateful.registerConnection(clientId, registration)
                }
@@ -2370,7 +2268,7 @@ index b388d17..a1d2665 100644
                  capabilities,
                  instructions: options.serverInfo.instructions,
                  serverInfo: PublicMcpSchema.Implementation.make({
-@@ -548,7 +640,14 @@ export const make = Effect.fnUntraced(function*(
+@@ -590,7 +670,14 @@ export const make = Effect.fnUntraced(function*(
                })
              })
            }),
@@ -2386,7 +2284,7 @@ index b388d17..a1d2665 100644
            subscribe: stateful.subscribe,
            unsubscribe: stateful.unsubscribe,
            clientNotification: Effect.fnUntraced(function*(notification, clientId) {
-@@ -568,5 +667,6 @@ export const make = Effect.fnUntraced(function*(
+@@ -610,5 +697,6 @@ export const make = Effect.fnUntraced(function*(
   * @internal
   */
  export const layer = (
@@ -2396,18 +2294,18 @@ index b388d17..a1d2665 100644
 +  sessions?: McpStatefulRuntime.SessionStore | undefined
 +): Layer.Layer<ServerRuntime, Cause.IllegalArgumentError> => Layer.effect(ServerRuntime)(make(protocols, sessions))
 diff --git a/src/ai/internal/mcpSchema/v2026_07_28.ts b/src/ai/internal/mcpSchema/v2026_07_28.ts
-index b38c929..d395e31 100644
+index da64197..7765219 100644
 --- a/src/ai/internal/mcpSchema/v2026_07_28.ts
 +++ b/src/ai/internal/mcpSchema/v2026_07_28.ts
-@@ -73,6 +73,7 @@ export const ServerCapabilities = Schema.StructWithRest(
+@@ -75,6 +75,7 @@ export const ServerCapabilities = Schema.StructWithRest(
        listChanged: optional(Schema.Boolean)
      })),
      tools: optional(Schema.Struct({ listChanged: optional(Schema.Boolean) })),
 +    events: optional(Schema.Struct({ listChanged: optional(Schema.Boolean) })),
-     extensions: optional(Schema.Record(Schema.String, Schema.JsonObject))
+     extensions: optional(Schema.Record(Schema.String, UnknownObject))
    }),
-   [Schema.JsonObject]
-@@ -810,6 +811,101 @@ export class SubscriptionsAcknowledgedNotification extends Rpc.make(
+   [UnknownObject]
+@@ -812,6 +813,101 @@ export class SubscriptionsAcknowledgedNotification extends Rpc.make(
    { payload: { ...NotificationParams.fields, notifications: SubscriptionFilter } }
  ) {}
  
@@ -2509,7 +2407,7 @@ index b38c929..d395e31 100644
  /**
   * @internal
   */
-@@ -823,7 +919,10 @@ export class ClientRequestRpcs extends RpcGroup.make(
+@@ -825,7 +921,10 @@ export class ClientRequestRpcs extends RpcGroup.make(
    ReadResource,
    SubscriptionsListen,
    CallTool,
@@ -2522,7 +2420,7 @@ index b38c929..d395e31 100644
  
  /**
 diff --git a/src/ai/internal/mcpStatefulRuntime.ts b/src/ai/internal/mcpStatefulRuntime.ts
-index 19c41ab..ae397cd 100644
+index bcede31..9ae69c0 100644
 --- a/src/ai/internal/mcpStatefulRuntime.ts
 +++ b/src/ai/internal/mcpStatefulRuntime.ts
 @@ -6,6 +6,7 @@
@@ -2573,7 +2471,7 @@ index 19c41ab..ae397cd 100644
  }
  
  /**
-@@ -83,7 +117,9 @@ const makeSession = (registration: Registration): Session => ({
+@@ -84,7 +118,9 @@ const makeSession = (registration: Registration): Session => ({
    negotiatedProfile: registration.negotiatedProfile,
    protocol: registration.protocol,
    resourceSubscriptions: registration.supportsResourceSubscriptions ? new Set() : undefined,
@@ -2584,21 +2482,3 @@ index 19c41ab..ae397cd 100644
  })
  
  /**
-diff --git a/src/rpc/RpcServer.ts b/src/rpc/RpcServer.ts
-index a6d06f7..af783b8 100644
---- a/src/rpc/RpcServer.ts
-+++ b/src/rpc/RpcServer.ts
-@@ -1181,7 +1181,12 @@ export const makeProtocolWithHttpEffect: (
-       })
-     }
- 
--    const initialChunk = yield* Queue.takeAll(queue) as any as Effect.Effect<NonEmptyReadonlyArray<Uint8Array>>
-+    // A queue that ends without messages gives an empty body, as a buffered response without
-+    // messages does, rather than a `Done` failure. The caller decides whether that is correct.
-+    const initialChunk: ReadonlyArray<Uint8Array> = yield* Effect.orElseSucceed(
-+      Queue.takeAll(queue as Queue.Dequeue<Uint8Array, Cause.Done>),
-+      () => []
-+    )
-     if (queue.state._tag === "Done") {
-       return HttpServerResponse.uint8Array(mergeUint8Arrays(initialChunk), {
-         contentType: serialization.contentType

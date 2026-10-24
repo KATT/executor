@@ -1,5 +1,5 @@
 /** Scoped Vite adapter shared by browser and desktop development hosts. */
-import { createServer as createHttpServer } from "node:http";
+import { createServer as createHttpServer, IncomingMessage, ServerResponse } from "node:http";
 import * as NodeHttpServerRequest from "@effect/platform-node/NodeHttpServerRequest";
 import {
   dashboardDocument,
@@ -83,6 +83,9 @@ export const developmentWeb = (settings: ServerConfig, options: DevelopmentWebOp
       const request = yield* HttpServerRequest.HttpServerRequest;
       const incoming = NodeHttpServerRequest.toIncomingMessage(request);
       const response = NodeHttpServerRequest.toServerResponse(request);
+      // Vite's dev middleware speaks HTTP/1. HTTP/2 requests use a different message pair.
+      if (!(incoming instanceof IncomingMessage) || !(response instanceof ServerResponse))
+        return HttpServerResponse.empty({ status: 500 });
       return yield* Effect.callback<HttpServerResponse.HttpServerResponse>((resume) => {
         const cleanup = () => {
           response.off("finish", done);

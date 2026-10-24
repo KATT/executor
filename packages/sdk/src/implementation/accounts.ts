@@ -101,7 +101,7 @@ export const makeAccounts = (
       );
       const identity = {
         id: AccountId.make(
-          `acc_${yield* crypto.randomUUIDv4.pipe(Effect.mapError(() => new StorageError()))}`,
+          `acc_${yield* crypto.randomUUIDv4().pipe(Effect.mapError(() => new StorageError()))}`,
         ),
         owner: input.owner,
         provider: provider.id,

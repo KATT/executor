@@ -1,6 +1,6 @@
 # MCP events in the Effect MCP server
 
-`effect@4.0.1.patch` also adds the draft MCP events extension's webhook methods to
+`effect@4.0.6.patch` also adds the draft MCP events extension's webhook methods to
 the `2026-07-28` adapter, in source and distributed JavaScript:
 
 - `McpSchema` gains the public event schemas (`EventDefinition`,
