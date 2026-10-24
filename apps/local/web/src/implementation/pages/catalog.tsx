@@ -1,6 +1,6 @@
 import { Failure } from "../components/common.tsx";
 import { dashboardAtoms } from "../../contracts/dashboard-bindings.ts";
-import { Link } from "@tanstack/react-router";
+import { Link, useLoaderData } from "@tanstack/react-router";
 import { CatalogPage as Catalog } from "@executor-js/ui/dashboard/catalog";
 import { Button } from "@executor-js/ui/components/button";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -8,13 +8,14 @@ import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
 
 /** Discovery and installation use the existing local app and account setup routes; Open leads there. */
 export function CatalogPage() {
+  const { overview } = useLoaderData({ from: "/_dashboard/_inventory" });
   return (
     <Catalog
       query={dashboardAtoms.catalog}
       Failure={Failure}
       mutation={dashboardAtoms.install}
       InstallFailure={Failure}
-      inventory={dashboardAtoms.inventory}
+      inventory={{ source: dashboardAtoms.inventory, handle: overview }}
       open={(app) => (
         <Link
           to={Object.keys(app.requirements.accounts).length ? "/apps/$appId/setup" : "/apps/$appId"}

@@ -1,22 +1,33 @@
+import { Loader } from "raf-effect-atom";
+import type { OrganizationReference } from "@executor-js/hosted-server/organization";
 import { HostedFailure, useDashboardAtoms } from "../components/dashboard-bindings.tsx";
 import { Link } from "@tanstack/react-router";
 import { Button } from "@executor-js/ui/components/button";
 import { CatalogPage as Catalog } from "@executor-js/ui/dashboard/catalog";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
+import { inventoryAtom } from "../../contracts/organization.ts";
 import { useOrganizationRoute } from "../components/organization.tsx";
 
+/** Start the installed-app inventory the catalog matches against. The catalog itself starts in the browser. */
+export function loadAddApp(atoms: Loader.Loader, organization: OrganizationReference) {
+  return { inventory: atoms.prefetch(inventoryAtom(organization)) };
+}
+
+export type AddAppReads = ReturnType<typeof loadAddApp>;
+
 /** Catalog apps install into the same organization-owned app records. */
-export function AddAppPage() {
+export function AddAppPage({ reads }: { readonly reads: AddAppReads | undefined }) {
   const atoms = useDashboardAtoms();
   const { slug: organizationSlug } = useOrganizationRoute();
+  if (reads === undefined) return null;
   return (
     <Catalog
       query={atoms.catalog}
       Failure={HostedFailure}
       mutation={atoms.install}
       InstallFailure={HostedFailure}
-      inventory={atoms.inventory}
+      inventory={{ source: atoms.inventory, handle: reads.inventory }}
       open={(app) => (
         <Link
           to="/org/$organizationSlug/apps/$appId"

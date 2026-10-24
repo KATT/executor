@@ -1,5 +1,5 @@
 import { AsyncResult, AtomRegistry } from "effect/reactivity";
-import { RegistryContext, useAtomRefresh, useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtomRefresh } from "@effect/atom-react";
 import { useAtomResult } from "raf-effect-atom";
 import { Component, Suspense, useContext, useState, type ReactNode } from "react";
 import { Cause, Effect, Exit, Option, Predicate } from "effect";
@@ -12,9 +12,9 @@ import type {
   MutationProps,
   InstallApp,
   Inventory,
-  Query,
 } from "../../contracts/dashboard.ts";
-import { useDashboard } from "./context.tsx";
+import type { StartedRead } from "../../contracts/started-read.ts";
+import { useDashboard, useStartedQuery } from "./context.tsx";
 import { AfterMount, Empty, LoadingRows, ProviderIcon, SearchInput } from "./common.tsx";
 import { Button } from "../components/button.tsx";
 import {
@@ -76,8 +76,8 @@ export function CatalogPage<E, IE>(
     readonly InstallFailure: MutationProps<InstallApp, DeployedApp, IE>["Failure"];
     readonly back: ReactNode;
     readonly action?: ReactNode;
-    /** The apps already installed; a failed read just leaves every row on Add. */
-    readonly inventory: Query<Inventory, unknown>;
+    /** The apps already installed. The route loader started this read. A failed read leaves every row on Add. */
+    readonly inventory: StartedRead<Inventory, unknown>;
     /** A link to the installed app, rendered inside the row's Open button. */
     readonly open: (app: App) => ReactNode;
   },
@@ -165,13 +165,14 @@ function CatalogLoaded<E, IE>({
   readonly InstallFailure: MutationProps<InstallApp, DeployedApp, IE>["Failure"];
   readonly back: ReactNode;
   readonly action?: ReactNode;
-  readonly inventory: Query<Inventory, unknown>;
+  readonly inventory: StartedRead<Inventory, unknown>;
   readonly open: (app: App) => ReactNode;
 }) {
   const dashboard = useDashboard();
   const result = useAtomResult(query, dashboard.catalogHandle);
+  const installed = useStartedQuery(inventory);
   const installedByPackage = installedCatalogApps(
-    Option.getOrUndefined(AsyncResult.value(useAtomValue(inventory)))?.apps,
+    Option.getOrUndefined(AsyncResult.value(installed.result))?.apps,
   );
   const install = useCatalogInstall(mutation);
   const [adding, setAdding] = useState<ReadonlySet<string>>(new Set());
