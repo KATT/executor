@@ -1,4 +1,4 @@
-import { browserOnly, hydrated } from "@executor-js/ui/contracts/http";
+import { hydrated } from "@executor-js/ui/contracts/http";
 import { pollingQuery, whileLoaded } from "@executor-js/ui/contracts/polling";
 import { revalidated } from "@executor-js/ui/contracts/refresh";
 import { observeBrowserTransport, observeBrowserResponse } from "@executor-js/telemetry/browser";
@@ -61,10 +61,8 @@ export const checkoutAtom = CloudClient.mutation("billing", "checkout");
 export const portalAtom = CloudClient.mutation("billing", "portal");
 /**
  * The member limit the server checks invitations against; only owners and admins may read it.
- * It asks the billing provider, so the server renders settings without it and the browser loads it.
+ * It asks the billing provider. The organization loader starts it in the browser for those roles.
  */
 export const memberLimitAtom = Atom.family((organization: OrganizationReference) =>
-  browserOnly(CloudClient.query("billing", "memberLimit", { params: { organization } })).pipe(
-    revalidated,
-  ),
+  CloudClient.query("billing", "memberLimit", { params: { organization } }).pipe(revalidated),
 );

@@ -1,6 +1,7 @@
 import { AsyncResult, AtomRegistry } from "effect/reactivity";
 import { RegistryContext, useAtomRefresh, useAtomValue } from "@effect/atom-react";
-import { useContext, useState, type ReactNode } from "react";
+import { useAtomResult } from "raf-effect-atom";
+import { Suspense, useContext, useState, type ReactNode } from "react";
 import { Cause, Effect, Exit, Option, Predicate } from "effect";
 import type { App, DeployedApp } from "@executor-js/sdk";
 import type { CatalogEntry } from "@executor-js/catalog/contracts";
@@ -11,6 +12,7 @@ import type {
   Inventory,
   Query,
 } from "../../contracts/dashboard.ts";
+import { useDashboard } from "./context.tsx";
 import { Empty, LoadingRows, ProviderIcon, SearchInput } from "./common.tsx";
 import { Button } from "../components/button.tsx";
 import {
@@ -65,7 +67,49 @@ export function useCatalogInstall<IE>(
  * their copy origin, so the most recent copy of that package is the one Open leads to. The user
  * then connects an account through the app's own providers.
  */
-export function CatalogPage<E, IE>({
+export function CatalogPage<E, IE>(
+  props: QueryProps<readonly CatalogEntry[], E> & {
+    /** The install command for one catalog entry; each row has its own. */
+    readonly mutation: (entry: string) => MutationProps<InstallApp, DeployedApp, IE>["mutation"];
+    readonly InstallFailure: MutationProps<InstallApp, DeployedApp, IE>["Failure"];
+    readonly back: ReactNode;
+    readonly action?: ReactNode;
+    /** The apps already installed; a failed read just leaves every row on Add. */
+    readonly inventory: Query<Inventory, unknown>;
+    /** A link to the installed app, rendered inside the row's Open button. */
+    readonly open: (app: App) => ReactNode;
+  },
+) {
+  return (
+    <Suspense fallback={<CatalogPending back={props.back} action={props.action} />}>
+      <CatalogLoaded {...props} />
+    </Suspense>
+  );
+}
+
+function CatalogPending({
+  back,
+  action,
+}: {
+  readonly back: ReactNode;
+  readonly action?: ReactNode;
+}) {
+  return (
+    <div className="page w-full shrink-0 max-w-315 [padding:24px_24px_48px] my-0 mx-auto max-[1000px]:[padding:20px_20px_40px] max-[740px]:[padding:18px_max(16px,_env(safe-area-inset-right))_max(32px,_env(safe-area-inset-bottom))_max(16px,_env(safe-area-inset-left))]">
+      {back}
+      <div className="page-heading gap-4 flex justify-between items-center min-h-12 mb-4.5">
+        <div>
+          <h1 className="text-[22px] font-semibold tracking-[-0.035em] leading-[1.35]">Add app</h1>
+          <p className="text-muted-foreground text-[13px] mt-1.25">Find a service to connect.</p>
+        </div>
+        {action}
+      </div>
+      <LoadingRows />
+    </div>
+  );
+}
+
+function CatalogLoaded<E, IE>({
   query,
   Failure,
   mutation,
@@ -75,17 +119,15 @@ export function CatalogPage<E, IE>({
   inventory,
   open,
 }: QueryProps<readonly CatalogEntry[], E> & {
-  /** The install command for one catalog entry; each row has its own. */
   readonly mutation: (entry: string) => MutationProps<InstallApp, DeployedApp, IE>["mutation"];
   readonly InstallFailure: MutationProps<InstallApp, DeployedApp, IE>["Failure"];
   readonly back: ReactNode;
   readonly action?: ReactNode;
-  /** The apps already installed; a failed read just leaves every row on Add. */
   readonly inventory: Query<Inventory, unknown>;
-  /** A link to the installed app, rendered inside the row's Open button. */
   readonly open: (app: App) => ReactNode;
 }) {
-  const result = useAtomValue(query);
+  const dashboard = useDashboard();
+  const result = useAtomResult(query, dashboard.catalogHandle);
   const installedByPackage = installedCatalogApps(
     Option.getOrUndefined(AsyncResult.value(useAtomValue(inventory)))?.apps,
   );
@@ -158,9 +200,7 @@ export function CatalogPage<E, IE>({
       </div>
       {AsyncResult.isFailure(result) && <Failure cause={result.cause} retry={retry} />}
       {failure && conflict === undefined && <InstallFailure cause={failure} />}
-      {!entries.length && AsyncResult.isInitial(result) ? (
-        <LoadingRows />
-      ) : !entries.length && AsyncResult.isFailure(result) ? null : !entries.length ? (
+      {!entries.length && AsyncResult.isFailure(result) ? null : !entries.length ? (
         <Empty
           title={search ? "No matching apps" : "No apps available"}
           action={

@@ -1,4 +1,3 @@
-import { useAtomMount } from "@effect/atom-react";
 import { HostedFailure, useDashboardAtoms } from "../components/dashboard-bindings.tsx";
 import { Link } from "@tanstack/react-router";
 import { Button } from "@executor-js/ui/components/button";
@@ -10,7 +9,6 @@ import { useOrganizationRoute } from "../components/organization.tsx";
 /** Catalog apps install into the same organization-owned app records. */
 export function AddAppPage() {
   const atoms = useDashboardAtoms();
-  useAtomMount(atoms.catalog);
   const { slug: organizationSlug } = useOrganizationRoute();
   return (
     <Catalog

@@ -1,6 +1,5 @@
-import { Suspense } from "react";
-import { useAtomValue } from "@effect/atom-react";
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { Suspense, useEffect, useState } from "react";
+import { Link, createFileRoute, useLoaderData } from "@tanstack/react-router";
 import { accessAtom } from "@executor-js/hosted-web/contracts/organization";
 import { startAfterAccess } from "@executor-js/hosted-web/contracts/guarded-read";
 import {
@@ -13,8 +12,8 @@ import type { OrganizationReference } from "@executor-js/hosted-server/organizat
 import { useOrganizationRoute } from "@executor-js/hosted-web/organization";
 import { Button } from "@executor-js/ui/components/button";
 import { Option } from "effect";
-import { AsyncResult, Atom } from "effect/reactivity";
-import { Loader } from "raf-effect-atom";
+import { AsyncResult } from "effect/reactivity";
+import { Loader, useAtomResult, type Handle } from "raf-effect-atom";
 import { DeleteOrganization } from "../components/delete-organization.tsx";
 import { SsoSettings, type SsoReads } from "../components/sso-settings.tsx";
 import { BillingSettings } from "../components/billing-settings.tsx";
@@ -26,7 +25,11 @@ import { ssoConnectionsAtom } from "../../contracts/sso.ts";
 async function loadCloudOrganization(
   atoms: Loader.Loader,
   organization: OrganizationReference,
-): Promise<(MembersReads & SsoReads) | undefined> {
+): Promise<
+  | (MembersReads &
+      SsoReads & { readonly memberLimit?: Handle<ReturnType<typeof memberLimitAtom>> })
+  | undefined
+> {
   const members = await loadMembers(atoms, organization);
   if (members === undefined) return undefined;
   const access = Loader.result(await atoms.ensure(accessAtom(organization)));
@@ -37,57 +40,75 @@ async function loadCloudOrganization(
   return {
     ...members,
     billing,
+    memberLimit: atoms.prefetchInBrowser(memberLimitAtom(organization)),
     ...(enterprise
       ? { connections: atoms.prefetch(ssoConnectionsAtom(access.value.organization)) }
       : {}),
   };
 }
 
-/** Members cannot read billing, and cannot invite, so they never ask for the limit. */
-const noMemberLimit = Atom.make(AsyncResult.initial<{ readonly limit: number | null }>());
-
 /** Owners and admins see the plan's member limit and an upgrade prompt when it is reached. */
-function useMemberLimit(): MemberLimit | undefined {
+function MemberLimitRead({
+  handle,
+  onChange,
+}: {
+  readonly handle: Handle<ReturnType<typeof memberLimitAtom>>;
+  readonly onChange: (limit: MemberLimit | undefined) => void;
+}) {
   const organization = useOrganizationRoute();
-  const administrator = organization.role === "owner" || organization.role === "admin";
-  const result = useAtomValue(
-    administrator ? memberLimitAtom(organization.organization) : noMemberLimit,
-  );
+  const result = useAtomResult(memberLimitAtom(organization.organization), handle);
   const confirmed = Option.getOrUndefined(AsyncResult.value(result));
-  if (confirmed === undefined) return undefined;
-  return {
-    limit: confirmed.limit,
-    upgrade: (
-      <Button asChild>
-        <Link
-          to="/org/$organizationSlug/billing"
-          params={{ organizationSlug: organization.slug }}
-          search={{ organization: "", plan: "" }}
-        >
-          Upgrade plan
-        </Link>
-      </Button>
-    ),
-  };
+  const slug = organization.slug;
+  const limit = confirmed?.limit;
+  useEffect(() => {
+    onChange(
+      limit === undefined
+        ? undefined
+        : {
+            limit,
+            upgrade: (
+              <Button asChild>
+                <Link
+                  to="/org/$organizationSlug/billing"
+                  params={{ organizationSlug: slug }}
+                  search={{ organization: "", plan: "" }}
+                >
+                  Upgrade plan
+                </Link>
+              </Button>
+            ),
+          },
+    );
+  }, [limit, onChange, slug]);
+  return null;
 }
 
 function CloudOrganizationPage() {
   const reads = Route.useLoaderData();
+  const { v1Import } = useLoaderData({ from: "/org/$organizationSlug" });
+  const [memberLimit, setMemberLimit] = useState<MemberLimit>();
   return (
-    <OrganizationPage
-      emailInvitations
-      memberLimit={useMemberLimit()}
-      reads={reads}
-      footer={<DeleteOrganization />}
-    >
-      <BillingSettings />
-      {/* Only enterprise plans show this card, and its plan check calls the billing provider;
+    <>
+      {reads?.memberLimit !== undefined && (
+        <Suspense fallback={null}>
+          <MemberLimitRead handle={reads.memberLimit} onChange={setMemberLimit} />
+        </Suspense>
+      )}
+      <OrganizationPage
+        emailInvitations
+        memberLimit={memberLimit}
+        reads={reads}
+        footer={<DeleteOrganization />}
+      >
+        <BillingSettings />
+        {/* Only enterprise plans show this card, and its plan check calls the billing provider;
           the rest of the page does not wait for it. */}
-      <Suspense fallback={null}>
-        <SsoSettings reads={reads} />
-      </Suspense>
-      <V1ImportSettings />
-    </OrganizationPage>
+        <Suspense fallback={null}>
+          <SsoSettings reads={reads} />
+        </Suspense>
+        <V1ImportSettings choices={v1Import} />
+      </OrganizationPage>
+    </>
   );
 }
 

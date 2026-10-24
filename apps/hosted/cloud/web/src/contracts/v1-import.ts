@@ -1,4 +1,3 @@
-import { browserOnly } from "@executor-js/ui/contracts/http";
 import { Cause, Effect, Exit } from "effect";
 import { Atom } from "effect/reactivity";
 import type {
@@ -8,14 +7,17 @@ import type {
 } from "../../../src/contracts/v1-import.ts";
 import { CloudClient } from "./billing.ts";
 
-/** The caller's v1 workspaces and v2 organizations; read only in the browser, on the import page. */
-export const v1ImportChoicesAtom = browserOnly(CloudClient.query("v1Import", "choices", {})).pipe(
+/** The caller's v1 workspaces and v2 organizations. Loaders start this in the browser. */
+export const v1ImportChoicesAtom = CloudClient.query("v1Import", "choices", {}).pipe(
   Atom.withLabel("ui.v1Import.choices"),
 );
 
-/** What importing one v1 workspace would do, and each item's last result. */
+/**
+ * What importing one v1 workspace would do, and each item's last result. The workspace id comes
+ * from the choices read, so the preview starts when that result is known.
+ */
 export const v1ImportPreviewAtom = Atom.family((organization: V1OrganizationId) =>
-  browserOnly(CloudClient.query("v1Import", "preview", { params: { organization } })).pipe(
+  CloudClient.query("v1Import", "preview", { params: { organization } }).pipe(
     Atom.withLabel("ui.v1Import.preview"),
   ),
 );

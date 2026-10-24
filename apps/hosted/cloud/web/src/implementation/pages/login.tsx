@@ -1,4 +1,6 @@
 import { PasskeyEnrollment } from "../components/passkey-enrollment.tsx";
+import { passkeyEnrollmentAtom } from "../../contracts/passkey-enrollment.ts";
+import type { Handle } from "raf-effect-atom";
 import { reportBrowserUsage } from "@executor-js/hosted-web/contracts/product-analytics";
 import { AsyncResult } from "effect/reactivity";
 import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
@@ -28,8 +30,10 @@ export function CloudLoginPage(
   props: LoginProps & {
     readonly method?: "sso";
     readonly mode?: "signin" | "signup";
+    readonly enrollment?: Handle<typeof passkeyEnrollmentAtom> | undefined;
   },
 ) {
+  const { enrollment } = props;
   const session = useAtomValue(sessionAtom);
   const refresh = useAtomRefresh(sessionAtom);
   const current = Option.getOrUndefined(AsyncResult.value(session));
@@ -42,7 +46,12 @@ export function CloudLoginPage(
   if (current && (verified || enrollmentUser === current.user.id))
     return (
       <>
-        <PasskeyEnrollment key={current.user.id} userId={current.user.id} canSubmit={verified}>
+        <PasskeyEnrollment
+          key={current.user.id}
+          userId={current.user.id}
+          enrollment={enrollment}
+          canSubmit={verified}
+        >
           <CompleteSignIn redirect={props.redirect} verified={verified} />
         </PasskeyEnrollment>
         {AsyncResult.isFailure(session) && (

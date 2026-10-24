@@ -1,11 +1,8 @@
 import { DashboardProvider } from "@executor-js/ui/dashboard/context";
 import type { AppLinkProps, AccountLinkProps } from "@executor-js/ui/contracts/dashboard";
-import { Link } from "@tanstack/react-router";
+import { Link, useLoaderData } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { dashboardAtoms } from "../contracts/dashboard-bindings.ts";
-import { catalogIconsAtom } from "@executor-js/ui/contracts/icons";
-
-const catalogIcons = catalogIconsAtom(dashboardAtoms.catalog);
+import { catalogAtom } from "../contracts/onboarding.ts";
 
 const AppLink = ({ app, view, tool, version, ...props }: AppLinkProps) => (
   <Link to="/apps/$appId" params={{ appId: app }} search={{ view, tool, version }} {...props} />
@@ -15,8 +12,14 @@ const AccountLink = ({ account, ...props }: AccountLinkProps) => (
 );
 /** Typed navigation and local data are supplied outside the shared UI. */
 export function LocalDashboard({ children }: { readonly children: ReactNode }) {
+  const { catalog } = useLoaderData({ from: "/_dashboard" });
   return (
-    <DashboardProvider catalogIcons={catalogIcons} AppLink={AppLink} AccountLink={AccountLink}>
+    <DashboardProvider
+      catalog={catalogAtom}
+      catalogHandle={catalog}
+      AppLink={AppLink}
+      AccountLink={AccountLink}
+    >
       {children}
     </DashboardProvider>
   );

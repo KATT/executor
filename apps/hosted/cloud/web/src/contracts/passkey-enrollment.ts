@@ -1,6 +1,5 @@
 import { BrowserAtoms } from "@executor-js/hosted-web/contracts/telemetry";
 import { AuthFailed, authRequest } from "@executor-js/hosted-web/contracts/auth";
-import { browserOnly } from "@executor-js/ui/contracts/http";
 import { Effect, Option, Schema } from "effect";
 import { Atom } from "effect/reactivity";
 import { passkeyEnrollmentCookie } from "../../../src/contracts/passkey-enrollment.ts";
@@ -34,32 +33,33 @@ export const documentPasskeyEnrollmentAtom = Atom.family((userId: string) =>
   ),
 );
 
-/** Only the browser that created this account offers enrollment, until dismissed. */
+/**
+ * Only the browser that created this account offers enrollment, until dismissed. The sign-in
+ * loader starts it in the browser: the effect reads `window` and `document`.
+ */
 export const passkeyEnrollmentAtom = Atom.family((userId: string) =>
-  browserOnly(
-    BrowserAtoms.atom(
-      Effect.gen(function* () {
-        const pending = yield* Effect.sync(() => hasPasskeyEnrollment(userId));
-        if (!pending) return false;
-        const supported = yield* Effect.sync(
-          () => window.isSecureContext && typeof window.PublicKeyCredential !== "undefined",
-        );
-        if (!supported) {
-          yield* clearEnrollment(userId);
-          return false;
-        }
-        const keys = yield* authRequest((options) =>
-          cloudAuthClient.passkey.listUserPasskeys({}, options),
-        ).pipe(Effect.withSpan("ui.auth.passkeys"));
-        if (keys === null)
-          return yield* Effect.fail(new AuthFailed({ message: "Unable to check your passkeys." }));
-        if (keys.length > 0) {
-          yield* clearEnrollment(userId);
-          return false;
-        }
-        return true;
-      }),
-    ),
+  BrowserAtoms.atom(
+    Effect.gen(function* () {
+      const pending = yield* Effect.sync(() => hasPasskeyEnrollment(userId));
+      if (!pending) return false;
+      const supported = yield* Effect.sync(
+        () => window.isSecureContext && typeof window.PublicKeyCredential !== "undefined",
+      );
+      if (!supported) {
+        yield* clearEnrollment(userId);
+        return false;
+      }
+      const keys = yield* authRequest((options) =>
+        cloudAuthClient.passkey.listUserPasskeys({}, options),
+      ).pipe(Effect.withSpan("ui.auth.passkeys"));
+      if (keys === null)
+        return yield* Effect.fail(new AuthFailed({ message: "Unable to check your passkeys." }));
+      if (keys.length > 0) {
+        yield* clearEnrollment(userId);
+        return false;
+      }
+      return true;
+    }),
   ),
 );
 

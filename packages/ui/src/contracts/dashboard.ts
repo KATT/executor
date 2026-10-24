@@ -12,8 +12,8 @@ import type {
   ToolRouter,
   ToolSummary,
 } from "@executor-js/sdk";
-import type { CatalogImport } from "@executor-js/catalog/contracts";
-import type { CatalogIcons } from "./icons.ts";
+import type { CatalogEntry, CatalogImport } from "@executor-js/catalog/contracts";
+import type { Handle } from "raf-effect-atom";
 import {
   missingRequirements,
   usedAccounts,
@@ -167,9 +167,13 @@ export interface FailureProps<E> {
   readonly layout?: "inline" | "compact" | undefined;
 }
 /** Only error-independent presentation belongs in context. Queries keep their own error types. */
-export interface DashboardBindings {
-  /** Catalog apps' icons by package and by name; see `catalogIconsAtom`. */
-  readonly catalogIcons: Atom.Atom<CatalogIcons>;
+export interface DashboardBindings<E = unknown> {
+  /**
+   * The catalog query and the handle a layout started in the browser. Icons read it through
+   * `useAtomResult`, so the catalog stays out of the document.
+   */
+  readonly catalog: Query<readonly CatalogEntry[], E>;
+  readonly catalogHandle: Handle<Query<readonly CatalogEntry[], E>>;
   readonly AppLink: ComponentType<AppLinkProps>;
   readonly AccountLink: ComponentType<AccountLinkProps>;
 }

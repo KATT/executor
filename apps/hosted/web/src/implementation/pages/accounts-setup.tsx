@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
-import { useAtomMount, useAtomRefresh, useAtomValue } from "@effect/atom-react";
-import { Loader } from "raf-effect-atom";
-import { useStartedQuery } from "@executor-js/ui/dashboard/context";
+import { useAtomRefresh } from "@effect/atom-react";
+import { Loader, useAtomResult } from "raf-effect-atom";
+import { useDashboard, useStartedQuery } from "@executor-js/ui/dashboard/context";
 import { useLocation } from "@tanstack/react-router";
 import { Exit, Option, type Cause } from "effect";
 import { AsyncResult, type Atom } from "effect/reactivity";
@@ -20,6 +20,7 @@ import { ProviderIcon } from "@executor-js/ui/dashboard/common";
 import { installedCatalogApps, useCatalogInstall } from "@executor-js/ui/dashboard/catalog";
 import { useIncrementalList } from "@executor-js/ui/dashboard/incremental-list";
 import { parseAccountsSetupSearch, setupHandoff } from "../../contracts/navigation.ts";
+import { catalogAtom } from "../../contracts/api.ts";
 import { inventoryAtom } from "../../contracts/organization.ts";
 import type { HostedError } from "../../contracts/errors.ts";
 import { HostedFailure, useDashboardAtoms } from "../components/dashboard-bindings.tsx";
@@ -114,7 +115,7 @@ const searchRank = (item: SetupApp, term: string) => {
  * installs on its first connection and then runs the app's own connection flow. Every row keeps
  * one height and one button width, so connecting never moves the list.
  */
-/** Start the inventory this step matches to the catalog. The catalog stays in the browser. */
+/** Start the inventory this step matches to the catalog. The catalog starts in the browser from the setup layout. */
 export function loadAccountsSetup(atoms: Loader.Loader, organization: OrganizationReference) {
   return { inventory: atoms.prefetch(inventoryAtom(organization)) };
 }
@@ -156,10 +157,9 @@ function AccountsSetup({ reads }: { readonly reads: AccountsSetupReads }) {
   const handoff = setupHandoff(parseAccountsSetupSearch(useLocation().search));
   const sequence = useSetupSequence();
   useSetupViewed("setup_accounts");
-  const atoms = useDashboardAtoms();
-  useAtomMount(atoms.catalog);
-  const catalog = useAtomValue(atoms.catalog);
-  const retryCatalog = useAtomRefresh(atoms.catalog);
+  const dashboard = useDashboard();
+  const catalog = useAtomResult(catalogAtom, dashboard.catalogHandle);
+  const retryCatalog = useAtomRefresh(catalogAtom);
   const inventoryQuery = useStartedQuery({
     source: inventoryAtom(organization),
     handle: reads.inventory,

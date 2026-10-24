@@ -1,10 +1,8 @@
-import { Atom, AsyncResult } from "effect/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { Option } from "effect";
 import { getDomain } from "tldts";
 import type { CatalogEntry, CatalogIcon } from "@executor-js/catalog/contracts";
 import type { AppRequirements } from "@executor-js/sdk";
-import type { Query } from "./dashboard.ts";
-
 /** Use the old product's logo proxy, sending only a registrable domain at double display resolution. */
 export const faviconUrl = (url: string | null | undefined, size: number): string | null => {
   if (!url) return null;
@@ -35,22 +33,23 @@ export const noCatalogIcons: CatalogIcons = {
   byName: new Map(),
 };
 
-export const catalogIconsAtom = <E>(catalogAtom: Query<readonly CatalogEntry[], E>) =>
-  Atom.make((get): CatalogIcons => {
-    const result = get(catalogAtom);
-    const settled = AsyncResult.isSuccess(result) || AsyncResult.isFailure(result);
-    const byPackage = new Map<string, readonly CatalogIcon[]>();
-    const byName = new Map<string, readonly CatalogIcon[] | null>();
-    const catalog = AsyncResult.value(result);
-    if (Option.isSome(catalog))
-      for (const entry of catalog.value) {
-        if (entry.icons.length === 0) continue;
-        byPackage.set(entry.package, entry.icons);
-        const name = entry.name.trim().toLowerCase();
-        byName.set(name, byName.has(name) ? null : entry.icons);
-      }
-    return { settled, byPackage, byName };
-  });
+/** Icons from a catalog read. A failure settles with no icons, so rows fall back to domain logos. */
+export const catalogIconsFrom = <E>(
+  result: AsyncResult.AsyncResult<readonly CatalogEntry[], E>,
+): CatalogIcons => {
+  const settled = AsyncResult.isSuccess(result) || AsyncResult.isFailure(result);
+  const byPackage = new Map<string, readonly CatalogIcon[]>();
+  const byName = new Map<string, readonly CatalogIcon[] | null>();
+  const catalog = AsyncResult.value(result);
+  if (Option.isSome(catalog))
+    for (const entry of catalog.value) {
+      if (entry.icons.length === 0) continue;
+      byPackage.set(entry.package, entry.icons);
+      const name = entry.name.trim().toLowerCase();
+      byName.set(name, byName.has(name) ? null : entry.icons);
+    }
+  return { settled, byPackage, byName };
+};
 
 /** An app's declared icon for each color scheme. Both are the same when it declares one. */
 export interface AppIconSources {

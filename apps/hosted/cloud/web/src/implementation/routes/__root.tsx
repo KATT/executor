@@ -9,7 +9,7 @@ import type { Loader } from "raf-effect-atom";
 import { PageError, PageNotFound } from "@executor-js/hosted-web/route-fallbacks";
 import { AuthBoundary } from "@executor-js/hosted-web/auth";
 import { OrganizationResumeBoundary } from "@executor-js/hosted-web/organization";
-import { TeamSetupBoundary, TeamSetupPending } from "../components/team-setup.tsx";
+import { loadTeamEntry, TeamSetupBoundary, TeamSetupPending } from "../components/team-setup.tsx";
 import { useLocation } from "@tanstack/react-router";
 import { hostedPageTitle } from "@executor-js/hosted-web/contracts/navigation";
 import { DocumentTitleProvider, productTitle } from "@executor-js/ui/hooks/document-title";
@@ -29,6 +29,12 @@ export const Route = createRootRouteWithContext<{
   }),
   shellComponent: DashboardDocument,
   // Sign-in is decided before any HTML; the browser's session check only revalidates.
+  loader: ({ context, location }) =>
+    location.pathname === "/create" ||
+    location.pathname === "/mcp/authorize" ||
+    location.pathname === "/device"
+      ? loadTeamEntry(context.atoms).then((team) => ({ team }))
+      : { team: undefined },
   beforeLoad: async ({ location }) => {
     if (!import.meta.env.SSR) return;
     requireSession(serverDocument(), location.pathname, [

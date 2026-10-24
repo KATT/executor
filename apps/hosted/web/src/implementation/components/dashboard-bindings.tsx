@@ -14,14 +14,13 @@ import type {
 } from "@executor-js/ui/contracts/dashboard";
 import { Alert } from "@executor-js/ui/components/alert";
 import { Button } from "@executor-js/ui/components/button";
+import type { Handle } from "raf-effect-atom";
 import { dashboardAtoms } from "../../contracts/dashboard-bindings.ts";
-import { catalogIconsAtom } from "@executor-js/ui/contracts/icons";
 import { catalogAtom } from "../../contracts/api.ts";
 import { useOrganizationRoute } from "./organization.tsx";
 import { appError } from "../../contracts/apps.ts";
 import type { HostedError } from "../../contracts/errors.ts";
 
-const catalogIcons = catalogIconsAtom(catalogAtom);
 /** Organization-aware atoms stay inside the hosted product. */
 export function useDashboardAtoms() {
   return dashboardAtoms(useOrganizationRoute().organization);
@@ -112,9 +111,20 @@ export function HostedFailure({ cause, retry, retrying, layout }: FailureProps<H
   );
 }
 /** Shared views bind independently of access checks and sidebar metadata. */
-export function HostedDashboard({ children }: { readonly children: ReactNode }) {
+export function HostedDashboard({
+  catalog,
+  children,
+}: {
+  readonly catalog: Handle<typeof catalogAtom>;
+  readonly children: ReactNode;
+}) {
   return (
-    <DashboardProvider catalogIcons={catalogIcons} AppLink={AppLink} AccountLink={AccountLink}>
+    <DashboardProvider
+      catalog={catalogAtom}
+      catalogHandle={catalog}
+      AppLink={AppLink}
+      AccountLink={AccountLink}
+    >
       {children}
     </DashboardProvider>
   );

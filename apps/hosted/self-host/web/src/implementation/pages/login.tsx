@@ -1,5 +1,7 @@
 import { usePageUrl } from "@executor-js/dashboard-start/page";
 import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
+import { Suspense } from "react";
+import { useAtomResult, type Handle } from "raf-effect-atom";
 import { AuthFailed, sessionAtom } from "@executor-js/hosted-web/contracts/auth";
 import {
   ContinueAfterSignIn,
@@ -22,10 +24,30 @@ import { productTitle, useDocumentTitle } from "@executor-js/ui/hooks/document-t
 import { SelfHostLoginPending } from "../components/login-pending.tsx";
 
 /** Password login and first-run setup; only an operator-configured SSO button is shown. */
-export function SelfHostLoginPage({ redirect, error: callbackError }: LoginProps) {
+export function SelfHostLoginPage({
+  redirect,
+  error: callbackError,
+  config,
+}: LoginProps & { readonly config: Handle<typeof configurationAtom> }) {
+  return (
+    <Suspense fallback={<SelfHostLoginPending />}>
+      <SelfHostLoginForm
+        redirect={redirect}
+        config={config}
+        {...(callbackError === undefined ? {} : { error: callbackError })}
+      />
+    </Suspense>
+  );
+}
+
+function SelfHostLoginForm({
+  redirect,
+  error: callbackError,
+  config: configHandle,
+}: LoginProps & { readonly config: Handle<typeof configurationAtom> }) {
   useDocumentTitle(productTitle("Sign in"));
   const page = usePageUrl();
-  const config = useAtomValue(configurationAtom);
+  const config = useAtomResult(configurationAtom, configHandle);
   const session = useAtomValue(sessionAtom);
   const refreshSession = useAtomRefresh(sessionAtom);
   const pending = useAtomValue(selfHostSignInAtom);
@@ -56,11 +78,7 @@ export function SelfHostLoginPage({ redirect, error: callbackError }: LoginProps
         userId={session.value.user.id}
       />
     );
-  if (
-    (session.waiting && !signedOut) ||
-    AsyncResult.isInitial(session) ||
-    AsyncResult.isInitial(config)
-  )
+  if ((session.waiting && !signedOut) || AsyncResult.isInitial(session))
     return <SelfHostLoginPending />;
   if (AsyncResult.isFailure(config))
     return (

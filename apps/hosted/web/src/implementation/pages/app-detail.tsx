@@ -22,6 +22,7 @@ import {
 import { AppSchedules, AppSchedulesLoading } from "@executor-js/ui/dashboard/schedules";
 import { scheduleBindings } from "../../contracts/schedules.ts";
 import { webhookBindings, workflowBindings } from "../../contracts/resources.ts";
+import { appUiLocationAtom } from "../../contracts/app-ui.ts";
 import { sessionAtom } from "../../contracts/auth.ts";
 import { groupsAtom } from "../../contracts/groups.ts";
 import { AppDetailLoading, OverviewCardLoading } from "@executor-js/ui/dashboard/app-loading";
@@ -105,6 +106,7 @@ export async function loadHostedApp(
     readonly view?: AppView | undefined;
     readonly connection?: AccountConnectionId | undefined;
   },
+  slug: string,
 ) {
   const key = { organization, app };
   const record = atoms.prefetch(liveAppAtom(key));
@@ -132,11 +134,27 @@ export async function loadHostedApp(
   const authoring = atoms.prefetch(management.authoring(app));
   const tool = namedTool(search.tool);
   const known = search.version;
-  const activeVersion = async () => {
+  const loadedApp = async () => {
     const loaded = await atoms.ensure(liveAppAtom(key));
     const result = Loader.result(loaded);
-    const active = AsyncResult.isSuccess(result) ? result.value.activeVersion : undefined;
-    return active == null ? undefined : active;
+    return AsyncResult.isSuccess(result) ? result.value : undefined;
+  };
+  const activeVersion = async () => {
+    const current = await loadedApp();
+    return current?.activeVersion == null ? undefined : current.activeVersion;
+  };
+  const openLocation = async () => {
+    const current = await loadedApp();
+    if (current?.activeVersion == null) return undefined;
+    return atoms.prefetchInBrowser(
+      appUiLocationAtom({
+        organization,
+        slug,
+        app: current.id,
+        appSlug: current.slug,
+        version: current.activeVersion,
+      }),
+    );
   };
   const started = (version: VersionId) => ({
     version,
@@ -156,6 +174,7 @@ export async function loadHostedApp(
     shown === "skills" ||
     shown === "workflows";
   const active = needsActive ? await activeVersion() : undefined;
+  const location = await openLocation();
   const browser =
     active === undefined
       ? undefined
@@ -195,6 +214,7 @@ export async function loadHostedApp(
       versions,
       groups,
       connection,
+      location,
       ...workspace,
       authoring,
       live: liveSource(active),
@@ -213,6 +233,7 @@ export async function loadHostedApp(
     versions,
     groups,
     connection,
+    location,
     ...workspace,
     authoring,
     live: liveSource(active),

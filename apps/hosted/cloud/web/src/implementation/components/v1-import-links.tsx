@@ -1,7 +1,7 @@
-import { useAtomValue } from "@effect/atom-react";
-import { useState, type ReactNode } from "react";
-import { Option } from "effect";
+import { useState, Suspense, type ReactNode } from "react";
 import { AsyncResult } from "effect/reactivity";
+import { useAtomResult, type Handle } from "raf-effect-atom";
+import { useDashboard } from "@executor-js/ui/dashboard/context";
 import { Button } from "@executor-js/ui/components/button";
 import {
   Card,
@@ -28,9 +28,9 @@ import { useOrganizationRoute } from "@executor-js/hosted-web/organization";
 import { v1ImportChoicesAtom } from "../../contracts/v1-import.ts";
 import { V1ImportContent, v1ImportDescription, v1ImportTitle } from "./v1-import.tsx";
 
-/** The caller's v1 workspaces, once the browser-only query has loaded. Unreachable reads as none. */
-function useV1ImportChoices() {
-  return Option.getOrUndefined(AsyncResult.value(useAtomValue(v1ImportChoicesAtom)));
+function useV1ImportChoices(choices: Handle<typeof v1ImportChoicesAtom>) {
+  const result = useAtomResult(v1ImportChoicesAtom, choices);
+  return AsyncResult.isSuccess(result) ? result.value : undefined;
 }
 
 type Choices = NonNullable<ReturnType<typeof useV1ImportChoices>>;
@@ -45,8 +45,8 @@ const canImport = (choices: Choices | undefined) =>
     (organization) => organization.eligible && organization.target === null,
   );
 
-export function useCanImportFromV1() {
-  return canImport(useV1ImportChoices());
+export function useCanImportFromV1(choices: Handle<typeof v1ImportChoicesAtom>) {
+  return canImport(useV1ImportChoices(choices));
 }
 
 /**
@@ -57,12 +57,15 @@ function V1ImportDialog({
   trigger,
   open,
   onOpenChange,
+  choices,
 }: {
   readonly trigger: ReactNode;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
+  readonly choices: Handle<typeof v1ImportChoicesAtom>;
 }) {
   const organization = useOrganizationRoute();
+  const catalog = useDashboard().catalogHandle;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
@@ -73,7 +76,7 @@ function V1ImportDialog({
         <DialogDescription className="mt-2 mb-6 leading-relaxed">
           {v1ImportDescription}
         </DialogDescription>
-        {open && <V1ImportContent into={organization.id} />}
+        {open && <V1ImportContent into={organization.id} choices={choices} catalog={catalog} />}
       </DialogContent>
     </Dialog>
   );
@@ -99,13 +102,35 @@ function useNoticeDismissed() {
  * dashboard; before that, a card that points people with a v1 workspace at the import, until
  * they skip it.
  */
-export function V1ImportNotice() {
-  const choices = useV1ImportChoices();
-  if (choices === undefined) return null;
-  return <LoadedNotice choices={choices} />;
+export function V1ImportNotice({
+  choices,
+}: {
+  readonly choices: Handle<typeof v1ImportChoicesAtom>;
+}) {
+  return (
+    <Suspense fallback={null}>
+      <LoadedV1ImportNotice choices={choices} />
+    </Suspense>
+  );
 }
 
-function LoadedNotice({ choices }: { readonly choices: Choices }) {
+function LoadedV1ImportNotice({
+  choices: handle,
+}: {
+  readonly choices: Handle<typeof v1ImportChoicesAtom>;
+}) {
+  const choices = useV1ImportChoices(handle);
+  if (choices === undefined) return null;
+  return <LoadedNotice choices={choices} handle={handle} />;
+}
+
+function LoadedNotice({
+  choices,
+  handle,
+}: {
+  readonly choices: Choices;
+  readonly handle: Handle<typeof v1ImportChoicesAtom>;
+}) {
   const organization = useOrganizationRoute();
   const [dismissed, dismiss] = useNoticeDismissed();
   const [importing, setImporting] = useState(false);
@@ -116,7 +141,9 @@ function LoadedNotice({ choices }: { readonly choices: Choices }) {
   );
   const back = imported.find((choice) => choice.into === organization.id) ?? imported[0];
   if (importing || (back === undefined && canImport(choices) && !dismissed))
-    return <ImportCard open={importing} onOpenChange={setImporting} dismiss={dismiss} />;
+    return (
+      <ImportCard open={importing} onOpenChange={setImporting} dismiss={dismiss} choices={handle} />
+    );
   return back === undefined ? null : <BackToV1 href={back.v1Url} />;
 }
 
@@ -140,14 +167,17 @@ function ImportCard({
   open,
   onOpenChange,
   dismiss,
+  choices,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly dismiss: () => void;
+  readonly choices: Handle<typeof v1ImportChoicesAtom>;
 }) {
   return (
     <div className="relative">
       <V1ImportDialog
+        choices={choices}
         open={open}
         onOpenChange={onOpenChange}
         trigger={
@@ -184,9 +214,25 @@ function ImportCard({
  * People who already have a v2 organization reach the import here, for workspaces not yet
  * imported; others never see it.
  */
-export function V1ImportSettings() {
+export function V1ImportSettings({
+  choices,
+}: {
+  readonly choices: Handle<typeof v1ImportChoicesAtom>;
+}) {
+  return (
+    <Suspense fallback={null}>
+      <V1ImportSettingsCard choices={choices} />
+    </Suspense>
+  );
+}
+
+function V1ImportSettingsCard({
+  choices,
+}: {
+  readonly choices: Handle<typeof v1ImportChoicesAtom>;
+}) {
   const [importing, setImporting] = useState(false);
-  if (!useCanImportFromV1() && !importing) return null;
+  if (!useCanImportFromV1(choices) && !importing) return null;
   return (
     <Card className="gap-0 py-0">
       <CardHeader className="gap-1.5 px-4 pt-4 pb-3">
@@ -200,6 +246,7 @@ export function V1ImportSettings() {
       </CardHeader>
       <CardFooter className="px-4 pb-4">
         <V1ImportDialog
+          choices={choices}
           open={importing}
           onOpenChange={setImporting}
           trigger={<Button variant="outline">Import your data</Button>}

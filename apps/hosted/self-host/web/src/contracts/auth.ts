@@ -2,7 +2,7 @@ import { signInCallback } from "@executor-js/hosted-web/contracts/navigation";
 import { BrowserAtoms } from "@executor-js/hosted-web/contracts/telemetry";
 import { AuthFailed, authRequest, sessionAtom } from "@executor-js/hosted-web/contracts/auth";
 import { createAuthClient } from "better-auth/client";
-import { browserOnly, dashboardAuthClientOptions } from "@executor-js/ui/contracts/http";
+import { dashboardAuthClientOptions, hydratedResult } from "@executor-js/ui/contracts/http";
 import { Effect, Option, Schema } from "effect";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { SignInSettings } from "./document.ts";
@@ -11,18 +11,13 @@ import { invalidate } from "@executor-js/ui/contracts/mutations";
 /** Self-host sign-in methods do not expose the shared organization's native client. */
 const authClient = createAuthClient({ ...dashboardAuthClientOptions });
 
-/**
- * Settings the browser reads itself, when the server did not send them with a sign-in page. The
- * server renders the page's loading state instead of reading them again.
- */
-const liveConfiguration = browserOnly(
-  BrowserAtoms.atom(
-    authRequest((options) => authClient.$fetch<unknown>("/self-host/config", options)).pipe(
-      Effect.flatMap(Schema.decodeUnknownEffect(SignInSettings)),
-      Effect.catchTag("SchemaError", () =>
-        Effect.fail(
-          new AuthFailed({ message: "Unable to load sign-in settings. Reload to try again." }),
-        ),
+/** Settings read when the sign-in document did not include them. */
+const liveConfiguration = BrowserAtoms.atom(
+  authRequest((options) => authClient.$fetch<unknown>("/self-host/config", options)).pipe(
+    Effect.flatMap(Schema.decodeUnknownEffect(SignInSettings)),
+    Effect.catchTag("SchemaError", () =>
+      Effect.fail(
+        new AuthFailed({ message: "Unable to load sign-in settings. Reload to try again." }),
       ),
     ),
   ),
@@ -50,6 +45,12 @@ export const configurationAtom = Atom.readable(
     refresh(entryConfiguration);
     refresh(liveConfiguration);
   },
+).pipe(
+  hydratedResult({
+    key: "self-host:sign-in-settings-view",
+    success: SignInSettings,
+    error: AuthFailed,
+  }),
 );
 
 /** Server rendering starts from the settings it read for this sign-in page. */

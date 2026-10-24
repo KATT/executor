@@ -1,4 +1,4 @@
-import { browserOnly, hydrated } from "@executor-js/ui/contracts/http";
+import { hydrated } from "@executor-js/ui/contracts/http";
 import { observeBrowserTransport, observeBrowserResponse } from "@executor-js/telemetry/browser";
 import { organizationHttpClient } from "./organization-reference.ts";
 /** Browser calls use the same hosted HTTP contract on Cloudflare and Docker. */
@@ -24,11 +24,11 @@ export class HostedClient extends AtomHttpApi.Service<HostedClient>()("HostedCli
 
 /** Catalog metadata for the signed-in dashboard; no credential or installation reads. */
 /**
- * The full catalog is large and only decorates icons and the add-app page, so the browser loads
- * it after the page is interactive instead of the server embedding it in every document.
+ * The full catalog is large and only decorates icons and the add-app page. Routes start it with
+ * `prefetchInBrowser`, so the server renders icon skeletons and the browser loads the catalog.
  */
-export const catalogAtom = browserOnly(
-  HostedClient.query("catalog", "list", { query: {} }).pipe(Atom.setIdleTTL("30 minutes")),
+export const catalogAtom = HostedClient.query("catalog", "list", { query: {} }).pipe(
+  Atom.setIdleTTL("30 minutes"),
 );
 /** Show whether this dashboard can reach its own hosted API. */
 export const healthAtom = HostedClient.query("health", "get", hydrated({}));

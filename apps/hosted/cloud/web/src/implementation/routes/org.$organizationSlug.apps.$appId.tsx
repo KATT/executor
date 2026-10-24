@@ -17,7 +17,7 @@ export const Route = createFileRoute("/org/$organizationSlug/apps/$appId")({
   }),
   loader: ({ context, params, deps }) =>
     startAfterAccess(context.atoms, params.organizationSlug, (organization) =>
-      loadHostedApp(context.atoms, organization, params.appId, deps),
+      loadHostedApp(context.atoms, organization, params.appId, deps, params.organizationSlug),
     ),
   component: AppPage,
 });
@@ -25,6 +25,7 @@ function AppPage() {
   const { appId } = Route.useParams();
   const { view, tool, version, connection, client } = Route.useSearch();
   const navigate = Route.useNavigate();
+  const reads = Route.useLoaderData();
   return (
     <>
       <AppDetailPage
@@ -32,13 +33,13 @@ function AppPage() {
         view={view}
         tool={tool}
         version={version}
-        reads={Route.useLoaderData()}
-        openApp={(app) => <OpenAppAction app={app} />}
+        reads={reads}
+        openApp={(app) => <OpenAppAction app={app} location={reads?.location} />}
       />
       <AccountConnectionDialog
         connectionId={connection}
         client={client}
-        read={Route.useLoaderData()?.connection}
+        read={reads?.connection}
         onClose={() => {
           void navigate({ search: { view, tool, version }, replace: true });
         }}

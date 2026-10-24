@@ -24,11 +24,11 @@ import { Input } from "@executor-js/ui/components/input";
 import { ArrowRight02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 // oxlint-disable-next-line no-restricted-imports -- OrganizationEntryGate renders it only at /, which its navigation leaves; TeamEntry reads atoms, not the location
-import { Link, Navigate, useLocation } from "@tanstack/react-router";
+import { Link, Navigate, useLoaderData, useLocation } from "@tanstack/react-router";
 import { Cause, Exit, Option, Schema } from "effect";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { Suspense, useEffect, useId, useState, type ReactNode } from "react";
-import { useAtomResult, type Handle } from "raf-effect-atom";
+import { Loader, useAtomResult, type Handle } from "raf-effect-atom";
 import { reportBrowserUsage } from "@executor-js/hosted-web/contracts/product-analytics";
 import {
   OnboardingDraft,
@@ -38,11 +38,28 @@ import {
   type TeamDetails,
 } from "../../../../src/contracts/onboarding.ts";
 import { prepareTeamAtom, createTeamAtom, setupSequenceAtom } from "../../contracts/onboarding.ts";
+import { v1ImportChoicesAtom } from "../../contracts/v1-import.ts";
 import { useCanImportFromV1 } from "./v1-import-links.tsx";
+
+/** Start team creation where the form can render: the document seed, or the live prepare read. */
+export async function loadTeamEntry(atoms: Loader.Loader) {
+  const session = await atoms.ensure(sessionAtom);
+  const current = Loader.result(session);
+  if (!AsyncResult.isSuccess(current) || current.value === null) return undefined;
+  const userId = current.value.user.id;
+  return {
+    userId,
+    prepare: atoms.prefetch(prepareTeamAtom(userId)),
+    choices: atoms.prefetchInBrowser(v1ImportChoicesAtom),
+  };
+}
+
+type TeamEntryRead = NonNullable<Awaited<ReturnType<typeof loadTeamEntry>>>;
 
 /** Confirm first-team details at entry; exact invitation and organization links remain intact. */
 export function TeamSetupBoundary({ children }: { readonly children: ReactNode }) {
   const session = Option.getOrUndefined(AsyncResult.value(useAtomValue(sessionAtom)));
+  const { team } = useLoaderData({ from: "__root__" });
   const { pathname } = useLocation();
   // Approving a client, by consent or by a device's code, can create the first team on the way.
   const approval = pathname === "/mcp/authorize" || pathname === "/device";
@@ -52,6 +69,7 @@ export function TeamSetupBoundary({ children }: { readonly children: ReactNode }
       key={session.user.id}
       userId={session.user.id}
       destination={approval ? "mcp" : "entry"}
+      team={team}
     >
       {children}
     </OrganizationEntryGate>
@@ -74,9 +92,11 @@ export function CreateTeamPage() {
   // Keep the supplied membership snapshot available for the confirmed-write handoff.
   useAtomMount(organizationsAtom);
   const session = Option.getOrUndefined(AsyncResult.value(useAtomValue(sessionAtom)));
-  if (session === undefined || session === null) return <HostedEntryLoading />;
+  const { team } = useLoaderData({ from: "__root__" });
+  if (session === undefined || session === null || team === undefined)
+    return <HostedEntryLoading />;
   return (
-    <TeamEntry key={session.user.id} userId={session.user.id} mcp={false}>
+    <TeamEntry key={session.user.id} userId={session.user.id} mcp={false} team={team}>
       <OrganizationEntry />
     </TeamEntry>
   );
@@ -85,10 +105,12 @@ export function CreateTeamPage() {
 function OrganizationEntryGate({
   userId,
   destination,
+  team,
   children,
 }: {
   readonly userId: string;
   readonly destination: "entry" | "mcp";
+  readonly team: TeamEntryRead | undefined;
   readonly children: ReactNode;
 }) {
   const organizations = useAtomValue(organizationsAtom);
@@ -103,10 +125,12 @@ function OrganizationEntryGate({
     .onSuccess((items) =>
       items.length > 0 ? (
         children
-      ) : destination === "mcp" ? (
-        <TeamEntry userId={userId} mcp>
+      ) : destination === "mcp" && team !== undefined ? (
+        <TeamEntry userId={userId} mcp team={team}>
           {children}
         </TeamEntry>
+      ) : destination === "mcp" ? (
+        <TeamSetupPending />
       ) : (
         <Navigate to="/create" replace />
       ),
@@ -117,27 +141,55 @@ function OrganizationEntryGate({
 function TeamEntry({
   userId,
   mcp,
+  team,
   children,
 }: {
   readonly userId: string;
   readonly mcp: boolean;
+  readonly team: TeamEntryRead;
   readonly children: ReactNode;
 }) {
-  const prepared = useAtomValue(prepareTeamAtom(userId));
+  return (
+    <Suspense
+      fallback={
+        <HostedEntryLoading
+          title="Preparing your team"
+          description="Getting your team details ready…"
+          label="Preparing your team"
+        />
+      }
+    >
+      <TeamEntryReady userId={userId} mcp={mcp} team={team}>
+        {children}
+      </TeamEntryReady>
+    </Suspense>
+  );
+}
+
+function TeamEntryReady({
+  userId,
+  mcp,
+  team,
+  children,
+}: {
+  readonly userId: string;
+  readonly mcp: boolean;
+  readonly team: TeamEntryRead;
+  readonly children: ReactNode;
+}) {
+  const prepared = useAtomResult(prepareTeamAtom(userId), team.prepare);
   const created = useAtomValue(createTeamAtom(userId));
   const refresh = useAtomRefresh(prepareTeamAtom(userId));
   const reset = useAtomSet(createTeamAtom(userId));
-  const step = AsyncResult.isInitial(prepared)
-    ? "preparing"
-    : AsyncResult.isFailure(prepared)
-      ? "prepare_failed"
-      : Schema.is(OnboardingInvitation)(prepared.value)
-        ? "invitation"
-        : Schema.is(OnboardingDraft)(prepared.value)
-          ? "team_details"
-          : Schema.is(OnboardingV1Workspace)(prepared.value)
-            ? "v1_workspace"
-            : "ready";
+  const step = AsyncResult.isFailure(prepared)
+    ? "prepare_failed"
+    : Schema.is(OnboardingInvitation)(prepared.value)
+      ? "invitation"
+      : Schema.is(OnboardingDraft)(prepared.value)
+        ? "team_details"
+        : Schema.is(OnboardingV1Workspace)(prepared.value)
+          ? "v1_workspace"
+          : "ready";
   useEffect(() => {
     reportBrowserUsage({ area: "onboarding", action: step, outcome: "viewed" });
   }, [step]);
@@ -146,14 +198,6 @@ function TeamEntry({
     reset(Atom.Reset);
     refresh();
   };
-  if (AsyncResult.isInitial(prepared))
-    return (
-      <HostedEntryLoading
-        title="Preparing your team"
-        description="Getting your team details ready…"
-        label="Preparing your team"
-      />
-    );
   if (AsyncResult.isFailure(prepared))
     return (
       <SetupPage>
@@ -164,7 +208,7 @@ function TeamEntry({
       </SetupPage>
     );
   const entry = AsyncResult.isSuccess(created) ? created.value : prepared.value;
-  if (Schema.is(OnboardingV1Workspace)(entry)) return <V1Workspace />;
+  if (Schema.is(OnboardingV1Workspace)(entry)) return <V1Workspace choices={team.choices} />;
   if (Schema.is(OnboardingInvitation)(entry)) {
     if (mcp)
       return (
@@ -188,8 +232,8 @@ function TeamEntry({
     return <TeamForm userId={userId} suggestion={entry.suggestion} />;
   // The confirmed entry can publish before the mutation settles; both states open the new team's
   // setup. A confirmation that found other memberships instead leaves the choice to the entry.
-  const team = entry.organizations.length === 1 ? entry.organizations[0] : undefined;
-  if (!mcp && team !== undefined && (created.waiting || AsyncResult.isSuccess(created))) {
+  const createdTeam = entry.organizations.length === 1 ? entry.organizations[0] : undefined;
+  if (!mcp && createdTeam !== undefined && (created.waiting || AsyncResult.isSuccess(created))) {
     // A confirmation that carried the team's setup order opens its first step directly.
     const setup = Schema.is(OnboardingTeamCreated)(entry) ? entry.setup : undefined;
     const first = setup === undefined ? undefined : firstSetupStep(setup);
@@ -202,7 +246,7 @@ function TeamEntry({
               ? "/org/$organizationSlug/setup/assistant"
               : "/org/$organizationSlug/setup"
         }
-        params={{ organizationSlug: team.slug }}
+        params={{ organizationSlug: createdTeam.slug }}
         replace
       />
     );
@@ -214,8 +258,7 @@ function TeamEntry({
  * People in an Executor v1 organization keep using v1; v2 creates no team for them. A
  * single-member workspace can be imported instead, so only its member is offered the import.
  */
-function V1Workspace() {
-  const canImport = useCanImportFromV1();
+function V1Workspace({ choices }: { readonly choices: TeamEntryRead["choices"] }) {
   return (
     <HostedEntry
       title="Your workspace is on Executor v1"
@@ -225,13 +268,20 @@ function V1Workspace() {
         <Button asChild>
           <a href="https://executor.sh/login">Sign in to Executor v1</a>
         </Button>
-        {canImport && (
-          <Button asChild variant="outline">
-            <Link to="/v1-import">Import from v1</Link>
-          </Button>
-        )}
+        <Suspense fallback={null}>
+          <V1ImportOffer choices={choices} />
+        </Suspense>
       </div>
     </HostedEntry>
+  );
+}
+
+function V1ImportOffer({ choices }: { readonly choices: TeamEntryRead["choices"] }) {
+  if (!useCanImportFromV1(choices)) return null;
+  return (
+    <Button asChild variant="outline">
+      <Link to="/v1-import">Import from v1</Link>
+    </Button>
   );
 }
 

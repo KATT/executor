@@ -51,6 +51,8 @@ import { Button } from "@executor-js/ui/components/button";
 import { Spinner } from "@executor-js/ui/components/spinner";
 
 import { HostedDashboard } from "./dashboard-bindings.tsx";
+import type { Handle } from "raf-effect-atom";
+import { catalogAtom } from "../../contracts/api.ts";
 import {
   OrganizationForm,
   OrganizationFormError,
@@ -304,9 +306,11 @@ const refused = (access: Atom.Type<ReturnType<typeof accessAtom>>) =>
 /** Start page reads from the URL immediately. Access and organization controls resolve alongside them. */
 export function OrganizationBoundary({
   slug,
+  catalog,
   children,
 }: {
   readonly slug: string;
+  readonly catalog: Handle<typeof catalogAtom>;
   readonly children: ReactNode;
 }) {
   const reference = useOrganizationQueryReference(
@@ -446,7 +450,7 @@ export function OrganizationBoundary({
       }}
     >
       <OrganizationContext value={details}>
-        <HostedDashboard>{children}</HostedDashboard>
+        <HostedDashboard catalog={catalog}>{children}</HostedDashboard>
       </OrganizationContext>
     </OrganizationRouteContext>
   );
