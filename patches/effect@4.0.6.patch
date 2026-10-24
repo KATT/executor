@@ -885,7 +885,7 @@ index 326ea69..60b2cdf 100644
        return yield* Effect.void;
      })
 diff --git a/dist/ai/internal/mcpRuntime.js b/dist/ai/internal/mcpRuntime.js
-index b5cfbc8..4224da0 100644
+index b5cfbc885..9c7ebbbcc 100644
 --- a/dist/ai/internal/mcpRuntime.js
 +++ b/dist/ai/internal/mcpRuntime.js
 @@ -7,6 +7,8 @@ import * as HttpServerResponse from "../../http/HttpServerResponse.js";
@@ -1002,7 +1002,23 @@ index b5cfbc8..4224da0 100644
            message: "Parse error"
          }));
        }
-@@ -321,12 +372,12 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
+@@ -290,8 +341,13 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
+           }));
+         }
+         const admission = selectHttpProtocol(headers, input);
+-        if (admission._tag === "Rejected" || input.some(hasRequestProtocolVersion) || input.some(message => Predicate.hasProperty(message, "method") && message.method === "initialize") || admission.binding?.protocol.runtime.transport.jsonRpc.acceptsBatches !== true) {
+-          return reject(400);
++        if (admission._tag === "Rejected") {
++          return reject(admission.status, admission.error);
++        }
++        if (input.some(hasRequestProtocolVersion) || input.some(message => Predicate.hasProperty(message, "method") && message.method === "initialize") || admission.binding?.protocol.runtime.transport.jsonRpc.acceptsBatches !== true) {
++          return reject(400, new PublicMcpSchema.InvalidRequest({
++            message: "JSON-RPC batches are not accepted here; send each message in its own POST request"
++          }));
+         }
+         return {
+           _tag: "Accepted",
+@@ -321,12 +377,12 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
        const hasSession = headers[MCP_SESSION_ID_HEADER] !== undefined;
        if (isInitialize && hasSession) {
          return reject(400, new PublicMcpSchema.InvalidRequest({
@@ -1017,7 +1033,7 @@ index b5cfbc8..4224da0 100644
          }), id);
        }
        if (isRequest && admission.protocol?.runtime._tag === "Stateless" && !(admission.protocol.handlerRpcs?.requests.has(input.method) ?? admission.protocol.clientRpcs.requests.has(input.method))) {
-@@ -371,6 +422,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
+@@ -371,6 +427,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
      deliveryClientIds: () => stateful?.initializedClientIds() ?? [],
      canDeliver: (clientId, headers, notification, fallback) => stateful?.canDeliver(clientId, headers, notification, fallback) ?? true,
      installHandlers: Effect.fnUntraced(function* (options) {
@@ -1025,7 +1041,7 @@ index b5cfbc8..4224da0 100644
        const contextMap = new Map();
        const installationContext = {
          subscribeServerNotifications: options.subscribeServerNotifications,
-@@ -441,9 +493,13 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
+@@ -441,9 +498,13 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
                  supportsResourceSubscriptions: httpRequest === undefined && capabilities.resources?.subscribe === true,
                  logLevel: options.defaultLogLevel
                };
@@ -1040,7 +1056,7 @@ index b5cfbc8..4224da0 100644
                  appendPreResponseHandlerUnsafe(fiber.context, (_request, response) => Effect.succeed(HttpServerResponse.setHeaders(response, {
                    [MCP_SESSION_ID_HEADER]: sessionId,
                    [MCP_PROTOCOL_VERSION_HEADER]: protocol.protocolVersion
-@@ -451,7 +507,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
+@@ -451,7 +512,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
                } else {
                  stateful.registerConnection(clientId, registration);
                }
@@ -1049,7 +1065,7 @@ index b5cfbc8..4224da0 100644
                  capabilities,
                  instructions: options.serverInfo.instructions,
                  serverInfo: PublicMcpSchema.Implementation.make({
-@@ -464,7 +520,11 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
+@@ -464,7 +525,11 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
                });
              });
            }),
@@ -1062,7 +1078,7 @@ index b5cfbc8..4224da0 100644
            subscribe: stateful.subscribe,
            unsubscribe: stateful.unsubscribe,
            clientNotification: Effect.fnUntraced(function* (notification, clientId) {
-@@ -482,5 +542,5 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
+@@ -482,5 +547,5 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
  /**
   * @internal
   */
@@ -2482,3 +2498,135 @@ index bcede31..9ae69c0 100644
  })
  
  /**
+diff --git a/src/http/HttpMiddleware.ts b/src/http/HttpMiddleware.ts
+index 30c656616..3e619653f 100644
+--- a/src/http/HttpMiddleware.ts
++++ b/src/http/HttpMiddleware.ts
+@@ -190,7 +190,7 @@ export const layerTracerDisabledForUrls = (
+  *
+  * **Details**
+  *
+- * Defaults to the request method unchanged.
++ * Defaults to `http.server` plus the request method, the name Executor's traces record.
+  *
+  * @stability unstable
+  * @category services
+@@ -198,7 +198,7 @@ export const layerTracerDisabledForUrls = (
+  */
+ export const SpanNameGenerator = Context.Reference<(request: HttpServerRequest) => string>(
+   "@effect/platform/HttpMiddleware/SpanNameGenerator",
+-  { defaultValue: () => (request) => request.method }
++  { defaultValue: () => (request) => `http.server ${request.method}` }
+ )
+ 
+ /**
+diff --git a/dist/http/HttpMiddleware.js b/dist/http/HttpMiddleware.js
+index 3d35f6acf..45ccc1ab6 100644
+--- a/dist/http/HttpMiddleware.js
++++ b/dist/http/HttpMiddleware.js
+@@ -144,14 +144,14 @@ export const layerTracerDisabledForUrls = urls => Layer.succeed(TracerDisabledWh
+  *
+  * **Details**
+  *
+- * Defaults to the request method unchanged.
++ * Defaults to `http.server` plus the request method, the name Executor's traces record.
+  *
+  * @stability unstable
+  * @category services
+  * @since 4.0.0
+  */
+ export const SpanNameGenerator = /*#__PURE__*/Context.Reference("@effect/platform/HttpMiddleware/SpanNameGenerator", {
+-  defaultValue: () => request => request.method
++  defaultValue: () => request => `http.server ${request.method}`
+ });
+ /**
+  * Context reference for filtering request and response headers added to server spans.
+diff --git a/src/sql/Statement.ts b/src/sql/Statement.ts
+index 32bf4b8db..747d97561 100644
+--- a/src/sql/Statement.ts
++++ b/src/sql/Statement.ts
+@@ -1311,21 +1311,15 @@ export const spanTarget = (spanAttributes: ReadonlyArray<readonly [string, unkno
+ 
+ /**
+  * Returns the span name for statements run by a client with the given span
+- * attributes, following the OpenTelemetry database span conventions: the
+- * {@link spanTarget}, then `db.system.name`, falling back to `sql.execute`.
++ * attributes. Executor records every statement as `sql.execute`. The database
++ * target stays on the span attributes via {@link spanTarget}.
+  *
+  * @stability unstable
+  * @category tracing
+  * @since 4.0.1
+  */
+-export const spanName = (spanAttributes: ReadonlyArray<readonly [string, unknown]>): string => {
+-  const target = spanTarget(spanAttributes)
+-  if (target !== undefined) {
+-    return target
+-  }
+-  const system = spanAttribute(spanAttributes, "db.system.name")
+-  return isNonEmptyString(system) ? system : "sql.execute"
+-}
++export const spanName = (_spanAttributes: ReadonlyArray<readonly [string, unknown]>): string =>
++  "sql.execute"
+ 
+ // internal
+ 
+diff --git a/dist/sql/Statement.js b/dist/sql/Statement.js
+index 1d082b9bc..adf227fba 100644
+--- a/dist/sql/Statement.js
++++ b/dist/sql/Statement.js
+@@ -691,21 +691,14 @@ export const spanTarget = spanAttributes => {
+ };
+ /**
+  * Returns the span name for statements run by a client with the given span
+- * attributes, following the OpenTelemetry database span conventions: the
+- * {@link spanTarget}, then `db.system.name`, falling back to `sql.execute`.
++ * attributes. Executor records every statement as `sql.execute`. The database
++ * target stays on the span attributes via {@link spanTarget}.
+  *
+  * @stability unstable
+  * @category tracing
+  * @since 4.0.1
+  */
+-export const spanName = spanAttributes => {
+-  const target = spanTarget(spanAttributes);
+-  if (target !== undefined) {
+-    return target;
+-  }
+-  const system = spanAttribute(spanAttributes, "db.system.name");
+-  return isNonEmptyString(system) ? system : "sql.execute";
+-};
++export const spanName = _spanAttributes => "sql.execute";
+ // internal
+ const ATTR_DB_QUERY_TEXT = "db.query.text";
+ const ATTR_DB_CLIENT_CONNECTION_WAIT_TIME = "db.client.connection.wait_time_ms";
+diff --git a/src/observability/OtlpTracer.ts b/src/observability/OtlpTracer.ts
+index 2a6892222..02324c371 100644
+--- a/src/observability/OtlpTracer.ts
++++ b/src/observability/OtlpTracer.ts
+@@ -330,6 +330,9 @@ const makeOtlpSpan = (self: SpanImpl): OtlpSpan => {
+     attributes.push({
+       key: "effect.fiber.interrupted",
+       value: { boolValue: true }
++    }, {
++      key: "status.interrupted",
++      value: { boolValue: true }
+     })
+   } else {
+     const errors = Cause.prettyErrors(status.exit.cause, {
+diff --git a/dist/observability/OtlpTracer.js b/dist/observability/OtlpTracer.js
+index 18a202341..5c7c3b652 100644
+--- a/dist/observability/OtlpTracer.js
++++ b/dist/observability/OtlpTracer.js
+@@ -235,6 +235,11 @@ const makeOtlpSpan = self => {
+       value: {
+         boolValue: true
+       }
++    }, {
++      key: "status.interrupted",
++      value: {
++        boolValue: true
++      }
+     });
+   } else {
+     const errors = Cause.prettyErrors(status.exit.cause, {
