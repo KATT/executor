@@ -84,7 +84,11 @@ type AgentSetupReads = ReturnType<typeof loadAgentSetup>;
  * confirms that the member holds a usable MCP grant for its agent, so its URL alone never claims a
  * connection.
  */
-export function AgentSetupPage({ inventory }: { readonly inventory: AgentSetupReads["inventory"] }) {
+export function AgentSetupPage({
+  inventory,
+}: {
+  readonly inventory: AgentSetupReads["inventory"];
+}) {
   const endpoint = `${useMcpOrigin()}/mcp`;
   // The screen and its saved baseline come from one location. The matched route's search can
   // trail the location by a render, which would pair one entry's URL with another's state.
