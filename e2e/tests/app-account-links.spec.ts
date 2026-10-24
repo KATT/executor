@@ -161,8 +161,15 @@ const linkedFixture = Effect.gen(function* () {
   return { ...fixture, personal, work };
 });
 
-/** The tool runner's read-only line naming the accounts a call runs with. */
-const runningAs = (page: Page) => page.getByText(/^Running as/).textContent();
+/**
+ * The tool runner's read-only line naming the accounts a call runs with. A document that hydrates
+ * beside a hidden server tree has two copies; the visible one is the page.
+ */
+const runningAs = (page: Page) =>
+  page
+    .getByText(/^Running as/)
+    .filter({ visible: true })
+    .textContent();
 
 /** Run the selected tool and return the call's JSON result once the page shows it. */
 const runTool = (page: Page) =>
