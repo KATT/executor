@@ -1,4 +1,6 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useStartedQuery } from "@executor-js/ui/dashboard/context";
+import type { Handle } from "raf-effect-atom";
 /** The last card on cloud organization settings: irreversible, owner-only removal. */
 import { Exit, Option } from "effect";
 import { AsyncResult } from "effect/reactivity";
@@ -35,15 +37,28 @@ import {
 const count = (value: number, noun: string) => `${value} ${noun}${value === 1 ? "" : "s"}`;
 const removalDescription = "Everything this organization owns is deleted with it.";
 
-function RemovalCounts({ organization }: { readonly organization: OrganizationId }) {
-  const preview = useAtomValue(organizationRemovalPreviewAtom(organization));
+function RemovalCounts({
+  organization,
+  handle,
+}: {
+  readonly organization: OrganizationId;
+  readonly handle: Handle<ReturnType<typeof organizationRemovalPreviewAtom>>;
+}) {
+  const preview = useStartedQuery({
+    source: organizationRemovalPreviewAtom(organization),
+    handle,
+  }).result;
   const held = Option.getOrUndefined(AsyncResult.value(preview));
   return held === undefined
     ? removalDescription
     : `${count(held.apps, "app")} and ${count(held.accounts, "account")}, with their saved credentials, are deleted with it.`;
 }
 
-export function DeleteOrganization() {
+export function DeleteOrganization({
+  removalPreview,
+}: {
+  readonly removalPreview?: Handle<ReturnType<typeof organizationRemovalPreviewAtom>> | undefined;
+}) {
   const organization = useOrganization();
   const navigate = useNavigate();
   const remove = useAtomSet(deleteOrganizationAtom(organization.organization), {
@@ -76,8 +91,8 @@ export function DeleteOrganization() {
           <h2>Delete organization</h2>
         </CardTitle>
         <CardDescription>
-          {organization.role === "owner" ? (
-            <RemovalCounts organization={organization.organization} />
+          {organization.role === "owner" && removalPreview !== undefined ? (
+            <RemovalCounts organization={organization.organization} handle={removalPreview} />
           ) : (
             removalDescription
           )}

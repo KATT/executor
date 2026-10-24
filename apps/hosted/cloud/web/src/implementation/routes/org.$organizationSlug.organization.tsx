@@ -19,6 +19,7 @@ import { SsoSettings, type SsoReads } from "../components/sso-settings.tsx";
 import { BillingSettings } from "../components/billing-settings.tsx";
 import { V1ImportSettings } from "../components/v1-import-links.tsx";
 import { billingAtom, memberLimitAtom } from "../../contracts/billing.ts";
+import { organizationRemovalPreviewAtom } from "../../contracts/organization-removal.ts";
 import { ssoConnectionsAtom } from "../../contracts/sso.ts";
 
 /** Members never read billing. Owners and admins do, and enterprise plans also read SSO. */
@@ -27,7 +28,10 @@ async function loadCloudOrganization(
   organization: OrganizationReference,
 ): Promise<
   | (MembersReads &
-      SsoReads & { readonly memberLimit?: Handle<ReturnType<typeof memberLimitAtom>> })
+      SsoReads & {
+        readonly memberLimit?: Handle<ReturnType<typeof memberLimitAtom>>;
+        readonly removalPreview?: Handle<ReturnType<typeof organizationRemovalPreviewAtom>>;
+      })
   | undefined
 > {
   const members = await loadMembers(atoms, organization);
@@ -37,10 +41,16 @@ async function loadCloudOrganization(
   const billing = atoms.prefetch(billingAtom(organization));
   const plan = Loader.result(await atoms.ensure(billingAtom(organization)));
   const enterprise = AsyncResult.isSuccess(plan) && plan.value.enterprise === true;
+  const owner = access.value.role === "owner";
   return {
     ...members,
     billing,
     memberLimit: atoms.prefetchInBrowser(memberLimitAtom(organization)),
+    ...(owner
+      ? {
+          removalPreview: atoms.prefetch(organizationRemovalPreviewAtom(access.value.organization)),
+        }
+      : {}),
     ...(enterprise
       ? { connections: atoms.prefetch(ssoConnectionsAtom(access.value.organization)) }
       : {}),
@@ -98,7 +108,7 @@ function CloudOrganizationPage() {
         emailInvitations
         memberLimit={memberLimit}
         reads={reads}
-        footer={<DeleteOrganization />}
+        footer={<DeleteOrganization removalPreview={reads?.removalPreview} />}
       >
         <BillingSettings />
         {/* Only enterprise plans show this card, and its plan check calls the billing provider;
