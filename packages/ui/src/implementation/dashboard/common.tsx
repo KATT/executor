@@ -103,7 +103,9 @@ interface ProviderIconProps {
 
 export function ProviderIcon(props: ProviderIconProps) {
   const dashboard = useOptionalDashboard();
-  if (dashboard === null) return <ProviderIconView {...props} catalog={noCatalogIcons} />;
+  // A declared icon does not come from the catalog, so a held catalog read must not hide it.
+  if (dashboard === null || props.declared != null)
+    return <ProviderIconView {...props} catalog={noCatalogIcons} />;
   const skeleton = <IconSkeleton large={props.large ?? false} />;
   return (
     <AfterMount fallback={skeleton}>
@@ -194,6 +196,9 @@ export function AppIcon({
   readonly large?: boolean;
 }) {
   const dashboard = useOptionalDashboard();
+  const declared = app === undefined ? null : appIconSources(app.requirements.icons);
+  if (declared !== null)
+    return <AppIconView app={app} name={name} large={large} sources={declared} />;
   if (dashboard === null)
     return (
       <AppIconView app={app} name={name} large={large} sources={appSources(app, noCatalogIcons)} />
@@ -252,6 +257,9 @@ export function AppProviderIcon({
   readonly large?: boolean;
 }) {
   const dashboard = useOptionalDashboard();
+  const declared = appIconSources(app.requirements.icons);
+  if (declared !== null)
+    return <AppProviderIconView app={app} provider={provider} large={large} sources={declared} />;
   if (dashboard === null)
     return (
       <AppProviderIconView
