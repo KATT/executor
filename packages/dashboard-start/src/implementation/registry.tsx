@@ -137,20 +137,26 @@ const applyAtoms = (
   for (const atom of loading) registry.get(atom);
 };
 
-/** Apply the server's values before hydration reaches the components that read them. */
+/**
+ * Apply the server's values before hydration reaches the components that read them. The stream
+ * is drained here, not after paint: a value that settled while the document rendered has to be
+ * in the registry before the browser's first render, or that render would not match the HTML.
+ */
 const hydrateAtoms = (router: AnyRouter, registry: AtomRegistry.AtomRegistry) => {
   const original = router.options.hydrate;
   router.options.hydrate = async (dehydrated: { readonly atoms: DehydratedAtoms }) => {
     await original?.(dehydrated);
     applyAtoms(registry, dehydrated.atoms.initial);
     const reader = dehydrated.atoms.stream.getReader();
-    void (async () => {
+    try {
       for (;;) {
         const { done, value } = await reader.read();
         if (done) return;
         applyAtoms(registry, value);
       }
-    })().catch((error: unknown) => console.error("Dashboard data stream failed", error));
+    } catch (error: unknown) {
+      console.error("Dashboard data stream failed", error);
+    }
   };
 };
 

@@ -1,4 +1,4 @@
-import { usePreload } from "@executor-js/ui/dashboard/context";
+import { suspendIfUnsettled, usePreload } from "@executor-js/ui/dashboard/context";
 import { PageFrame, PageHeader } from "@executor-js/ui/dashboard/page";
 import {
   OrganizationSlug,
@@ -420,6 +420,10 @@ export function OrganizationBoundary({
     location.hash,
     rejectedResume,
   ]);
+  // The document waits for these. A browser navigation keeps the shell and shows its own pending
+  // state while they are still initial.
+  suspendIfUnsettled(registry, accessAtom(reference), access);
+  suspendIfUnsettled(registry, organizationsAtom, organizations);
   const checked = AsyncResult.isFailure(access) ? undefined : snapshot;
   const details =
     organization !== undefined && checked !== undefined

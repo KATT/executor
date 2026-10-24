@@ -154,6 +154,7 @@ function DeviceLookup({ code, reads }: { readonly code: string; readonly reads: 
         />
       );
     })
+    .onInitial(() => <McpConsentLoading />)
     .onWaiting(() => <McpConsentLoading />)
     .onSuccess((view) =>
       reads.client === undefined ? (

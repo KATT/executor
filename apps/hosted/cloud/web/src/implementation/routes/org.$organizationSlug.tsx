@@ -1,6 +1,7 @@
 import { createFileRoute, Outlet, useLocation } from "@tanstack/react-router";
 import { catalogAtom } from "@executor-js/hosted-web/contracts/api";
 import { ensureOrganizationAccess } from "@executor-js/hosted-web/contracts/guarded-read";
+import { organizationsAtom } from "@executor-js/hosted-web/contracts/organization";
 import { v1ImportChoicesAtom } from "../../contracts/v1-import.ts";
 import { DashboardEntryPending } from "@executor-js/hosted-web/entry";
 import { CloudPagePending } from "../components/page-pending.tsx";
@@ -19,6 +20,7 @@ export const Route = createFileRoute("/org/$organizationSlug")({
   loader: async ({ context, params }) => {
     const catalog = context.atoms.prefetchInBrowser(catalogAtom);
     const v1Import = context.atoms.prefetchInBrowser(v1ImportChoicesAtom);
+    context.atoms.prefetch(organizationsAtom);
     await ensureOrganizationAccess(context.atoms, params.organizationSlug);
     return { catalog, v1Import };
   },

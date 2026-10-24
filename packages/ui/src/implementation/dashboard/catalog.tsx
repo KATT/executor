@@ -13,7 +13,7 @@ import type {
   Query,
 } from "../../contracts/dashboard.ts";
 import { useDashboard } from "./context.tsx";
-import { Empty, LoadingRows, ProviderIcon, SearchInput } from "./common.tsx";
+import { AfterMount, Empty, LoadingRows, ProviderIcon, SearchInput } from "./common.tsx";
 import { Button } from "../components/button.tsx";
 import {
   Dialog,
@@ -80,10 +80,13 @@ export function CatalogPage<E, IE>(
     readonly open: (app: App) => ReactNode;
   },
 ) {
+  const pending = <CatalogPending back={props.back} action={props.action} />;
   return (
-    <Suspense fallback={<CatalogPending back={props.back} action={props.action} />}>
-      <CatalogLoaded {...props} />
-    </Suspense>
+    <AfterMount fallback={pending}>
+      <Suspense fallback={pending}>
+        <CatalogLoaded {...props} />
+      </Suspense>
+    </AfterMount>
   );
 }
 

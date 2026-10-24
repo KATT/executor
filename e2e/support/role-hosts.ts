@@ -1,4 +1,5 @@
 /** Cloud role hosts, observed only through HTTP. No product code is imported. */
+import { request as httpRequest, type IncomingMessage } from "node:http";
 import { Effect } from "effect";
 import { driver, type Target } from "./platform.ts";
 
@@ -39,23 +40,90 @@ export const isMcpPath = (pathname: string) =>
   /^\/org\/[^/]+\/mcp$/.test(pathname) ||
   pathname.startsWith("/.well-known/oauth-protected-resource");
 
+const loopbackName = (hostname: string) =>
+  hostname === "localhost" || hostname.endsWith(".localhost");
+
+const headerRecord = (message: IncomingMessage) => {
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(message.headers)) {
+    if (value === undefined) continue;
+    if (Array.isArray(value)) for (const item of value) headers.append(key, item);
+    else headers.append(key, value);
+  }
+  return headers;
+};
+
+/**
+ * Node's resolver does not map `*.localhost` to loopback on every platform, and `fetch` refuses a
+ * Host header. Ask 127.0.0.1 and name the virtual host ourselves.
+ */
+const loopbackRequest = (url: string, init: RequestInit, signal: AbortSignal) =>
+  new Promise<{ readonly status: number; readonly headers: Headers; readonly text: string }>(
+    (resolve, reject) => {
+      const parsed = new URL(url);
+      const headers = new Headers(init.headers);
+      const outgoing: Record<string, string> = { host: parsed.host };
+      headers.forEach((value, key) => {
+        if (key !== "host") outgoing[key] = value;
+      });
+      const req = httpRequest(
+        {
+          hostname: "127.0.0.1",
+          port: parsed.port === "" ? 80 : Number(parsed.port),
+          path: `${parsed.pathname}${parsed.search}`,
+          method: init.method ?? "GET",
+          headers: outgoing,
+          signal,
+        },
+        (message) => {
+          const chunks: Array<Buffer> = [];
+          message.on("data", (chunk: Buffer) => chunks.push(chunk));
+          message.on("end", () =>
+            resolve({
+              status: message.statusCode ?? 0,
+              headers: headerRecord(message),
+              text: Buffer.concat(chunks).toString("utf8"),
+            }),
+          );
+          message.on("error", reject);
+        },
+      );
+      req.on("error", reject);
+      const body = init.body;
+      if (typeof body === "string" || body instanceof Uint8Array) req.write(body);
+      else if (body instanceof URLSearchParams) req.write(body.toString());
+      else if (body != null) {
+        reject(new Error("A loopback request can send text or bytes only"));
+        return;
+      }
+      req.end();
+    },
+  );
+
+const described = (status: number, headers: Headers, text: string) => ({
+  status,
+  location: headers.get("location"),
+  cacheControl: headers.get("cache-control"),
+  contentType: headers.get("content-type"),
+  challenge: headers.get("www-authenticate"),
+  setCookies: headers.getSetCookie(),
+  allowOrigin: headers.get("access-control-allow-origin"),
+  allowMethods: headers.get("access-control-allow-methods"),
+  text,
+});
+
 /** One request without following redirects; only its status, chosen headers and body text. */
 export const rawRequest = (url: string, init: RequestInit = {}) => {
-  const operation = `${init.method ?? "GET"} ${new URL(url).host}${new URL(url).pathname}`;
+  const target = new URL(url);
+  const operation = `${init.method ?? "GET"} ${target.host}${target.pathname}`;
+  if (target.protocol === "http:" && loopbackName(target.hostname))
+    return driver(operation, (signal) => loopbackRequest(url, init, signal)).pipe(
+      Effect.map((response) => described(response.status, response.headers, response.text)),
+    );
   return driver(operation, (signal) => fetch(url, { ...init, redirect: "manual", signal })).pipe(
     Effect.flatMap((response) =>
       driver(`read ${operation}`, () => response.text()).pipe(
-        Effect.map((text) => ({
-          status: response.status,
-          location: response.headers.get("location"),
-          cacheControl: response.headers.get("cache-control"),
-          contentType: response.headers.get("content-type"),
-          challenge: response.headers.get("www-authenticate"),
-          setCookies: response.headers.getSetCookie(),
-          allowOrigin: response.headers.get("access-control-allow-origin"),
-          allowMethods: response.headers.get("access-control-allow-methods"),
-          text,
-        })),
+        Effect.map((text) => described(response.status, response.headers, text)),
       ),
     ),
   );

@@ -1,11 +1,5 @@
 import { Suspense, createContext, useContext, type ReactNode } from "react";
-import {
-  RegistryContext,
-  useAtomMount,
-  useAtomRefresh,
-  useAtomSuspense,
-  useAtomValue,
-} from "@effect/atom-react";
+import { RegistryContext, useAtomMount, useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { Cause, Option, Predicate } from "effect";
 import { Skeleton } from "../components/skeleton.tsx";
 import { AsyncResult, type Atom } from "effect/reactivity";
@@ -59,11 +53,54 @@ const claimedDefect = (cause: Cause.Cause<unknown>) => {
   return claimedBoundaryTags.has(defect._tag) ? defect : undefined;
 };
 
-/** Read a handle the route loader started. */
+const serverWaits = new WeakMap<object, WeakMap<object, Promise<void>>>();
+
+/**
+ * On the server, wait until an initial read settles so the document contains it. The browser
+ * keeps the current result, including the page's own pending state while a refresh is in flight.
+ */
+export function suspendIfUnsettled<A, E>(
+  registry: {
+    readonly subscribe: (
+      atom: Atom.Atom<AsyncResult.AsyncResult<A, E>>,
+      onResult: (result: AsyncResult.AsyncResult<A, E>) => void,
+    ) => () => void;
+  },
+  atom: Atom.Atom<AsyncResult.AsyncResult<A, E>>,
+  result: AsyncResult.AsyncResult<A, E>,
+) {
+  if (typeof window !== "undefined" || !AsyncResult.isInitial(result)) return;
+  let atoms = serverWaits.get(registry);
+  if (atoms === undefined) {
+    atoms = new WeakMap();
+    serverWaits.set(registry, atoms);
+  }
+  let promise = atoms.get(atom);
+  if (promise === undefined) {
+    promise = new Promise<void>((resolve) => {
+      const dispose = registry.subscribe(atom, (next) => {
+        if (AsyncResult.isInitial(next)) return;
+        dispose();
+        resolve();
+      });
+    });
+    atoms.set(atom, promise);
+  }
+  throw promise;
+}
+
+/**
+ * Read a handle the route loader started. The server suspends until a prefetch settles. The
+ * browser renders the current result, so a pending read stays on the page and a refresh keeps
+ * that page mounted. A settled failure whose tag a named boundary claims is thrown so that
+ * boundary can render it. A browser-only read is not waited on: the server has no result for it.
+ */
 export function useStartedQuery<A, E>(read: StartedRead<A, E>) {
   useAtomMount(read.source);
-  const result = useAtomSuspense(read.source, { includeFailure: true, suspendOnWaiting: false });
+  const registry = useContext(RegistryContext);
+  const result = useAtomValue(read.source);
   const refresh = useAtomRefresh(read.source);
+  if (read.handle.inBrowser !== true) suspendIfUnsettled(registry, read.source, result);
   if (AsyncResult.isFailure(result) && !result.waiting) {
     const claimed = claimedDefect(result.cause);
     if (claimed !== undefined) throw claimed;

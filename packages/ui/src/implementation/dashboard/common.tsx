@@ -1,7 +1,7 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { PackageIcon, Search01Icon } from "@hugeicons/core-free-icons";
 import { useOptionalDashboard, useDashboard } from "./context.tsx";
-import { Suspense, useState, type ReactNode } from "react";
+import { Suspense, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useAtomResult } from "raf-effect-atom";
 import {
   appIconSources,
@@ -24,6 +24,25 @@ const useCatalogIcons = (): CatalogIcons => {
   const dashboard = useDashboard();
   return catalogIconsFrom(useAtomResult(dashboard.catalog, dashboard.catalogHandle));
 };
+
+/**
+ * Catalog icons are started in the browser. Hydration draws the skeleton the server rendered;
+ * the catalog read begins on the following paint, when a browser-only handle can resolve.
+ */
+export function AfterMount({
+  fallback,
+  children,
+}: {
+  readonly fallback: ReactNode;
+  readonly children: ReactNode;
+}) {
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
+  return mounted ? children : fallback;
+}
 
 const iconFrameClass = (large: boolean) =>
   cn(
@@ -85,10 +104,13 @@ interface ProviderIconProps {
 export function ProviderIcon(props: ProviderIconProps) {
   const dashboard = useOptionalDashboard();
   if (dashboard === null) return <ProviderIconView {...props} catalog={noCatalogIcons} />;
+  const skeleton = <IconSkeleton large={props.large ?? false} />;
   return (
-    <Suspense fallback={<IconSkeleton large={props.large ?? false} />}>
-      <ProviderIconCatalog {...props} />
-    </Suspense>
+    <AfterMount fallback={skeleton}>
+      <Suspense fallback={skeleton}>
+        <ProviderIconCatalog {...props} />
+      </Suspense>
+    </AfterMount>
   );
 }
 
@@ -176,10 +198,13 @@ export function AppIcon({
     return (
       <AppIconView app={app} name={name} large={large} sources={appSources(app, noCatalogIcons)} />
     );
+  const skeleton = <IconSkeleton large={large} />;
   return (
-    <Suspense fallback={<IconSkeleton large={large} />}>
-      <AppIconCatalog app={app} name={name} large={large} />
-    </Suspense>
+    <AfterMount fallback={skeleton}>
+      <Suspense fallback={skeleton}>
+        <AppIconCatalog app={app} name={name} large={large} />
+      </Suspense>
+    </AfterMount>
   );
 }
 
@@ -236,10 +261,13 @@ export function AppProviderIcon({
         sources={appSources(app, noCatalogIcons)}
       />
     );
+  const skeleton = <IconSkeleton large={large} />;
   return (
-    <Suspense fallback={<IconSkeleton large={large} />}>
-      <AppProviderIconCatalog app={app} provider={provider} large={large} />
-    </Suspense>
+    <AfterMount fallback={skeleton}>
+      <Suspense fallback={skeleton}>
+        <AppProviderIconCatalog app={app} provider={provider} large={large} />
+      </Suspense>
+    </AfterMount>
   );
 }
 

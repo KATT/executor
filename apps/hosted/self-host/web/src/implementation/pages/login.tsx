@@ -1,7 +1,14 @@
 import { usePageUrl } from "@executor-js/dashboard-start/page";
-import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
-import { Suspense } from "react";
-import { useAtomResult, type Handle } from "raf-effect-atom";
+import {
+  RegistryContext,
+  useAtomMount,
+  useAtomRefresh,
+  useAtomSet,
+  useAtomValue,
+} from "@effect/atom-react";
+import { Suspense, useContext } from "react";
+import type { Handle } from "raf-effect-atom";
+import { suspendIfUnsettled } from "@executor-js/ui/dashboard/context";
 import { AuthFailed, sessionAtom } from "@executor-js/hosted-web/contracts/auth";
 import {
   ContinueAfterSignIn,
@@ -47,7 +54,12 @@ function SelfHostLoginForm({
 }: LoginProps & { readonly config: Handle<typeof configurationAtom> }) {
   useDocumentTitle(productTitle("Sign in"));
   const page = usePageUrl();
-  const config = useAtomResult(configurationAtom, configHandle);
+  // The loader started this read. The document waits for it, and a stalled read stays on the
+  // pending screen. A failure stays on the page instead of becoming the route error.
+  useAtomMount(configurationAtom);
+  void configHandle;
+  const registry = useContext(RegistryContext);
+  const config = useAtomValue(configurationAtom);
   const session = useAtomValue(sessionAtom);
   const refreshSession = useAtomRefresh(sessionAtom);
   const pending = useAtomValue(selfHostSignInAtom);
@@ -55,6 +67,7 @@ function SelfHostLoginForm({
   const [error, setError] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
   const [submittedKind, setSubmittedKind] = useState<SelfHostSignIn["kind"] | null>(null);
+  suspendIfUnsettled(registry, configurationAtom, config);
   const lastSession = AsyncResult.value(session);
   // A background check must not unmount a form shown after confirmed sign-out.
   const signedOut = Option.isSome(lastSession) && lastSession.value === null;
@@ -78,7 +91,11 @@ function SelfHostLoginForm({
         userId={session.value.user.id}
       />
     );
-  if ((session.waiting && !signedOut) || AsyncResult.isInitial(session))
+  if (
+    (session.waiting && !signedOut) ||
+    AsyncResult.isInitial(session) ||
+    AsyncResult.isInitial(config)
+  )
     return <SelfHostLoginPending />;
   if (AsyncResult.isFailure(config))
     return (

@@ -1,6 +1,7 @@
 import { createFileRoute, Outlet, useLocation } from "@tanstack/react-router";
 import { catalogAtom } from "@executor-js/hosted-web/contracts/api";
 import { ensureOrganizationAccess } from "@executor-js/hosted-web/contracts/guarded-read";
+import { organizationsAtom } from "@executor-js/hosted-web/contracts/organization";
 import { DashboardEntryPending } from "@executor-js/hosted-web/entry";
 import { PagePending } from "@executor-js/hosted-web/page-pending";
 import { DashboardShell } from "@executor-js/hosted-web/shell";
@@ -12,6 +13,7 @@ import { Navigation } from "../navigation.tsx";
 export const Route = createFileRoute("/org/$organizationSlug")({
   loader: async ({ context, params }) => {
     const catalog = context.atoms.prefetchInBrowser(catalogAtom);
+    context.atoms.prefetch(organizationsAtom);
     await ensureOrganizationAccess(context.atoms, params.organizationSlug);
     return { catalog };
   },
