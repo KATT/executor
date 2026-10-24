@@ -1,4 +1,5 @@
 /** Promise APIs are confined to this driver adapter; Effect owns browser and context scopes. */
+import "./localhost-names.ts";
 import {
   chromium,
   webkit,
