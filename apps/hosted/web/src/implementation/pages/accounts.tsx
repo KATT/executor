@@ -16,6 +16,7 @@ import { Button } from "@executor-js/ui/components/button";
 import { Link } from "@tanstack/react-router";
 import { useStartedQuery } from "@executor-js/ui/dashboard/context";
 import { HostedFailure } from "../components/dashboard-bindings.tsx";
+import { startRead } from "../../contracts/guarded-read.ts";
 import { useArrivalCover } from "../components/arrival-refresh.ts";
 import { useOrganizationDetails, useOrganizationRoute } from "../components/organization.tsx";
 import { OAuthClientsDialog } from "./oauth-clients.tsx";
@@ -31,14 +32,15 @@ const organizationFromSlug = (slug: string) =>
   Schema.decodeUnknownSync(OrganizationReference)(slug);
 
 /** Start the account list and the directory that labels each account. */
-export function loadAccounts(atoms: Loader.Loader, organization: OrganizationReference) {
-  return {
-    inventory: atoms.prefetch(resourceInventoryAtom(organization)),
-    directory: atoms.prefetch(resourceDirectoryAtom(organization)),
-  };
+export async function loadAccounts(atoms: Loader.Loader, organization: OrganizationReference) {
+  const [inventory, directory] = await Promise.all([
+    startRead(atoms, resourceInventoryAtom(organization)),
+    startRead(atoms, resourceDirectoryAtom(organization)),
+  ]);
+  return { inventory, directory };
 }
 
-export type AccountsReads = ReturnType<typeof loadAccounts>;
+export type AccountsReads = Awaited<ReturnType<typeof loadAccounts>>;
 
 /**
  * Personal and shared credentials use one list. Administrators also manage the organization's

@@ -85,6 +85,7 @@ import {
   removeAppAtom,
   renameAppAtom,
 } from "../../contracts/apps.ts";
+import { startRead } from "../../contracts/guarded-read.ts";
 import { useOrganizationRoute } from "../components/organization.tsx";
 import {
   AccessBoundary,
@@ -114,13 +115,17 @@ export async function loadHostedApp(
   slug: string,
 ) {
   const key = { organization, app };
-  const record = atoms.prefetch(liveAppAtom(key));
-  const inventory = atoms.prefetch(dashboardAtoms(organization).inventory);
-  const appLinks = atoms.prefetch(appLinksAtom(key));
-  const userLinks = atoms.prefetch(userLinksAtom(key));
-  const access = atoms.prefetch(appAccessAtom(key));
-  const session = atoms.prefetch(sessionAtom);
-  const groups = atoms.prefetch(groupsAtom(organization));
+  // These are on the page's first render. The server waits so that render is the settled page,
+  // not a fallback the browser leaves in place. A browser navigation only starts them.
+  const [record, inventory, appLinks, userLinks, access, session, groups] = await Promise.all([
+    startRead(atoms, liveAppAtom(key)),
+    startRead(atoms, dashboardAtoms(organization).inventory),
+    startRead(atoms, appLinksAtom(key)),
+    startRead(atoms, userLinksAtom(key)),
+    startRead(atoms, appAccessAtom(key)),
+    startRead(atoms, sessionAtom),
+    startRead(atoms, groupsAtom(organization)),
+  ]);
   const connection =
     search.connection === undefined
       ? undefined
@@ -218,19 +223,22 @@ export async function loadHostedApp(
       ? await (async () => {
           const current = await loadedApp();
           if (current === undefined) return undefined;
-          return Object.entries(current.requirements.accounts).flatMap(([slot, requirement]) =>
-            requirement.scope === "app" && !canManage
-              ? []
-              : [
-                  atoms.prefetch(
-                    requirementChoicesAtom({
-                      organization,
-                      app,
-                      scope: requirement.scope,
-                      requirement: slot,
-                    }),
-                  ),
-                ],
+          return Promise.all(
+            Object.entries(current.requirements.accounts).flatMap(([slot, requirement]) =>
+              requirement.scope === "app" && !canManage
+                ? []
+                : [
+                    startRead(
+                      atoms,
+                      requirementChoicesAtom({
+                        organization,
+                        app,
+                        scope: requirement.scope,
+                        requirement: slot,
+                      }),
+                    ),
+                  ],
+            ),
           );
         })()
       : undefined;

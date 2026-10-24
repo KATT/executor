@@ -1,7 +1,7 @@
 import { OrganizationReference } from "@executor-js/hosted-server/organization";
 import { Schema } from "effect";
 import { AsyncResult, type Atom } from "effect/reactivity";
-import { Loader } from "raf-effect-atom";
+import { Loader, type Handle } from "raf-effect-atom";
 import { accessAtom } from "./organization.ts";
 
 const organizationFromSlug = (slug: string) =>
@@ -28,6 +28,27 @@ const readAccess = (atoms: Loader.Loader, organization: OrganizationReference) =
 /** Start the access check for this URL before the page renders. */
 export const ensureOrganizationAccess = (atoms: Loader.Loader, organizationSlug: string) =>
   readAccess(atoms, organizationFromSlug(organizationSlug));
+
+/**
+ * Start a read and, on the server, wait until it settles. The document then renders that result.
+ * Waiting with a suspense fallback leaves HTML the browser does not reproduce, because a browser
+ * read keeps the current page instead of suspending. The browser only starts the read.
+ */
+export const startRead = <S extends Atom.Atom<AsyncResult.AsyncResult<unknown, unknown>>>(
+  atoms: Loader.Loader,
+  atom: S,
+): Promise<Handle<S>> => {
+  // ArgsOf cannot see that an atom source takes no arguments while S is generic.
+  const read = atoms as Loader.Loader & {
+    readonly ensure: (source: S) => Promise<Handle<S>>;
+    readonly prefetch: (source: S) => Handle<S>;
+  };
+  if (typeof window !== "undefined") return Promise.resolve(read.prefetch(atom));
+  return read.ensure(atom).catch((error: unknown) => {
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    return read.prefetch(atom);
+  });
+};
 
 /**
  * Start reads that name an organization only after its access check succeeded.

@@ -20,6 +20,7 @@ import {
 } from "@executor-js/ui/components/select";
 import { useStartedQuery } from "@executor-js/ui/dashboard/context";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { startRead } from "../../contracts/guarded-read.ts";
 import { useArrivalCover } from "../components/arrival-refresh.ts";
 import { useOrganizationRoute } from "../components/organization.tsx";
 import { resourceDirectoryAtom, resourceInventoryAtom } from "../../contracts/resource-access.ts";
@@ -40,18 +41,19 @@ export type AppsListSearch = {
 };
 
 /** Start the filtered inventory and the groups that name the filter. */
-export function loadApps(
+export async function loadApps(
   atoms: Loader.Loader,
   organization: OrganizationReference,
   search: AppsListSearch,
 ) {
-  return {
-    groups: atoms.prefetch(groupsAtom(organization)),
-    inventory: atoms.prefetch(resourceInventoryAtom(organization, search.view, search.group)),
-  };
+  const [groups, inventory] = await Promise.all([
+    startRead(atoms, groupsAtom(organization)),
+    startRead(atoms, resourceInventoryAtom(organization, search.view, search.group)),
+  ]);
+  return { groups, inventory };
 }
 
-export type AppsReads = ReturnType<typeof loadApps>;
+export type AppsReads = Awaited<ReturnType<typeof loadApps>>;
 
 /** One authorized list. Group and access filters are search params. */
 export function AppsPage({
