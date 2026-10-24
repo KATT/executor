@@ -47,6 +47,13 @@ function AppsFromQuery<E>(props: AppsPageProps<E>) {
 
 function AppsFromRead<E>(props: AppsPageProps<E> & { readonly read: StartedRead<Inventory, E> }) {
   const state = useStartedQuery(props.read);
+  // A new filter is another atom. Keep the list on screen until that atom has its own value, and
+  // keep it beside a failure that has nothing of its own to show. Compare the inventory, not the
+  // Option wrapper: that wrapper is a new object on every read. This state stays above the
+  // arrival cover: returning early would change how many hooks the list renders.
+  const incoming = Option.getOrUndefined(state.data);
+  const [retained, setRetained] = useState(incoming);
+  if (incoming !== undefined && retained !== incoming) setRetained(incoming);
   if (props.conceal)
     return (
       <AppsBody
@@ -56,12 +63,6 @@ function AppsFromRead<E>(props: AppsPageProps<E> & { readonly read: StartedRead<
         refresh={state.refresh}
       />
     );
-  // A new filter is another atom. Keep the list on screen until that atom has its own value, and
-  // keep it beside a failure that has nothing of its own to show. Compare the inventory, not the
-  // Option wrapper: that wrapper is a new object on every read.
-  const incoming = Option.getOrUndefined(state.data);
-  const [retained, setRetained] = useState(incoming);
-  if (incoming !== undefined && retained !== incoming) setRetained(incoming);
   const shown = incoming ?? retained;
   if (shown === undefined || AsyncResult.isSuccess(state.result))
     return <AppsBody {...props} {...state} />;

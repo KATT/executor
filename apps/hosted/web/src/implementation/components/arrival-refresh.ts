@@ -1,5 +1,7 @@
-import { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { PaintContext } from "./organization.tsx";
+
+const emptySubscribe = () => () => {};
 
 /**
  * Cover a list the first time this document opens it from another page, and read it for that
@@ -12,8 +14,18 @@ export function useArrivalCover(list: string, waiting: boolean, refresh: () => v
   const [seen] = useState(store?.seen(list) ?? false);
   const [sawWait, setSawWait] = useState(false);
   const [settled, setSettled] = useState(!arrived || seen);
-  if (arrived && !seen && !settled && waiting && !sawWait) setSawWait(true);
-  if (arrived && !seen && !settled && sawWait && !waiting) {
+  const phase = useSyncExternalStore(
+    store === null ? emptySubscribe : store.subscribe,
+    () => store?.phase(list) ?? 0,
+    () => 0,
+  );
+  const refreshRef = useRef(refresh);
+  useEffect(() => {
+    refreshRef.current = refresh;
+  }, [refresh]);
+  const covering = arrived && !seen && !settled;
+  if (covering && phase >= 1 && waiting && !sawWait) setSawWait(true);
+  if (covering && ((sawWait && !waiting) || (phase >= 2 && !waiting && !sawWait))) {
     setSettled(true);
     store?.note(list);
   }
@@ -22,7 +34,11 @@ export function useArrivalCover(list: string, waiting: boolean, refresh: () => v
       store?.note(list);
       return;
     }
-    refresh();
-  }, [arrived, list, refresh, seen, store]);
-  return arrived && !seen && !settled;
+    refreshRef.current();
+    store?.arm(list);
+  }, [arrived, list, seen, store]);
+  useEffect(() => {
+    if (phase === 1) store?.ready(list);
+  }, [phase, list, store]);
+  return covering;
 }

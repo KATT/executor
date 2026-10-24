@@ -69,23 +69,42 @@ type PaintStore = {
   readonly subscribe: (listener: () => void) => () => void;
   readonly seen: (list: string) => boolean;
   readonly note: (list: string) => void;
+  /** 0 before an arrival read, 1 once it starts, 2 after that read could have reported a wait. */
+  readonly phase: (list: string) => 0 | 1 | 2;
+  readonly arm: (list: string) => void;
+  readonly ready: (list: string) => void;
 };
 
 /** One document's "the frame has painted" bit. Owned by the boundary, not the module. */
 const createPaintStore = (): PaintStore => {
   let painted = false;
   const lists = new Set<string>();
+  const phases = new Map<string, 1 | 2>();
   const listeners = new Set<() => void>();
+  const notify = () => {
+    for (const listener of listeners) listener();
+  };
   return {
     get: () => painted,
     mark: () => {
       if (painted) return;
       painted = true;
-      for (const listener of listeners) listener();
+      notify();
     },
     seen: (list) => lists.has(list),
     note: (list) => {
       lists.add(list);
+    },
+    phase: (list) => phases.get(list) ?? 0,
+    arm: (list) => {
+      if (phases.has(list)) return;
+      phases.set(list, 1);
+      notify();
+    },
+    ready: (list) => {
+      if (phases.get(list) !== 1) return;
+      phases.set(list, 2);
+      notify();
     },
     subscribe: (listener) => {
       listeners.add(listener);
