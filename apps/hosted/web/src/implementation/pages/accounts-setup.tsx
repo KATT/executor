@@ -1,6 +1,5 @@
 import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
-import { useAtomRefresh } from "@effect/atom-react";
-import { Loader, useAtomResult } from "raf-effect-atom";
+import { Loader } from "raf-effect-atom";
 import { useDashboard, useStartedQuery } from "@executor-js/ui/dashboard/context";
 import { useLocation } from "@tanstack/react-router";
 import { Exit, Option, type Cause } from "effect";
@@ -165,8 +164,14 @@ function AccountsSetup({ reads }: { readonly reads: AccountsSetupReads }) {
   const sequence = useSetupSequence();
   useSetupViewed("setup_accounts");
   const dashboard = useDashboard();
-  const catalog = useAtomResult(catalogAtom, dashboard.catalogHandle);
-  const retryCatalog = useAtomRefresh(catalogAtom);
+  // The setup layout starts the catalog in the browser. Reading that handle with
+  // `useAtomResult` throws on the server, and throws a transport defect out of the list.
+  const catalogQuery = useStartedQuery({
+    source: catalogAtom,
+    handle: dashboard.catalogHandle,
+  });
+  const catalog = catalogQuery.result;
+  const retryCatalog = catalogQuery.refresh;
   const inventoryQuery = useStartedQuery({
     source: inventoryAtom(organization),
     handle: reads.inventory,

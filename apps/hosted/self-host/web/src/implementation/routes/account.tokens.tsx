@@ -8,6 +8,9 @@ export const Route = createFileRoute("/account/tokens")({
   validateSearch: parseAccountSearch,
   loaderDeps: ({ search }) => ({ offset: search.offset ?? 0 }),
   loader: ({ context, deps }) => loadTokens(context.atoms, deps.offset),
+  // The heading and guidance are the page. Show them on the first frame of a client navigation,
+  // while the token list is still held, instead of keeping the previous page for the default delay.
+  pendingMs: 0,
   pendingComponent: TokensPending,
   component: TokensRoute,
 });

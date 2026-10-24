@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { useAtomRefresh } from "@effect/atom-react";
 import { Option, Schema } from "effect";
 import { AsyncResult } from "effect/reactivity";
-import { Loader } from "raf-effect-atom";
+import { Loader, type LoadedHandle } from "raf-effect-atom";
 import { OrganizationReference } from "@executor-js/hosted-server/organization";
 import { HostedFailure } from "../components/dashboard-bindings.tsx";
 import { AppsPage as SharedPage } from "@executor-js/ui/dashboard/apps";
@@ -41,17 +41,44 @@ export type AppsListSearch = {
   readonly group: string;
 };
 
-/** Start the filtered inventory and the groups that name the filter. */
+/** How long a document waits for the background Executor app before sending the list it has. */
+const installWaitMs = 20_000;
+const installPollMs = 250;
+
+type InventoryList = ReturnType<typeof resourceInventoryAtom>;
+
+const appStillInstalling = (handle: LoadedHandle<InventoryList>) => {
+  const result = Loader.result(handle);
+  return AsyncResult.isSuccess(result) && result.value.pendingApp;
+};
+
+/**
+ * Start the filtered inventory and the groups that name the filter. A document waits while the
+ * directory says the Executor app is still installing: that app is a background job, and the list
+ * the server sends is the list the page shows. The browser keeps the current list and paints the
+ * installing placeholder.
+ */
 export async function loadApps(
   atoms: Loader.Loader,
   organization: OrganizationReference,
   search: AppsListSearch,
 ) {
-  const [groups, inventory] = await Promise.all([
-    startRead(atoms, groupsAtom(organization)),
-    startRead(atoms, resourceInventoryAtom(organization, search.view, search.group)),
-  ]);
-  return { groups, inventory };
+  const list = resourceInventoryAtom(organization, search.view, search.group);
+  const groups = startRead(atoms, groupsAtom(organization));
+  if (typeof window !== "undefined") {
+    return { groups: await groups, inventory: await startRead(atoms, list) };
+  }
+  const settled = (error: unknown): undefined => {
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    return undefined;
+  };
+  let inventory: LoadedHandle<InventoryList> | undefined = await atoms.ensure(list).catch(settled);
+  const deadline = Date.now() + installWaitMs;
+  while (inventory !== undefined && appStillInstalling(inventory) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, installPollMs));
+    inventory = await atoms.fetch(list);
+  }
+  return { groups: await groups, inventory: inventory ?? atoms.prefetch(list) };
 }
 
 export type AppsReads = Awaited<ReturnType<typeof loadApps>>;
