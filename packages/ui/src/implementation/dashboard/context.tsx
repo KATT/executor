@@ -115,6 +115,19 @@ function hydratedRead<A>(source: Atom.Atom<A>): {
 }
 
 /**
+ * Build the serializable node from the value the server sent before anything reads a derived
+ * view of it. The derived view is not itself serializable, so reading it first would run the
+ * request again.
+ */
+export function pinHydratedValue<A>(
+  registry: { readonly get: (atom: Atom.Atom<unknown>) => unknown },
+  source: Atom.Atom<A>,
+) {
+  const kept = hydratedRead(source);
+  if (kept.pin !== kept.read) registry.get(kept.pin);
+}
+
+/**
  * Read a handle the route loader started. The server suspends until a prefetch settles. The
  * browser renders the current result, so a pending read stays on the page and a refresh keeps
  * that page mounted. The first browser read keeps the value the server sent; reading the atom

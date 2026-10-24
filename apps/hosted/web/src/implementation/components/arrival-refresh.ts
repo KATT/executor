@@ -10,7 +10,15 @@ const emptySubscribe = () => () => {};
  */
 export function useArrivalCover(list: string, waiting: boolean, refresh: () => void) {
   const store = useContext(PaintContext);
-  const [arrived] = useState(store?.get() ?? false);
+  // Hydration, including a list streamed after the frame's effect, uses the server snapshot.
+  // A document load therefore never covers. A later navigation mounts this hook in the browser
+  // and reads the paint store.
+  const hydrating = useSyncExternalStore(
+    emptySubscribe,
+    () => false,
+    () => true,
+  );
+  const [arrived] = useState(() => !hydrating && (store?.get() ?? false));
   const [seen] = useState(store?.seen(list) ?? false);
   const [sawWait, setSawWait] = useState(false);
   const [settled, setSettled] = useState(!arrived || seen);

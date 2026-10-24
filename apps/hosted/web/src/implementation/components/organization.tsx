@@ -1,4 +1,8 @@
-import { suspendIfUnsettled, usePreload } from "@executor-js/ui/dashboard/context";
+import {
+  pinHydratedValue,
+  suspendIfUnsettled,
+  usePreload,
+} from "@executor-js/ui/dashboard/context";
 import { PageFrame, PageHeader } from "@executor-js/ui/dashboard/page";
 import {
   OrganizationSlug,
@@ -386,9 +390,20 @@ export function OrganizationBoundary({
     paint.mark();
   }, [paint]);
   usePreload(accessAtom(reference), organizationsAtom);
-  // The first browser read must keep the value the server sent. Reading the query directly runs
-  // its effect again and the frame renders a different tree than the document.
-  const access = useAtomValue(Hydration.hydrated(accessAtom(reference)));
+  const registry = useContext(RegistryContext);
+  const accessQuery = accessAtom(reference);
+  const sessionQuery = sessionAtom;
+  const presentationQuery = organizationPresentation(reference);
+  const targetQuery = organizationTargetAtom(reference);
+  const organizationsQuery = organizationsAtom;
+  // The first browser read must keep the value the server sent. These views are derived, so pin
+  // the serializable atom first; reading the view directly runs its effect again.
+  pinHydratedValue(registry, accessQuery);
+  pinHydratedValue(registry, sessionQuery);
+  pinHydratedValue(registry, presentationQuery);
+  pinHydratedValue(registry, targetQuery);
+  pinHydratedValue(registry, organizationsQuery);
+  const access = useAtomValue(Hydration.hydrated(accessQuery));
   const accessSucceeded = AsyncResult.isSuccess(access);
   // The verdict itself is the snapshot, so a document whose check succeeded does not re-render
   // here after hydration; that update would reach regions still waiting to hydrate.
@@ -397,11 +412,10 @@ export function OrganizationBoundary({
     () => true,
     () => accessSucceeded,
   );
-  const session = useAtomValue(Hydration.hydrated(sessionAtom));
-  const snapshot = useAtomValue(Hydration.hydrated(organizationPresentation(reference)));
-  const registry = useContext(RegistryContext);
-  const target = useAtomValue(Hydration.hydrated(organizationTargetAtom(reference)));
-  const organizations = useAtomValue(Hydration.hydrated(organizationsAtom));
+  const session = useAtomValue(Hydration.hydrated(sessionQuery));
+  const snapshot = useAtomValue(Hydration.hydrated(presentationQuery));
+  const target = useAtomValue(Hydration.hydrated(targetQuery));
+  const organizations = useAtomValue(Hydration.hydrated(organizationsQuery));
   const refreshAccess = useAtomRefresh(accessAtom(reference));
   const refreshOrganizations = useAtomRefresh(organizationsAtom);
   const router = useRouter();
