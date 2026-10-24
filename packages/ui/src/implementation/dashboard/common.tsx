@@ -103,13 +103,16 @@ interface ProviderIconProps {
 
 export function ProviderIcon(props: ProviderIconProps) {
   const dashboard = useOptionalDashboard();
-  // A declared icon does not come from the catalog, so a held catalog read must not hide it.
-  if (dashboard === null || props.declared != null)
-    return <ProviderIconView {...props} catalog={noCatalogIcons} />;
+  if (dashboard === null) return <ProviderIconView {...props} catalog={noCatalogIcons} />;
+  // A declared icon does not come from the catalog. The catalog read still starts, so other icons
+  // on the page can use it, and the fallback keeps the declared icon visible while that read waits.
+  const ready =
+    props.declared != null ? <ProviderIconView {...props} catalog={noCatalogIcons} /> : null;
   const skeleton = <IconSkeleton large={props.large ?? false} />;
+  const fallback = ready ?? skeleton;
   return (
-    <AfterMount fallback={skeleton}>
-      <Suspense fallback={skeleton}>
+    <AfterMount fallback={fallback}>
+      <Suspense fallback={fallback}>
         <ProviderIconCatalog {...props} />
       </Suspense>
     </AfterMount>
