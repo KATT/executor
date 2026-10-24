@@ -132,6 +132,8 @@ export function AccountsSetupPage({ reads }: { readonly reads: AccountsSetupRead
 }
 
 function AccountsSetupLoading() {
+  const handoff = setupHandoff(parseAccountsSetupSearch(useLocation().search));
+  const sequence = useSetupSequence();
   return (
     <SetupPage className="h-dvh">
       <section
@@ -147,6 +149,11 @@ function AccountsSetupLoading() {
           <LoadingList />
         </SetupCard>
       </section>
+      <SetupActions>
+        <SetupNext done={false} label="Continue with 1 account">
+          {(content) => <SetupLink to={sequence.after("accounts", handoff)}>{content}</SetupLink>}
+        </SetupNext>
+      </SetupActions>
     </SetupPage>
   );
 }
