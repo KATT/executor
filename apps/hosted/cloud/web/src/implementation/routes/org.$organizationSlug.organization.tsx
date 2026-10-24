@@ -128,5 +128,8 @@ export const Route = createFileRoute("/org/$organizationSlug/organization")({
     startAfterAccess(context.atoms, params.organizationSlug, (organization) =>
       loadCloudOrganization(context.atoms, organization),
     ),
+  // A client navigation re-runs this loader. Keep the settings page once it is on screen.
+  // The skeleton is for a load that does not resolve.
+  pendingMs: 10_000,
   component: CloudOrganizationPage,
 });
