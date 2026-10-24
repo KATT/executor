@@ -207,10 +207,14 @@ export async function loadHostedApp(
   };
   const started = (version: VersionId) => ({
     version,
-    tools: atoms.prefetch(toolCatalogAtom({ ...key, version })),
-    source: atoms.prefetch(sourceAtom({ ...key, version })),
+    // Only the view on screen. Prefetching the catalog beside another read sends them as one
+    // batch, so a page that opens tools never requests the catalog on its own.
+    tools: shown === "tools" ? atoms.prefetch(toolCatalogAtom({ ...key, version })) : undefined,
+    source: inspecting ? atoms.prefetch(sourceAtom({ ...key, version })) : undefined,
     detail:
-      tool === undefined ? undefined : atoms.prefetch(toolDetailAtom({ ...key, version, tool })),
+      shown === "tools" && tool !== undefined
+        ? atoms.prefetch(toolDetailAtom({ ...key, version, tool }))
+        : undefined,
   });
   const liveSource = (version: VersionId | undefined) =>
     inspecting && version !== undefined
@@ -436,8 +440,11 @@ function AppDetail({
     source: useAccessBoundary(appLinksAtom(key)),
     handle: reads.appLinks,
   });
+  // Use of the app is what lists the caller's links. Someone who can edit a private app but not
+  // use it is refused here; that refusal is the page's "not shared" explanation, not an
+  // organization-wide access failure.
   const userLinks = useStartedQuery({
-    source: useAccessBoundary(userLinksAtom(key)),
+    source: userLinksAtom(key),
     handle: reads.userLinks,
   });
   const session = useStartedQuery({
