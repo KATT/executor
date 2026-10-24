@@ -6,7 +6,12 @@ import {
   AppWorkflowPreview,
 } from "@executor-js/ui/dashboard/app-overview-entries";
 import { appBrowserBindings } from "../../contracts/app-browser.ts";
-import { appLinksAtom, userLinksAtom, type AppAccountLink } from "../../contracts/app-accounts.ts";
+import {
+  appLinksAtom,
+  requirementChoicesAtom,
+  userLinksAtom,
+  type AppAccountLink,
+} from "../../contracts/app-accounts.ts";
 import {
   missingRequirements,
   requirementAccounts,
@@ -115,7 +120,6 @@ export async function loadHostedApp(
   const userLinks = atoms.prefetch(userLinksAtom(key));
   const access = atoms.prefetch(appAccessAtom(key));
   const session = atoms.prefetch(sessionAtom);
-  const versions = atoms.prefetch(versionsAtom(key));
   const groups = atoms.prefetch(groupsAtom(organization));
   const connection =
     search.connection === undefined
@@ -124,23 +128,57 @@ export async function loadHostedApp(
   const shown = search.view ?? (search.tool === undefined ? "overview" : "tools");
   const management = appManagement(organization);
   const inspecting = shown === "source" || shown === "history";
-  const workspace = inspecting
-    ? {
-        working: atoms.prefetch(management.source(app)),
-        history: atoms.prefetch(management.history(app)),
-      }
-    : { working: undefined, history: undefined };
-  // Publishing reads authoring on every tab, and the overview previews the same record.
-  const authoring = atoms.prefetch(management.authoring(app));
+  // Members never receive source, history, versions, or the working tree. The permission read is
+  // independent of app metadata, so a held permission request still lets the frame paint.
+  const permissionRead = atoms.ensure(appAccessAtom(key)).catch((error: unknown) => {
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    return undefined;
+  });
+  const permission =
+    typeof window === "undefined"
+      ? await permissionRead
+      : await Promise.race([
+          permissionRead,
+          new Promise<undefined>((resolve) => {
+            setTimeout(resolve, 2_000);
+          }),
+        ]);
+  const permissionResult = permission === undefined ? undefined : Loader.result(permission);
+  const canManage =
+    permissionResult !== undefined &&
+    AsyncResult.isSuccess(permissionResult) &&
+    permissionResult.value.canManage === true;
+  const versions =
+    shown === "versions" && canManage ? atoms.prefetch(versionsAtom(key)) : undefined;
+  const workspace =
+    inspecting && canManage
+      ? {
+          working: atoms.prefetch(management.source(app)),
+          history: atoms.prefetch(management.history(app)),
+        }
+      : { working: undefined, history: undefined };
+  // Publishing and the overview preview read authoring only for someone who can manage the app.
+  const authoring = canManage ? atoms.prefetch(management.authoring(app)) : undefined;
   const tool = namedTool(search.tool);
   const known = search.version;
   const loadedApp = async () => {
     // Transport and decode defects settle the atom, then reject ensure. The page
     // renders that failure; rejecting the loader would replace the whole page.
-    const loaded = await atoms.ensure(liveAppAtom(key)).catch((error: unknown) => {
+    const read = atoms.ensure(liveAppAtom(key)).catch((error: unknown) => {
       if (error instanceof Error && error.name === "AbortError") throw error;
       return undefined;
     });
+    // A browser navigation paints the frame while this request is in flight. A value the page
+    // already has is ready before the next task and still selects the version. The server waits.
+    const loaded =
+      typeof window === "undefined"
+        ? await read
+        : await Promise.race([
+            read,
+            new Promise<undefined>((resolve) => {
+              setTimeout(resolve, 0);
+            }),
+          ]);
     if (loaded === undefined) return undefined;
     const result = Loader.result(loaded);
     return AsyncResult.isSuccess(result) ? result.value : undefined;
@@ -173,6 +211,29 @@ export async function loadHostedApp(
     inspecting && version !== undefined
       ? atoms.prefetch(sourceAtom({ ...key, version }))
       : undefined;
+  // The accounts view lists every account the caller could link. Those reads have to be in the
+  // document, or the first paint shows only the accounts already linked.
+  const accountChoices =
+    shown === "accounts"
+      ? await (async () => {
+          const current = await loadedApp();
+          if (current === undefined) return undefined;
+          return Object.entries(current.requirements.accounts).flatMap(([slot, requirement]) =>
+            requirement.scope === "app" && !canManage
+              ? []
+              : [
+                  atoms.prefetch(
+                    requirementChoicesAtom({
+                      organization,
+                      app,
+                      scope: requirement.scope,
+                      requirement: slot,
+                    }),
+                  ),
+                ],
+          );
+        })()
+      : undefined;
   const needsActive =
     known === undefined ||
     inspecting ||
@@ -191,7 +252,8 @@ export async function loadHostedApp(
   const sections = {
     skillBundle:
       shown === "skills" && browser !== undefined ? atoms.prefetch(browser.bundle) : undefined,
-    skillWorkspace: shown === "skills" ? atoms.prefetch(management.workspace(app)) : undefined,
+    skillWorkspace:
+      shown === "skills" && canManage ? atoms.prefetch(management.workspace(app)) : undefined,
     skillList:
       shown === "overview" && browser !== undefined ? atoms.prefetch(browser.skills) : undefined,
     workflowList:
@@ -221,6 +283,7 @@ export async function loadHostedApp(
       groups,
       connection,
       location,
+      accountChoices,
       ...workspace,
       authoring,
       live: liveSource(active),
@@ -240,6 +303,7 @@ export async function loadHostedApp(
     groups,
     connection,
     location,
+    accountChoices,
     ...workspace,
     authoring,
     live: liveSource(active),
@@ -255,6 +319,19 @@ export type HostedAppReads = Awaited<ReturnType<typeof loadHostedApp>>;
 
 /** Views that read only the app. The others also read the inventory and the app's links. */
 const appWideViews: ReadonlySet<AppView> = new Set(["settings", "versions", "source", "history"]);
+/**
+ * Views of one deployment. Accounts, settings, schedules and webhooks keep the address they were
+ * opened with; writing the active version there changes links that name only the view.
+ */
+const versionedViews: ReadonlySet<AppView> = new Set([
+  "overview",
+  "tools",
+  "skills",
+  "workflows",
+  "source",
+  "history",
+  "versions",
+]);
 
 /**
  * Links with their sign-in state and checks by this app. Accounts the caller can use show the
@@ -366,7 +443,7 @@ function AppDetail({
   });
   const activeVersion = app?.activeVersion;
   useEffect(() => {
-    if (version !== undefined || activeVersion == null) return;
+    if (!versionedViews.has(selectedView) || version !== undefined || activeVersion == null) return;
     void navigate({
       to: "/org/$organizationSlug/apps/$appId",
       params: { organizationSlug, appId },
@@ -376,7 +453,7 @@ function AppDetail({
       }),
       replace: true,
     });
-  }, [activeVersion, appId, navigate, organizationSlug, version]);
+  }, [activeVersion, appId, navigate, organizationSlug, selectedView, version]);
   const access = Option.getOrUndefined(authority.data);
   const canManage = access?.canManage === true,
     canUse = access?.canUse === true;
@@ -444,10 +521,14 @@ function AppDetail({
                 app={app}
                 atoms={appManagement(organization)}
                 Failure={HostedFailure}
-                read={{
-                  source: appManagement(organization).authoring(app.id),
-                  handle: reads.authoring,
-                }}
+                {...(reads.authoring === undefined
+                  ? {}
+                  : {
+                      read: {
+                        source: appManagement(organization).authoring(app.id),
+                        handle: reads.authoring,
+                      },
+                    })}
               />
             ) : (
               <Button
@@ -544,21 +625,25 @@ function AppDetail({
                   The app creator and organization admins can inspect app source.
                 </p>
               ) : selectedView === "versions" ? (
-                <AppVersions
-                  key={current.id}
-                  app={current}
-                  version={version ?? reads.version}
-                  versions={reads.versions}
-                  source={reads.source}
-                  onVersionChange={(next) => {
-                    void navigate({
-                      to: "/org/$organizationSlug/apps/$appId",
-                      params: { organizationSlug, appId },
-                      search: { view: "versions", tool, version: next },
-                      replace: true,
-                    });
-                  }}
-                />
+                reads.versions === undefined ? (
+                  pending
+                ) : (
+                  <AppVersions
+                    key={current.id}
+                    app={current}
+                    version={version ?? reads.version}
+                    versions={reads.versions}
+                    source={reads.source}
+                    onVersionChange={(next) => {
+                      void navigate({
+                        to: "/org/$organizationSlug/apps/$appId",
+                        params: { organizationSlug, appId },
+                        search: { view: "versions", tool, version: next },
+                        replace: true,
+                      });
+                    }}
+                  />
+                )
               ) : reads.working === undefined || reads.history === undefined ? (
                 pending
               ) : (
