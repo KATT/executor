@@ -5,7 +5,7 @@
  * needs no outside service.
  */
 import { expect } from "@effect/vitest";
-import { Clock, Effect, Redacted, Schema } from "effect";
+import { Effect, Redacted, Schema } from "effect";
 import { HttpClient, HttpClientRequest } from "effect/http";
 import { randomBytes, randomUUID } from "node:crypto";
 import { Api, body } from "./api.ts";
@@ -288,11 +288,11 @@ export const eventFixtures = Effect.gen(function* () {
     seconds = 30,
   ) =>
     Effect.gen(function* () {
-      const deadline = (yield* Clock.currentTimeMillis) + seconds * 1000;
+      const started = performance.now();
       for (;;) {
         const all = yield* deliveries;
         if (ready(all)) return all;
-        expect(yield* Clock.currentTimeMillis, JSON.stringify(all)).toBeLessThan(deadline);
+        expect(performance.now() - started, JSON.stringify(all)).toBeLessThan(seconds * 1000);
         yield* Effect.sleep("300 millis");
       }
     });

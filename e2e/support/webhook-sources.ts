@@ -1,6 +1,6 @@
 /** Hosted webhook sources and subscriptions through the public API. */
 import { expect } from "@effect/vitest";
-import { Clock, Effect, Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { Api, body, type Session } from "./api.ts";
 
 /**
@@ -49,7 +49,8 @@ export const webhookSubscriptions = (actor: Session, appPath: string) =>
 
 /**
  * Wait for background registration until `settled` accepts the sources `actor` sees, and return
- * them. Fails with the last observed sources after 30 seconds.
+ * them. Fails with the last observed sources after 30 seconds of elapsed time. A wall-clock step
+ * does not expire the wait.
  */
 export const settleWebhookSources = (
   actor: Session,
@@ -57,14 +58,14 @@ export const settleWebhookSources = (
   settled: (sources: readonly WebhookSourceRow[]) => boolean,
 ) =>
   Effect.gen(function* () {
-    const deadline = (yield* Clock.currentTimeMillis) + 30_000;
+    const started = performance.now();
     for (;;) {
       const sources = yield* webhookSources(actor, appPath);
       if (settled(sources)) return sources;
       expect(
-        yield* Clock.currentTimeMillis,
+        performance.now() - started,
         `Webhook sources did not settle: ${JSON.stringify(sources)}`,
-      ).toBeLessThan(deadline);
+      ).toBeLessThan(30_000);
       yield* Effect.sleep("100 millis");
     }
   });
@@ -87,7 +88,8 @@ export const sourcesAre =
 
 /**
  * Wait for background registration until `settled` accepts the subscriptions `actor` sees, and
- * return them. Fails with the last observed subscriptions after 30 seconds.
+ * return them. Fails with the last observed subscriptions after 30 seconds of elapsed time. A
+ * wall-clock step does not expire the wait.
  */
 export const settleWebhookSubscriptions = (
   actor: Session,
@@ -95,30 +97,30 @@ export const settleWebhookSubscriptions = (
   settled: (subscriptions: readonly WebhookSubscriptionRow[]) => boolean,
 ) =>
   Effect.gen(function* () {
-    const deadline = (yield* Clock.currentTimeMillis) + 30_000;
+    const started = performance.now();
     for (;;) {
       const subscriptions = yield* webhookSubscriptions(actor, appPath);
       if (settled(subscriptions)) return subscriptions;
       expect(
-        yield* Clock.currentTimeMillis,
+        performance.now() - started,
         `Webhook subscriptions did not settle: ${JSON.stringify(subscriptions)}`,
-      ).toBeLessThan(deadline);
+      ).toBeLessThan(30_000);
       yield* Effect.sleep("100 millis");
     }
   });
 
 /**
  * Remove the app at `appPath` once its webhook subscriptions have stopped: removal is refused
- * while any still runs, and removing sources are not listed. Fails after 30 seconds.
+ * while any still runs, and removing sources are not listed. Fails after 30 seconds of elapsed time.
  */
 export const removeAppWhenStopped = (actor: Session, appPath: string) =>
   Effect.gen(function* () {
     const api = yield* Api;
-    const deadline = (yield* Clock.currentTimeMillis) + 30_000;
+    const started = performance.now();
     for (;;) {
       const removed = yield* api.request(actor, "DELETE", appPath);
       if (removed.status !== 409) return removed.status;
-      expect(yield* Clock.currentTimeMillis, JSON.stringify(removed.body)).toBeLessThan(deadline);
+      expect(performance.now() - started, JSON.stringify(removed.body)).toBeLessThan(30_000);
       yield* Effect.sleep("100 millis");
     }
   });
