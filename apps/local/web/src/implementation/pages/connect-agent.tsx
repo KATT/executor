@@ -126,19 +126,18 @@ function ConnectAgent({
 }) {
   const navigate = useNavigate();
   const search = parseConnectSearch(useLocation().search);
-  const tools = useMissingBoundary(toolListAtom);
   const installation = {
-    source: useMissingBoundary(mcpInstallationAtom),
+    source: mcpInstallationAtom,
     handle: reads.installation,
+    claim: useMissingBoundary,
   };
-  const overview = useMissingBoundary(overviewAtom);
-  const connections = useMissingBoundary(mcpConnectionsAtom);
   const toolRead =
     reads.tools === undefined || search.app === undefined
       ? undefined
       : {
-          source: tools({ app: search.app, version: reads.tools.version }),
+          source: toolListAtom({ app: search.app, version: reads.tools.version }),
           handle: reads.tools.handle,
+          claim: useMissingBoundary,
         };
   return (
     <ScopedConnectionsPage
@@ -154,8 +153,12 @@ function ConnectAgent({
       onRevoked={() => {
         void navigate({ to: "/connect", replace: true });
       }}
-      query={{ source: overview, handle: reads.overview }}
-      connections={{ source: connections, handle: reads.connections }}
+      query={{ source: overviewAtom, handle: reads.overview, claim: useMissingBoundary }}
+      connections={{
+        source: mcpConnectionsAtom,
+        handle: reads.connections,
+        claim: useMissingBoundary,
+      }}
       save={saveMcpConnectionAtom}
       revoke={revokeMcpConnectionAtom}
       Failure={Failure}
@@ -190,6 +193,7 @@ function ConnectAgent({
         <StartedQueryView
           source={installation.source}
           handle={installation.handle}
+          claim={installation.claim}
           Failure={Failure}
           pending={<LoadingRows count={3} />}
         >

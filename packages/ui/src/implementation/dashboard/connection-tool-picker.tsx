@@ -43,7 +43,13 @@ export function ConnectionToolPicker<E>({
       {list}
     </QueryView>
   ) : (
-    <StartedQueryView source={read.source} handle={read.handle} Failure={Failure} pending={pending}>
+    <StartedQueryView
+      source={read.source}
+      handle={read.handle}
+      claim={read.claim}
+      Failure={Failure}
+      pending={pending}
+    >
       {list}
     </StartedQueryView>
   );

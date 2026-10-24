@@ -3,6 +3,7 @@ import { AppSectionHeader, AppSectionTitle } from "./app-section-header.tsx";
 import { useState, type ComponentType, type MouseEvent, type ReactNode } from "react";
 import type { Tool, ToolRouter, ToolSummary } from "@executor-js/sdk";
 import { Option } from "effect";
+import { AsyncResult } from "effect/reactivity";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowRight01Icon,
@@ -13,7 +14,7 @@ import {
   ViewIcon,
 } from "@hugeicons/core-free-icons";
 import type { Query, QueryProps, ToolCatalog } from "../../contracts/dashboard.ts";
-import { QueryResult, useQuery, useStartedQuery } from "./context.tsx";
+import { ClaimResult, QueryResult, useQuery, useStartedQuery } from "./context.tsx";
 import type { StartedRead } from "../../contracts/started-read.ts";
 import { CopyButton } from "./code.tsx";
 import { humanize, SchemaSection } from "./tool-schema.tsx";
@@ -74,7 +75,18 @@ function ToolBrowserFromRead<E>(
 ) {
   const { read, ...rest } = props;
   const state = useStartedQuery(read);
-  return <ToolBrowserView {...rest} {...state} />;
+  return (
+    <ClaimResult result={state.result} claim={read.claim}>
+      {(result) => (
+        <ToolBrowserView
+          {...rest}
+          result={result}
+          data={AsyncResult.value(result)}
+          refresh={state.refresh}
+        />
+      )}
+    </ClaimResult>
+  );
 }
 
 type ToolBrowserExtras<E> = {
@@ -293,7 +305,11 @@ function ToolSchemasFromRead<E>({
   readonly Failure: QueryProps<Tool | undefined, E>["Failure"];
 }) {
   const { result, refresh } = useStartedQuery(read);
-  return <ToolSchemaResult result={result} refresh={refresh} Failure={Failure} />;
+  return (
+    <ClaimResult result={result} claim={read.claim}>
+      {(claimed) => <ToolSchemaResult result={claimed} refresh={refresh} Failure={Failure} />}
+    </ClaimResult>
+  );
 }
 
 function ToolSchemaResult<E>({

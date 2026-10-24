@@ -235,6 +235,7 @@ export function ScopedConnectionsPage<E, EL extends E, ES extends E, ER extends 
             <StartedQueryView<readonly ConnectionView[], E>
               source={connections.source}
               handle={connections.handle}
+              claim={connections.claim}
               Failure={Failure}
               pending={<ConnectionListSkeleton />}
             >
@@ -273,7 +274,12 @@ export function ScopedConnectionsPage<E, EL extends E, ES extends E, ER extends 
               title="New connection"
               description="Turn on the apps this agent needs. Everything else stays off. Approval rules come from each app’s code."
             />
-            <StartedQueryView source={query.source} handle={query.handle} Failure={Failure}>
+            <StartedQueryView
+              source={query.source}
+              handle={query.handle}
+              claim={query.claim}
+              Failure={Failure}
+            >
               {(inventory) => <NewConnection inventory={inventory} render={editor(false)} />}
             </StartedQueryView>
           </>
@@ -282,6 +288,7 @@ export function ScopedConnectionsPage<E, EL extends E, ES extends E, ER extends 
           <StartedQueryView<readonly ConnectionView[], E>
             source={connections.source}
             handle={connections.handle}
+            claim={connections.claim}
             Failure={Failure}
           >
             {(items) => {
@@ -300,7 +307,12 @@ export function ScopedConnectionsPage<E, EL extends E, ES extends E, ER extends 
                       title="Edit connection"
                       description="Turn on the apps this agent needs. Everything else stays off. Approval rules come from each app’s code."
                     />
-                    <StartedQueryView source={query.source} handle={query.handle} Failure={Failure}>
+                    <StartedQueryView
+                      source={query.source}
+                      handle={query.handle}
+                      claim={query.claim}
+                      Failure={Failure}
+                    >
                       {(inventory) => (
                         <EditConnection
                           key={connection.id}
@@ -313,7 +325,12 @@ export function ScopedConnectionsPage<E, EL extends E, ES extends E, ER extends 
                   </>
                 );
               return (
-                <StartedQueryView source={query.source} handle={query.handle} Failure={Failure}>
+                <StartedQueryView
+                  source={query.source}
+                  handle={query.handle}
+                  claim={query.claim}
+                  Failure={Failure}
+                >
                   {(inventory) => (
                     <ConnectionDetail
                       connection={connection}

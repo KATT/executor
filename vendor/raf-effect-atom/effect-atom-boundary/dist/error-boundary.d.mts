@@ -1,6 +1,6 @@
 import { TagsOf, UseErrorBoundary, Variance } from "./claim.mjs";
-import * as React from "react";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
+import * as React from "react";
 import * as Atom from "effect/reactivity/Atom";
 import { HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware } from "effect/http-api";
 import * as AtomHttpApi from "effect/reactivity/AtomHttpApi";
@@ -74,10 +74,10 @@ export interface AtomErrorBoundaryProps<A, E> {
  *
  * **Details**
  *
- * The reads under it read `AtomErrorBoundary.claim(atom)`, which turns every
- * typed failure into a defect, so it throws. A failure whose tag has a
- * handler renders that handler; its `reset` refreshes the atom and renders
- * the children again. A new `atom` clears a caught failure.
+ * The reads under it throw the atom's failures, as `useAtomSuspense` does
+ * without `includeFailure`. A failure whose tag has a handler renders that
+ * handler; its `reset` refreshes the atom and renders the children again. A
+ * new `atom` clears a caught failure.
  *
  * React runs no error boundaries on the server, so during server rendering
  * it reads `atom` before its children, from the registry or its hydrated
@@ -87,8 +87,11 @@ export interface AtomErrorBoundaryProps<A, E> {
  *
  * **Gotchas**
  *
- * A failure without a handler, or one thrown by a read of another atom, goes
- * to the error boundaries above. `reset` refreshes the atom in the registry
+ * A failure without a handler, or an error that isn't the one the atom fails
+ * with in the boundary's registry, such as one a read of another atom threw,
+ * goes to the error boundaries above. Read with `suspendOnWaiting: true`, so
+ * a read waits for the refresh `reset` starts instead of throwing the old
+ * failure again. `reset` refreshes the atom in the registry
  * the boundary renders in, not in a `RegistryContext` provided under it. A
  * handler renders as a component: one written inline mounts again, losing its
  * state, each time the parent renders.
@@ -106,9 +109,7 @@ export interface AtomErrorBoundaryProps<A, E> {
  * </AtomErrorBoundary>
  *
  * function IssuePage(props: { readonly id: number }) {
- *   const result = useAtomSuspense(AtomErrorBoundary.claim(issue(props.id)), {
- *     suspendOnWaiting: true
- *   })
+ *   const result = useAtomSuspense(issue(props.id), { suspendOnWaiting: true })
  *   return <h1>{result.value.title}</h1>
  * }
  * ```
@@ -119,32 +120,7 @@ export interface AtomErrorBoundaryProps<A, E> {
  * @category components
  * @since 0.1.0
  */
-export declare const AtomErrorBoundary: AtomErrorBoundaryComponent;
-/**
- * `AtomErrorBoundary`, and `claim` for the reads under it.
- *
- * @stability unstable
- * @category components
- * @since 0.1.0
- */
-export interface AtomErrorBoundaryComponent {
-  <A, E>(props: AtomErrorBoundaryProps<A, E>): React.ReactNode;
-  /**
-   * Returns the atom with every typed failure turned into a defect, recorded
-   * with `atom`, so a read throws it to the `AtomErrorBoundary` for `atom`.
-   *
-   * **Details**
-   *
-   * Memoized per atom. Given an atom family, it returns the family of
-   * claimed atoms, memoized per family. Reading it with `useAtomSuspense`
-   * needs `suspendOnWaiting: true`, so a read waits for the refresh `reset`
-   * starts instead of throwing the old failure again.
-   */
-  readonly claim: {
-    <A, E>(atom: Atom.Atom<AsyncResult.AsyncResult<A, E>>): Atom.Atom<AsyncResult.AsyncResult<A, never>>;
-    <Args extends ReadonlyArray<unknown>, A, E>(family: (...args: Args) => Atom.Atom<AsyncResult.AsyncResult<A, E>>): (...args: Args) => Atom.Atom<AsyncResult.AsyncResult<A, never>>;
-  };
-}
+export declare const AtomErrorBoundary: <A, E>(props: AtomErrorBoundaryProps<A, E>) => React.ReactNode;
 /**
  * A boundary component: renders the `catchTags` handler for the errors it
  * claims and throws the rest to the boundaries above it.
@@ -160,8 +136,8 @@ export interface ErrorBoundaryComponent<Tags extends string> extends Variance<Ta
   readonly displayName: string;
 }
 /**
- * A boundary component and its hook, which narrows the atoms read under it,
- * named freely by destructuring.
+ * A boundary component and its hook, which narrows the results read under
+ * it, named freely by destructuring.
  *
  * @stability unstable
  * @category models
@@ -200,11 +176,11 @@ export interface ErrorBoundaryOptions<Source, Tags extends TagsOf<ErrorsOf<Sourc
  *
  * **Details**
  *
- * A component under it reads `useBoundary(atom)`, or `useBoundary(family)`:
- * the same atom with the errors this boundary or one above it claims turned
- * into defects, so the read throws them to the nearest boundary that claims
- * them, and the atom's `AsyncResult` is typed without them. `parent` is the boundary it sits
- * under; the claimed tags add up along the chain. `catchTags`' keys are tags
+ * A component under it wraps its read in the hook:
+ * `useBoundary(useAtomResult(issue, handle))` throws the failures this
+ * boundary or one above it claims to the nearest boundary that claims them,
+ * and returns the result typed without them. `parent` is the boundary it
+ * sits under; the claimed tags add up along the chain. `catchTags`' keys are tags
  * of `errors`' error type, so a misspelled tag is a type error and each
  * handler's `error` is typed.
  *
@@ -226,11 +202,11 @@ export interface ErrorBoundaryOptions<Source, Tags extends TagsOf<ErrorsOf<Sourc
  *
  * A boundary matches `_tag` only: a failure with a claimed tag from any atom
  * under it is caught. During server rendering, that's any atom in the
- * registry, read under it or not. The boundary throws without its `parent` mounted above
- * it, and the hook throws outside its boundary. A read that returns the
- * failures left and throws defects, such as `raf-effect-atom`'s
- * `useAtomResult`, gets the narrowed result; `useAtomSuspense` throws every
- * failure.
+ * registry, read under it or not. The boundary throws without its `parent`
+ * mounted above it, and the hook throws outside its boundary. The hook needs
+ * a read that returns its failures, such as `raf-effect-atom`'s
+ * `useAtomResult`: `useAtomSuspense` without `includeFailure` throws every
+ * failure before the hook sees it.
  *
  * **Example** (A sign-in boundary)
  *
@@ -242,7 +218,7 @@ export interface ErrorBoundaryOptions<Source, Tags extends TagsOf<ErrorsOf<Sourc
  * })
  *
  * function IssueTitle(props: { readonly issue: Handle<typeof issue> }) {
- *   const result = useAtomResult(useAuthBoundary(issue), props.issue)
+ *   const result = useAuthBoundary(useAtomResult(issue, props.issue))
  *   // AsyncResult<Issue, IssueNotFound | RpcClientError>
  * }
  * ```

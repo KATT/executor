@@ -214,20 +214,17 @@ function Connect({
   const docs = useDocumentationUrl();
   const organizationKey = organizationFromSlug(organizationSlug);
   const search = parseConnectSearch(useLocation().search);
-  const tools = useAccessBoundary(connectionToolListAtom);
-  const directory = useAccessBoundary(resourceInventoryAtom(organizationKey));
-  const connections = useAccessBoundary(mcpConnectionsAtom(organizationKey));
-  const agents = useAccessBoundary(mcpAgentsAtom(organizationKey));
   const toolRead =
     reads.tools === undefined || search.app === undefined
       ? undefined
       : {
-          source: tools({
+          source: connectionToolListAtom({
             organization: organizationKey,
             app: search.app,
             version: reads.tools.version,
           }),
           handle: reads.tools.handle,
+          claim: useAccessBoundary,
         };
   return (
     <ScopedConnectionsPage
@@ -249,12 +246,14 @@ function Connect({
       }}
       key={organizationKey}
       query={{
-        source: directory,
+        source: resourceInventoryAtom(organizationKey),
         handle: reads.directory,
+        claim: useAccessBoundary,
       }}
       connections={{
-        source: connections,
+        source: mcpConnectionsAtom(organizationKey),
         handle: reads.connections,
+        claim: useAccessBoundary,
       }}
       save={saveMcpConnectionAtom(organizationKey)}
       revoke={revokeMcpConnectionAtom(organizationKey)}
@@ -303,8 +302,9 @@ function Connect({
       agents={
         <ConnectedAgents
           read={{
-            source: agents,
+            source: mcpAgentsAtom(organizationKey),
             handle: reads.agents,
+            claim: useAccessBoundary,
           }}
           revoke={revokeMcpAgentAtom(organizationKey)}
           Failure={HostedFailure}

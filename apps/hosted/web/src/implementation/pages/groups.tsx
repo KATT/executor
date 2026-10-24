@@ -1,6 +1,6 @@
 import { EmptyState } from "@executor-js/ui/dashboard/empty-state";
 import { resourceDirectoryAtom } from "../../contracts/resource-access.ts";
-import { QueryResult, useStartedQuery } from "@executor-js/ui/dashboard/context";
+import { QueryResult, useClaimedResult, useStartedQuery } from "@executor-js/ui/dashboard/context";
 import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 import { Cause, Exit, Option, Schema } from "effect";
@@ -91,10 +91,13 @@ export function GroupsPage({
 function Groups({ id, reads }: { readonly id: string | undefined; readonly reads: GroupsReads }) {
   const { slug } = useOrganizationRoute();
   const organization = organizationFromSlug(slug);
-  const { result, data, refresh } = useStartedQuery({
-    source: useAccessBoundary(groupsAtom(organization)),
+  const groupsState = useStartedQuery({
+    source: groupsAtom(organization),
     handle: reads.groups,
   });
+  const result = useClaimedResult(groupsState.result, useAccessBoundary);
+  const data = AsyncResult.value(result);
+  const { refresh } = groupsState;
   return (
     <GroupsFrame>
       {AsyncResult.isFailure(result) && <HostedFailure cause={result.cause} retry={refresh} />}
@@ -403,10 +406,12 @@ function GroupEditor({
 }) {
   const { slug } = useOrganizationRoute();
   const organization = organizationFromSlug(slug);
-  const { result: latest, refresh } = useStartedQuery({
-    source: useAccessBoundary(groupsAtom(organization)),
+  const groupsState = useStartedQuery({
+    source: groupsAtom(organization),
     handle: groups,
   });
+  const latest = useClaimedResult(groupsState.result, useAccessBoundary);
+  const { refresh } = groupsState;
   const [search, setSearch] = useState("");
   const save = useAtomSet(saveGroupAtom(organization), { mode: "promiseExit" });
   const id = useId();
@@ -655,10 +660,12 @@ function GroupApps({
 }) {
   const { slug: organizationSlug } = useOrganizationRoute();
   const organization = organizationFromSlug(organizationSlug);
-  const { result, refresh } = useStartedQuery({
-    source: useAccessBoundary(resourceDirectoryAtom(organization)),
+  const directoryState = useStartedQuery({
+    source: resourceDirectoryAtom(organization),
     handle: directory,
   });
+  const result = useClaimedResult(directoryState.result, useAccessBoundary);
+  const { refresh } = directoryState;
   // Connect hydrates this directory. Read it again so this group's apps are the response in
   // front of the navigation.
   const refreshDirectory = useAtomRefresh(resourceDirectoryAtom(organization));

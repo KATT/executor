@@ -139,7 +139,7 @@ function AccountReconnect({
 /** Browse the complete live tool catalog with a stable, separate schema inspector. */
 function LiveAppTools({ app, version, tools, detail, requirements, selected }: AppToolsProps) {
   const catalog = { app: app.id, version };
-  const read = { source: useMissingBoundary(toolCatalogAtom(catalog)), handle: tools };
+  const read = { source: toolCatalogAtom(catalog), handle: tools, claim: useMissingBoundary };
   const named =
     selected === undefined
       ? undefined

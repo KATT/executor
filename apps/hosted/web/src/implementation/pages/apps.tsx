@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { useAtomRefresh } from "@effect/atom-react";
 import { Option, Schema } from "effect";
+import { AsyncResult } from "effect/reactivity";
 import { Loader } from "raf-effect-atom";
 import { OrganizationReference } from "@executor-js/hosted-server/organization";
 import { HostedFailure } from "../components/dashboard-bindings.tsx";
@@ -18,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@executor-js/ui/components/select";
-import { useStartedQuery } from "@executor-js/ui/dashboard/context";
+import { useClaimedResult, useStartedQuery } from "@executor-js/ui/dashboard/context";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { startRead } from "../../contracts/guarded-read.ts";
 import { useArrivalCover } from "../components/arrival-refresh.ts";
@@ -91,19 +92,30 @@ function Apps({
   const { slug: organizationSlug } = useOrganizationRoute();
   const organization = organizationFromSlug(organizationSlug);
   const navigate = useNavigate();
-  const groups = useStartedQuery({
-    source: useAccessBoundary(groupsAtom(organization)),
+  const groupsState = useStartedQuery({
+    source: groupsAtom(organization),
     handle: reads.groups,
   });
+  const groupsResult = useClaimedResult(groupsState.result, useAccessBoundary);
+  const groups = {
+    result: groupsResult,
+    data: AsyncResult.value(groupsResult),
+    refresh: groupsState.refresh,
+  };
   const inventory = resourceInventoryAtom(organization, view, group);
-  const claimedInventory = useAccessBoundary(inventory);
   // The first time this document opens the list from another page, read it for that arrival and
   // cover what the previous page left behind. A later visit keeps the list it already showed.
   const refreshDirectory = useAtomRefresh(resourceDirectoryAtom(organization, view));
-  const listed = useStartedQuery({
-    source: claimedInventory,
+  const listedState = useStartedQuery({
+    source: inventory,
     handle: reads.inventory,
   });
+  const listedResult = useClaimedResult(listedState.result, useAccessBoundary);
+  const listed = {
+    result: listedResult,
+    data: AsyncResult.value(listedResult),
+    refresh: listedState.refresh,
+  };
   const covering = useArrivalCover("apps", listed.result.waiting, refreshDirectory);
   const { data } = listed;
   const apply = (next: AppsListSearch) => {
@@ -120,7 +132,7 @@ function Apps({
   return (
     <SharedPage
       query={inventory}
-      read={{ source: claimedInventory, handle: reads.inventory }}
+      read={{ source: inventory, handle: reads.inventory, claim: useAccessBoundary }}
       conceal={covering}
       Failure={HostedFailure}
       pending={

@@ -3,7 +3,7 @@
 Executor consumes `raf-effect-atom` and `effect-atom-boundary` from this folder. Each workspace package is the built `dist` from a pack tarball committed next to it:
 
 - `raf-effect-atom-0.3.0.tgz` (the published npm package)
-- `effect-atom-boundary-0.2.0.tgz` (the published npm package)
+- `effect-atom-boundary-0.3.0.tgz` (the published npm package)
 
 The workspace `package.json` files are written here, not taken from the tarball. `react` is executor's exact version. `effect` and `@effect/atom-react` stay the published peer ranges (`^4.0.6`); executor's overrides select the installed copies. Only the root export is exposed, so the TanStack Router, React Router, and RSC entry points are not installed.
 

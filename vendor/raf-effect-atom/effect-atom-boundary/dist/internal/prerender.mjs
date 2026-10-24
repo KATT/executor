@@ -1,8 +1,8 @@
 import { RegistryContext } from "@effect/atom-react";
-import * as Option from "effect/Option";
-import * as React from "react";
 import * as Cause from "effect/Cause";
+import * as Option from "effect/Option";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
+import * as React from "react";
 import * as Atom from "effect/reactivity/Atom";
 import { jsx, jsxs } from "react/jsx-runtime";
 // src/internal/prerender.tsx

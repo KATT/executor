@@ -14,7 +14,7 @@ import { AccountRowsSkeleton } from "@executor-js/ui/dashboard/loading";
 import { EmptyState } from "@executor-js/ui/dashboard/empty-state";
 import { Button } from "@executor-js/ui/components/button";
 import { Link } from "@tanstack/react-router";
-import { useStartedQuery } from "@executor-js/ui/dashboard/context";
+import { useClaimedResult, useStartedQuery } from "@executor-js/ui/dashboard/context";
 import { HostedFailure } from "../components/dashboard-bindings.tsx";
 import { startRead } from "../../contracts/guarded-read.ts";
 import { useArrivalCover } from "../components/arrival-refresh.ts";
@@ -80,15 +80,20 @@ function Accounts({
 }) {
   const { slug: organizationSlug } = useOrganizationRoute();
   const organization = organizationFromSlug(organizationSlug);
-  const directory = useStartedQuery({
-    source: useAccessBoundary(resourceDirectoryAtom(organization)),
+  const directoryState = useStartedQuery({
+    source: resourceDirectoryAtom(organization),
     handle: reads.directory,
   });
+  const directoryResult = useClaimedResult(directoryState.result, useAccessBoundary);
+  const directory = {
+    result: directoryResult,
+    data: directoryState.data,
+    refresh: directoryState.refresh,
+  };
   // The first time this document opens the list from another page, read it for that arrival and
   // cover what the previous page left behind. A later visit keeps the list it already showed.
   const refreshDirectory = useAtomRefresh(resourceDirectoryAtom(organization));
   const covering = useArrivalCover("accounts", directory.result.waiting, refreshDirectory);
-  const inventory = useAccessBoundary(resourceInventoryAtom(organization));
   const [dialog, setDialog] = useState<{ account: AccountId; kind: AccountDialogKind }>();
   const role = useOrganizationDetails()?.role;
   const admin = role !== undefined && role !== "member";
@@ -102,8 +107,9 @@ function Accounts({
       <SharedPage
         query={resourceInventoryAtom(organization)}
         read={{
-          source: inventory,
+          source: resourceInventoryAtom(organization),
           handle: reads.inventory,
+          claim: useAccessBoundary,
         }}
         conceal={covering}
         Failure={HostedFailure}

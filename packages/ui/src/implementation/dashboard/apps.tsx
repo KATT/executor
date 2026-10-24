@@ -4,7 +4,7 @@ import { AsyncResult } from "effect/reactivity";
 import { AppCardsSkeleton } from "./loading.tsx";
 import { Card } from "@executor-js/ui/components/card";
 import { useState, type ReactNode } from "react";
-import { QueryResult, useQuery, useStartedQuery, useDashboard } from "./context.tsx";
+import { ClaimResult, QueryResult, useQuery, useStartedQuery, useDashboard } from "./context.tsx";
 import type { StartedRead } from "../../contracts/started-read.ts";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { AlertCircleIcon, ArrowRight02Icon, Key01Icon } from "@hugeicons/core-free-icons";
@@ -47,11 +47,35 @@ function AppsFromQuery<E>(props: AppsPageProps<E>) {
 
 function AppsFromRead<E>(props: AppsPageProps<E> & { readonly read: StartedRead<Inventory, E> }) {
   const state = useStartedQuery(props.read);
+  return (
+    <ClaimResult result={state.result} claim={props.read.claim}>
+      {(result) => (
+        <AppsFromReadBody
+          {...props}
+          result={result}
+          data={AsyncResult.value(result)}
+          refresh={state.refresh}
+        />
+      )}
+    </ClaimResult>
+  );
+}
+
+function AppsFromReadBody<E>({
+  result,
+  data,
+  refresh,
+  ...props
+}: AppsPageProps<E> & {
+  readonly result: AsyncResult.AsyncResult<Inventory, E>;
+  readonly data: ReturnType<typeof useQuery<Inventory, E>>["data"];
+  readonly refresh: () => void;
+}) {
   // A new filter is another atom. Keep the list on screen until that atom has its own value, and
   // keep it beside a failure that has nothing of its own to show. Compare the inventory, not the
   // Option wrapper: that wrapper is a new object on every read. This state stays above the
   // arrival cover: returning early would change how many hooks the list renders.
-  const incoming = Option.getOrUndefined(state.data);
+  const incoming = Option.getOrUndefined(data);
   const [retained, setRetained] = useState(incoming);
   if (incoming !== undefined && retained !== incoming) setRetained(incoming);
   if (props.conceal)
@@ -60,30 +84,30 @@ function AppsFromRead<E>(props: AppsPageProps<E> & { readonly read: StartedRead<
         {...props}
         result={AsyncResult.initial<Inventory, E>(false)}
         data={Option.none()}
-        refresh={state.refresh}
+        refresh={refresh}
       />
     );
   const shown = incoming ?? retained;
-  if (shown === undefined || AsyncResult.isSuccess(state.result))
-    return <AppsBody {...props} {...state} />;
-  if (AsyncResult.isInitial(state.result))
+  if (shown === undefined || AsyncResult.isSuccess(result))
+    return <AppsBody {...props} result={result} data={data} refresh={refresh} />;
+  if (AsyncResult.isInitial(result))
     return (
       <AppsBody
         {...props}
         result={AsyncResult.success<Inventory, E>(shown, { waiting: true })}
         data={Option.some(shown)}
-        refresh={state.refresh}
+        refresh={refresh}
       />
     );
   return (
     <AppsBody
       {...props}
-      result={AsyncResult.failure<Inventory, E>(state.result.cause, {
+      result={AsyncResult.failure<Inventory, E>(result.cause, {
         previousSuccess: Option.some(AsyncResult.success<Inventory, E>(shown)),
-        waiting: state.result.waiting,
+        waiting: result.waiting,
       })}
       data={Option.some(shown)}
-      refresh={state.refresh}
+      refresh={refresh}
     />
   );
 }

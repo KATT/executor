@@ -5,7 +5,7 @@ import { AsyncResult } from "effect/reactivity";
 import { AccountRowsSkeleton } from "./loading.tsx";
 import { AccountCheckDot, AccountIdentity } from "./account-health.tsx";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { QueryResult, useQuery, useStartedQuery, useDashboard } from "./context.tsx";
+import { ClaimResult, QueryResult, useQuery, useStartedQuery, useDashboard } from "./context.tsx";
 import type { StartedRead } from "../../contracts/started-read.ts";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
@@ -49,16 +49,27 @@ function AccountsFromRead<E>(
   props: AccountsPageProps<E> & { readonly read: StartedRead<Inventory, E> },
 ) {
   const state = useStartedQuery(props.read);
-  if (props.conceal)
-    return (
-      <AccountsBody
-        {...props}
-        result={AsyncResult.initial<Inventory, E>(false)}
-        data={Option.none()}
-        refresh={state.refresh}
-      />
-    );
-  return <AccountsBody {...props} {...state} />;
+  return (
+    <ClaimResult result={state.result} claim={props.read.claim}>
+      {(result) =>
+        props.conceal ? (
+          <AccountsBody
+            {...props}
+            result={AsyncResult.initial<Inventory, E>(false)}
+            data={Option.none()}
+            refresh={state.refresh}
+          />
+        ) : (
+          <AccountsBody
+            {...props}
+            result={result}
+            data={AsyncResult.value(result)}
+            refresh={state.refresh}
+          />
+        )
+      }
+    </ClaimResult>
+  );
 }
 
 function AccountsBody<E>({

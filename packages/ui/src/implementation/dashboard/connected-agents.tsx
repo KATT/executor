@@ -60,6 +60,7 @@ export function ConnectedAgents<E, EL extends E, ER extends E>({
       <StartedQueryView<readonly ConnectedAgent[], E>
         source={read.source}
         handle={read.handle}
+        claim={read.claim}
         Failure={Failure}
         pending={<ConnectedAgentsSkeleton />}
       >

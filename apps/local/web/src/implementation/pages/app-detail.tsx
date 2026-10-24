@@ -15,6 +15,7 @@ import {
   allResults,
   QueryResult,
   QueryView,
+  useClaimedResult,
   useStartedQuery,
 } from "@executor-js/ui/dashboard/context";
 import {
@@ -224,15 +225,33 @@ export function AppDetailPage({
     shouldBlockFn: () => skillDirty && !window.confirm("Discard your unsaved changes?"),
     enableBeforeUnload: skillDirty,
   });
-  const query = useStartedQuery({ source: useMissingBoundary(appAtom(id)), handle: reads.app });
-  const appLinks = useStartedQuery({
-    source: useMissingBoundary(appLinksAtom(id)),
+  const queryState = useStartedQuery({ source: appAtom(id), handle: reads.app });
+  const queryResult = useClaimedResult(queryState.result, useMissingBoundary);
+  const query = {
+    result: queryResult,
+    data: AsyncResult.value(queryResult),
+    refresh: queryState.refresh,
+  };
+  const appLinksState = useStartedQuery({
+    source: appLinksAtom(id),
     handle: reads.appLinks,
   });
-  const userLinks = useStartedQuery({
-    source: useMissingBoundary(userLinksAtom(id)),
+  const appLinksResult = useClaimedResult(appLinksState.result, useMissingBoundary);
+  const appLinks = {
+    result: appLinksResult,
+    data: AsyncResult.value(appLinksResult),
+    refresh: appLinksState.refresh,
+  };
+  const userLinksState = useStartedQuery({
+    source: userLinksAtom(id),
     handle: reads.userLinks,
   });
+  const userLinksResult = useClaimedResult(userLinksState.result, useMissingBoundary);
+  const userLinks = {
+    result: userLinksResult,
+    data: AsyncResult.value(userLinksResult),
+    refresh: userLinksState.refresh,
+  };
   const app = Option.isSome(query.data)
     ? query.data.value.app
     : overview.apps.find((item) => item.id === id);

@@ -70,6 +70,7 @@ import {
   allResults,
   QueryView,
   QueryResult,
+  useClaimedResult,
   useStartedQuery,
 } from "@executor-js/ui/dashboard/context";
 import {
@@ -422,24 +423,42 @@ function AppDetail({
   });
   const atoms = useDashboardAtoms();
   const key = { organization, app: appId };
-  const inventory = useStartedQuery({
-    source: useAccessBoundary(atoms.inventory),
+  const inventoryState = useStartedQuery({
+    source: atoms.inventory,
     handle: reads.inventory,
   });
-  const query = useStartedQuery({
-    source: useAccessBoundary(liveAppAtom(key)),
+  const inventoryResult = useClaimedResult(inventoryState.result, useAccessBoundary);
+  const inventory = {
+    result: inventoryResult,
+    data: AsyncResult.value(inventoryResult),
+    refresh: inventoryState.refresh,
+  };
+  const queryState = useStartedQuery({
+    source: liveAppAtom(key),
     handle: reads.record,
   });
+  const queryResult = useClaimedResult(queryState.result, useAccessBoundary);
+  const query = {
+    result: queryResult,
+    data: AsyncResult.value(queryResult),
+    refresh: queryState.refresh,
+  };
   const app = Option.isSome(query.data)
     ? query.data.value
     : Option.isSome(inventory.data)
       ? inventory.data.value.apps.find((item) => item.id === appId)
       : undefined;
   const selectedView = view ?? (tool === undefined ? "overview" : "tools");
-  const appLinks = useStartedQuery({
-    source: useAccessBoundary(appLinksAtom(key)),
+  const appLinksState = useStartedQuery({
+    source: appLinksAtom(key),
     handle: reads.appLinks,
   });
+  const appLinksResult = useClaimedResult(appLinksState.result, useAccessBoundary);
+  const appLinks = {
+    result: appLinksResult,
+    data: AsyncResult.value(appLinksResult),
+    refresh: appLinksState.refresh,
+  };
   // Use of the app is what lists the caller's links. Someone who can edit a private app but not
   // use it is refused here; that refusal is the page's "not shared" explanation, not an
   // organization-wide access failure.
@@ -447,15 +466,27 @@ function AppDetail({
     source: userLinksAtom(key),
     handle: reads.userLinks,
   });
-  const session = useStartedQuery({
-    source: useAccessBoundary(sessionAtom),
+  const sessionState = useStartedQuery({
+    source: sessionAtom,
     handle: reads.session,
   });
+  const sessionResult = useClaimedResult(sessionState.result, useAccessBoundary);
+  const session = {
+    result: sessionResult,
+    data: AsyncResult.value(sessionResult),
+    refresh: sessionState.refresh,
+  };
   const userId = AsyncResult.isSuccess(session.result) ? session.result.value?.user.id : undefined;
-  const authority = useStartedQuery({
-    source: useAccessBoundary(appAccessAtom(key)),
+  const authorityState = useStartedQuery({
+    source: appAccessAtom(key),
     handle: reads.access,
   });
+  const authorityResult = useClaimedResult(authorityState.result, useAccessBoundary);
+  const authority = {
+    result: authorityResult,
+    data: AsyncResult.value(authorityResult),
+    refresh: authorityState.refresh,
+  };
   const activeVersion = app?.activeVersion;
   useEffect(() => {
     if (!versionedViews.has(selectedView) || version !== undefined || activeVersion == null) return;
