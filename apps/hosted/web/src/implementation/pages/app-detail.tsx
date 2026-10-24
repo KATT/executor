@@ -427,7 +427,11 @@ function AppDetail({
     source: atoms.inventory,
     handle: reads.inventory,
   });
-  const inventoryResult = useClaimedResult(inventoryState.result, useAccessBoundary);
+  const inventoryResult = useClaimedResult(
+    atoms.inventory,
+    inventoryState.result,
+    useAccessBoundary,
+  );
   const inventory = {
     result: inventoryResult,
     data: AsyncResult.value(inventoryResult),
@@ -437,7 +441,7 @@ function AppDetail({
     source: liveAppAtom(key),
     handle: reads.record,
   });
-  const queryResult = useClaimedResult(queryState.result, useAccessBoundary);
+  const queryResult = useClaimedResult(liveAppAtom(key), queryState.result, useAccessBoundary);
   const query = {
     result: queryResult,
     data: AsyncResult.value(queryResult),
@@ -453,7 +457,11 @@ function AppDetail({
     source: appLinksAtom(key),
     handle: reads.appLinks,
   });
-  const appLinksResult = useClaimedResult(appLinksState.result, useAccessBoundary);
+  const appLinksResult = useClaimedResult(
+    appLinksAtom(key),
+    appLinksState.result,
+    useAccessBoundary,
+  );
   const appLinks = {
     result: appLinksResult,
     data: AsyncResult.value(appLinksResult),
@@ -470,7 +478,7 @@ function AppDetail({
     source: sessionAtom,
     handle: reads.session,
   });
-  const sessionResult = useClaimedResult(sessionState.result, useAccessBoundary);
+  const sessionResult = useClaimedResult(sessionAtom, sessionState.result, useAccessBoundary);
   const session = {
     result: sessionResult,
     data: AsyncResult.value(sessionResult),
@@ -481,7 +489,11 @@ function AppDetail({
     source: appAccessAtom(key),
     handle: reads.access,
   });
-  const authorityResult = useClaimedResult(authorityState.result, useAccessBoundary);
+  const authorityResult = useClaimedResult(
+    appAccessAtom(key),
+    authorityState.result,
+    useAccessBoundary,
+  );
   const authority = {
     result: authorityResult,
     data: AsyncResult.value(authorityResult),

@@ -226,7 +226,7 @@ export function AppDetailPage({
     enableBeforeUnload: skillDirty,
   });
   const queryState = useStartedQuery({ source: appAtom(id), handle: reads.app });
-  const queryResult = useClaimedResult(queryState.result, useMissingBoundary);
+  const queryResult = useClaimedResult(appAtom(id), queryState.result, useMissingBoundary);
   const query = {
     result: queryResult,
     data: AsyncResult.value(queryResult),
@@ -236,7 +236,11 @@ export function AppDetailPage({
     source: appLinksAtom(id),
     handle: reads.appLinks,
   });
-  const appLinksResult = useClaimedResult(appLinksState.result, useMissingBoundary);
+  const appLinksResult = useClaimedResult(
+    appLinksAtom(id),
+    appLinksState.result,
+    useMissingBoundary,
+  );
   const appLinks = {
     result: appLinksResult,
     data: AsyncResult.value(appLinksResult),
@@ -246,7 +250,11 @@ export function AppDetailPage({
     source: userLinksAtom(id),
     handle: reads.userLinks,
   });
-  const userLinksResult = useClaimedResult(userLinksState.result, useMissingBoundary);
+  const userLinksResult = useClaimedResult(
+    userLinksAtom(id),
+    userLinksState.result,
+    useMissingBoundary,
+  );
   const userLinks = {
     result: userLinksResult,
     data: AsyncResult.value(userLinksResult),

@@ -76,7 +76,7 @@ function ToolBrowserFromRead<E>(
   const { read, ...rest } = props;
   const state = useStartedQuery(read);
   return (
-    <ClaimResult result={state.result} claim={read.claim}>
+    <ClaimResult source={read.source} result={state.result} claim={read.claim}>
       {(result) => (
         <ToolBrowserView
           {...rest}
@@ -306,7 +306,7 @@ function ToolSchemasFromRead<E>({
 }) {
   const { result, refresh } = useStartedQuery(read);
   return (
-    <ClaimResult result={result} claim={read.claim}>
+    <ClaimResult source={read.source} result={result} claim={read.claim}>
       {(claimed) => <ToolSchemaResult result={claimed} refresh={refresh} Failure={Failure} />}
     </ClaimResult>
   );

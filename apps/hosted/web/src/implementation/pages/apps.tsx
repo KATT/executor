@@ -96,7 +96,11 @@ function Apps({
     source: groupsAtom(organization),
     handle: reads.groups,
   });
-  const groupsResult = useClaimedResult(groupsState.result, useAccessBoundary);
+  const groupsResult = useClaimedResult(
+    groupsAtom(organization),
+    groupsState.result,
+    useAccessBoundary,
+  );
   const groups = {
     result: groupsResult,
     data: AsyncResult.value(groupsResult),
@@ -110,7 +114,7 @@ function Apps({
     source: inventory,
     handle: reads.inventory,
   });
-  const listedResult = useClaimedResult(listedState.result, useAccessBoundary);
+  const listedResult = useClaimedResult(inventory, listedState.result, useAccessBoundary);
   const listed = {
     result: listedResult,
     data: AsyncResult.value(listedResult),

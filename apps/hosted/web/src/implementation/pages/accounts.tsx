@@ -84,7 +84,11 @@ function Accounts({
     source: resourceDirectoryAtom(organization),
     handle: reads.directory,
   });
-  const directoryResult = useClaimedResult(directoryState.result, useAccessBoundary);
+  const directoryResult = useClaimedResult(
+    resourceDirectoryAtom(organization),
+    directoryState.result,
+    useAccessBoundary,
+  );
   const directory = {
     result: directoryResult,
     data: directoryState.data,

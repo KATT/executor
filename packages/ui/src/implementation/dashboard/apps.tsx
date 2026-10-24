@@ -48,7 +48,7 @@ function AppsFromQuery<E>(props: AppsPageProps<E>) {
 function AppsFromRead<E>(props: AppsPageProps<E> & { readonly read: StartedRead<Inventory, E> }) {
   const state = useStartedQuery(props.read);
   return (
-    <ClaimResult result={state.result} claim={props.read.claim}>
+    <ClaimResult source={props.read.source} result={state.result} claim={props.read.claim}>
       {(result) => (
         <AppsFromReadBody
           {...props}

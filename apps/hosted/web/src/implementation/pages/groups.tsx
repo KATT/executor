@@ -95,7 +95,7 @@ function Groups({ id, reads }: { readonly id: string | undefined; readonly reads
     source: groupsAtom(organization),
     handle: reads.groups,
   });
-  const result = useClaimedResult(groupsState.result, useAccessBoundary);
+  const result = useClaimedResult(groupsAtom(organization), groupsState.result, useAccessBoundary);
   const data = AsyncResult.value(result);
   const { refresh } = groupsState;
   return (
@@ -410,7 +410,7 @@ function GroupEditor({
     source: groupsAtom(organization),
     handle: groups,
   });
-  const latest = useClaimedResult(groupsState.result, useAccessBoundary);
+  const latest = useClaimedResult(groupsAtom(organization), groupsState.result, useAccessBoundary);
   const { refresh } = groupsState;
   const [search, setSearch] = useState("");
   const save = useAtomSet(saveGroupAtom(organization), { mode: "promiseExit" });
@@ -664,7 +664,11 @@ function GroupApps({
     source: resourceDirectoryAtom(organization),
     handle: directory,
   });
-  const result = useClaimedResult(directoryState.result, useAccessBoundary);
+  const result = useClaimedResult(
+    resourceDirectoryAtom(organization),
+    directoryState.result,
+    useAccessBoundary,
+  );
   const { refresh } = directoryState;
   // Connect hydrates this directory. Read it again so this group's apps are the response in
   // front of the navigation.

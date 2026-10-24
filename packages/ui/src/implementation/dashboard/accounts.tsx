@@ -50,7 +50,7 @@ function AccountsFromRead<E>(
 ) {
   const state = useStartedQuery(props.read);
   return (
-    <ClaimResult result={state.result} claim={props.read.claim}>
+    <ClaimResult source={props.read.source} result={state.result} claim={props.read.claim}>
       {(result) =>
         props.conceal ? (
           <AccountsBody
