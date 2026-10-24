@@ -1,6 +1,6 @@
 import { Suspense, createContext, useContext, type ReactNode } from "react";
-import { RegistryContext, useAtomMount, useAtomRefresh, useAtomValue } from "@effect/atom-react";
-import { Hydration, useAtomResult, useWaterfall } from "raf-effect-atom";
+import { RegistryContext, useAtomRefresh, useAtomValue } from "@effect/atom-react";
+import { Hydration, useAtomResult, useHandleValue, useWaterfall } from "raf-effect-atom";
 import { Cause, Option } from "effect";
 import { Skeleton } from "../components/skeleton.tsx";
 import { AsyncResult, Atom } from "effect/reactivity";
@@ -154,25 +154,19 @@ export function pinHydratedValue<A>(
 /**
  * Read a handle the route loader started. The server suspends until a prefetch settles. The
  * browser renders the current result, so a pending read stays on the page and a refresh keeps
- * that page mounted. The first browser read keeps the value the server sent; reading the atom
- * directly would run its effect again and replace that HTML. A browser-only read is not waited
- * on: the server has no result for it. A failure the boundary claims still suspends in
- * `useClaimedResult` while that failure refreshes. An unclaimed failure stays on the page.
+ * that page mounted. The read keeps the value the server sent and ends the loader lease once it
+ * is subscribed. A browser-only read is not waited on: the server has no result for it. A failure
+ * the boundary claims still suspends in `useClaimedResult` while that failure refreshes. An
+ * unclaimed failure stays on the page.
  */
 export function useStartedQuery<A, E>(read: StartedRead<A, E>) {
   const registry = useContext(RegistryContext);
-  const kept = hydratedRead(read.source);
-  // Pin the serializable atom before anything reads the raw one, or its effect replaces the
-  // hydrated value during this render.
-  if (kept.pin !== kept.read) registry.get(kept.pin);
-  useAtomMount(kept.read);
-  const result = useAtomValue(kept.read);
-  // The loader lease stays until `useAtomResult` mounts this atom, or until `Loader.LeaseTTL`
-  // (30 seconds) on a browser registry. A request registry keeps it until that registry is
-  // disposed. `useAtomValue` does not end the lease, and the published package does not export
-  // a release for this read.
-  const refresh = useAtomRefresh(kept.read);
-  if (read.handle.inBrowser !== true) suspendIfUnsettled(registry, kept.read, result);
+  // Mounts the atom, keeps the value the server sent, and ends the loader lease after it
+  // subscribes. It never suspends: every `Initial` is the loading state, a waiting failure stays
+  // in the result, and a defect is a failure instead of a throw.
+  const result = useHandleValue(read.source, read.handle);
+  const refresh = useAtomRefresh(read.source);
+  if (read.handle.inBrowser !== true) suspendIfUnsettled(registry, read.source, result);
   return { result, data: AsyncResult.value(result), refresh };
 }
 
