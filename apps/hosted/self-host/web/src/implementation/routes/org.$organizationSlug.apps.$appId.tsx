@@ -19,6 +19,9 @@ export const Route = createFileRoute("/org/$organizationSlug/apps/$appId")({
     startAfterAccess(context.atoms, params.organizationSlug, (organization) =>
       loadHostedApp(context.atoms, organization, params.appId, deps, params.organizationSlug),
     ),
+  // The page writes the active version into the URL, which re-runs this loader.
+  // Keep the overview already on screen. The skeleton is for a load that does not resolve.
+  pendingMs: 10_000,
   component: AppPage,
 });
 function AppPage() {

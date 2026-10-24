@@ -156,8 +156,8 @@ export function pinHydratedValue<A>(
  * browser renders the current result, so a pending read stays on the page and a refresh keeps
  * that page mounted. The first browser read keeps the value the server sent; reading the atom
  * directly would run its effect again and replace that HTML. A browser-only read is not waited
- * on: the server has no result for it. A boundary-claimed failure that is still refreshing
- * suspends in `useClaimedResult`, after the hook has been given an initial result.
+ * on: the server has no result for it. A failure the boundary claims still suspends in
+ * `useClaimedResult` while that failure refreshes. An unclaimed failure stays on the page.
  */
 export function useStartedQuery<A, E>(read: StartedRead<A, E>) {
   const registry = useContext(RegistryContext);
@@ -178,9 +178,11 @@ export function useStartedQuery<A, E>(read: StartedRead<A, E>) {
 
 /**
  * Run a boundary hook on a read. A failure with no typed error is a transport defect the page
- * renders itself, and a failure that is still refreshing is the error a handler would paint
- * again. The hook throws both, so it sees an initial result instead. Only this claimed read
- * suspends while the failure refreshes: a page with no boundary keeps its rows up.
+ * renders itself, so the hook sees an initial result and this returns the defect. A failure the
+ * boundary claims is thrown by the hook: while that failure is still refreshing, this read
+ * suspends until the refresh settles, which keeps the handler from painting the old failure
+ * again. A failure the boundary does not claim is returned as it is, including while it
+ * refreshes, so the page keeps its own error and retry control mounted.
  */
 export function useClaimedResult<A, E>(
   source: Atom.Atom<AsyncResult.AsyncResult<A, E>>,
@@ -191,9 +193,15 @@ export function useClaimedResult<A, E>(
   const refreshing = AsyncResult.isFailure(result) && result.waiting;
   const defect =
     AsyncResult.isFailure(result) && Option.isNone(Cause.findErrorOption(result.cause));
-  const claimed = useClaim(refreshing || defect ? AsyncResult.initial<A, E>(false) : result);
-  if (refreshing) suspendWhileRefreshingFailure(registry, source, result);
-  return defect ? result : (claimed as AsyncResult.AsyncResult<A, E>);
+  // The hook throws the errors its boundary owns. Catching that throw is what distinguishes a
+  // claimed failure from one the page renders: only the claimed one suspends while it refreshes.
+  try {
+    const claimed = useClaim(defect ? AsyncResult.initial<A, E>(false) : result);
+    return defect ? result : (claimed as AsyncResult.AsyncResult<A, E>);
+  } catch (error) {
+    if (refreshing) suspendWhileRefreshingFailure(registry, source, result);
+    throw error;
+  }
 }
 
 /** Apply `claim` where this result is read. Without one, the result is unchanged. */
