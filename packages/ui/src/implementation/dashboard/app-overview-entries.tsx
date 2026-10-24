@@ -100,6 +100,7 @@ export function AppWorkflowPreview<E, A extends readonly HostedWorkflow[]>({
   return (
     <OverviewCatalog
       sources={sources}
+      {...(read === undefined ? {} : { started: read })}
       items={(workflows) => workflows}
       Failure={Failure}
       label="Loading workflows preview"

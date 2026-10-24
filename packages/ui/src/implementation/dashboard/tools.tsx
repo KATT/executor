@@ -1,6 +1,6 @@
 import { EmptyState } from "./empty-state.tsx";
 import { AppSectionHeader, AppSectionTitle } from "./app-section-header.tsx";
-import { useState, type ComponentType, type MouseEvent, type ReactNode } from "react";
+import { Suspense, useState, type ComponentType, type MouseEvent, type ReactNode } from "react";
 import type { Tool, ToolRouter, ToolSummary } from "@executor-js/sdk";
 import { Option } from "effect";
 import { AsyncResult } from "effect/reactivity";
@@ -14,7 +14,13 @@ import {
   ViewIcon,
 } from "@hugeicons/core-free-icons";
 import type { Query, QueryProps, ToolCatalog } from "../../contracts/dashboard.ts";
-import { ClaimResult, QueryResult, useQuery, useStartedQuery } from "./context.tsx";
+import {
+  ClaimResult,
+  QueryResult,
+  useQuery,
+  useStartedQuery,
+  useWaterfallQuery,
+} from "./context.tsx";
 import type { StartedRead } from "../../contracts/started-read.ts";
 import { CopyButton } from "./code.tsx";
 import { humanize, SchemaSection } from "./tool-schema.tsx";
@@ -293,7 +299,24 @@ function ToolBrowserView<E>({
 
 /** The selected tool's schemas, read on selection rather than with the list. */
 function ToolSchemas<E>({ query, Failure }: QueryProps<Tool | undefined, E>) {
-  const { result, refresh } = useQuery(query);
+  return (
+    <Suspense fallback={<SchemaLoading />}>
+      <ToolSchemasRead query={query} Failure={Failure} />
+    </Suspense>
+  );
+}
+
+function SchemaLoading() {
+  return (
+    <div role="status" aria-label="Loading schema">
+      <SchemaHeadingSkeleton />
+      <SchemaSkeleton />
+    </div>
+  );
+}
+
+function ToolSchemasRead<E>({ query, Failure }: QueryProps<Tool | undefined, E>) {
+  const { result, refresh } = useWaterfallQuery(query);
   return <ToolSchemaResult result={result} refresh={refresh} Failure={Failure} />;
 }
 

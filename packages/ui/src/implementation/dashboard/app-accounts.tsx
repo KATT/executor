@@ -1,5 +1,13 @@
-import { useQuery } from "./context.tsx";
-import { useEffect, useId, useRef, useState, type ReactNode, type ComponentType } from "react";
+import { useWaterfallQuery } from "./context.tsx";
+import {
+  Suspense,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+  type ComponentType,
+} from "react";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult, type Atom } from "effect/reactivity";
 import { Exit, Option, type Cause } from "effect";
@@ -574,7 +582,43 @@ function ReadOnlyChoices<E>({
  * The accounts the caller could use for one requirement, from the host's read of it. Until that
  * read arrives the linked accounts show, without controls that could act on stale choices.
  */
-function EditableChoices<E>({
+function EditableChoices<E>(
+  props: ScopeProps<E> & {
+    readonly edit: LinkEditing<E>;
+    readonly slot: string;
+    readonly requirement: AccountRequirement;
+    readonly linked: readonly AccountSummary[];
+  },
+) {
+  return (
+    <Suspense
+      fallback={<EditableChoiceList {...props} loaded={Option.none()} failure={undefined} />}
+    >
+      <EditableChoicesLoaded {...props} />
+    </Suspense>
+  );
+}
+
+function EditableChoicesLoaded<E>(
+  props: ScopeProps<E> & {
+    readonly edit: LinkEditing<E>;
+    readonly slot: string;
+    readonly requirement: AccountRequirement;
+    readonly linked: readonly AccountSummary[];
+  },
+) {
+  const { result, data: loaded, refresh } = useWaterfallQuery(props.edit.choices(props.slot));
+  return (
+    <EditableChoiceList
+      {...props}
+      loaded={loaded}
+      failure={AsyncResult.isFailure(result) ? result : undefined}
+      refresh={refresh}
+    />
+  );
+}
+
+function EditableChoiceList<E>({
   app,
   slot,
   requirement,
@@ -583,13 +627,18 @@ function EditableChoices<E>({
   edit,
   accounts,
   Failure,
+  loaded,
+  failure,
+  refresh,
 }: ScopeProps<E> & {
   readonly edit: LinkEditing<E>;
   readonly slot: string;
   readonly requirement: AccountRequirement;
   readonly linked: readonly AccountSummary[];
+  readonly loaded: Option.Option<{ readonly accounts: readonly RequirementChoice<Account>[] }>;
+  readonly failure: AsyncResult.Failure<unknown, E> | undefined;
+  readonly refresh?: (() => void) | undefined;
 }) {
-  const { result, data: loaded, refresh } = useQuery(edit.choices(slot));
   const plain = requirement.cardinality === "one";
   // A choice shows the page's own view of the account: its link's details, with sign-in state and
   // checks, or the caller's account list, which renames and reconnects keep current.
@@ -634,9 +683,9 @@ function EditableChoices<E>({
   );
   return (
     <div className="divide-y divide-border/50">
-      {AsyncResult.isFailure(result) && (
+      {failure !== undefined && refresh !== undefined && (
         <div className="px-3.5 py-2.5 text-xs">
-          <Failure cause={result.cause} retry={refresh} retrying={result.waiting} />
+          <Failure cause={failure.cause} retry={refresh} retrying={failure.waiting} />
         </div>
       )}
       {choices.length > 0 &&

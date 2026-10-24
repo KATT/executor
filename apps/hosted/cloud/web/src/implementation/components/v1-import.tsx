@@ -1,4 +1,4 @@
-import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
 import { HostedEntry } from "@executor-js/hosted-web/entry";
 import { Button } from "@executor-js/ui/components/button";
 import { CopyButton } from "@executor-js/ui/dashboard/code";
@@ -35,7 +35,7 @@ import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { Exit } from "effect";
 import { AsyncResult } from "effect/reactivity";
 import { createContext, Suspense, useContext, useId, useState } from "react";
-import { useAtomResult, useWaterfall, type Handle } from "raf-effect-atom";
+import { Loader, useAtomResult, type Handle } from "raf-effect-atom";
 import type {
   V1ImportChoices,
   V1ImportItem,
@@ -300,7 +300,8 @@ function Preview({
   readonly owned: V1ImportChoices["owned"];
   readonly into: string | undefined;
 }) {
-  const previewHandle = useWaterfall(v1ImportPreviewAtom, id);
+  const registry = useContext(RegistryContext);
+  const previewHandle = Loader.make(registry).prefetchInBrowser(v1ImportPreviewAtom, id);
   return (
     <Suspense fallback={<PreviewSkeleton label="Reading the workspace" />}>
       <PreviewBody id={id} owned={owned} into={into} preview={previewHandle} />

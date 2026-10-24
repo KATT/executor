@@ -8,11 +8,16 @@ import {
   OrganizationId,
   type OrganizationReference,
 } from "@executor-js/hosted-server/organization";
-import type { ConnectedAgent } from "@executor-js/mcp-auth/agents";
+import { ConnectedAgent } from "@executor-js/mcp-auth/agents";
 import type { ConnectionId } from "@executor-js/mcp-auth/connections";
 import { GrantId } from "@executor-js/mcp-auth/grants";
 import type { ConnectionSave } from "@executor-js/ui/contracts/scoped-connections";
-import { acknowledge, acknowledgedQuery, upsert } from "@executor-js/ui/contracts/mutations";
+import {
+  acknowledge,
+  acknowledgedQuery,
+  follows,
+  upsert,
+} from "@executor-js/ui/contracts/mutations";
 import { HostedClient } from "./api.ts";
 import { resourceInventoryAtom } from "./resource-access.ts";
 
@@ -126,11 +131,12 @@ export const agentBaselineAtom = Atom.family((request: AgentBaselineRequest) =>
  * unmounted.
  */
 export const newMcpAgentAtom = Atom.family((attempt: AgentConnectionAttempt) =>
-  agentIn(
+  watchAgents(
     attempt.organizations.map((organization) =>
       pollingQuery(mcpAgentsAtom(organization), steadyPolling),
     ),
     (agent) => !attempt.existing.includes(agent.id),
+    `hosted:new-mcp-agent:${attempt.organizations.join(",")}:${attempt.existing.join(",")}`,
   ),
 );
 /** An agent named by a link to the first prompt, in any of the member's organizations. */
@@ -143,11 +149,29 @@ export class AgentConfirmation extends Data.Class<{
  * lists; a revoked agent, an API client or another member's grant is not found.
  */
 export const confirmedMcpAgentAtom = Atom.family((confirmation: AgentConfirmation) =>
-  agentIn(
-    confirmation.organizations.map(mcpAgentsAtom),
+  watchAgents(
+    confirmation.organizations.map((organization) => mcpAgentsAtom(organization)),
     (agent) => agent.id === confirmation.agent,
+    `hosted:confirmed-mcp-agent:${confirmation.organizations.join(",")}:${confirmation.agent}`,
   ),
 );
+/**
+ * A render-time watch. It follows one serializable agents query so `useWaterfall` can lease that
+ * query; the readable still loads every organization, and an empty watch is serializable itself.
+ * Polling lives in the lists the readable gets, so the browser runs this atom rather than a
+ * hydrated copy that would skip that first read.
+ */
+const watchAgents = (
+  lists: ReadonlyArray<Atom.Atom<AsyncResult.AsyncResult<ReadonlyArray<ConnectedAgent>, unknown>>>,
+  matches: (agent: ConnectedAgent) => boolean,
+  key: string,
+) => {
+  const watched = agentIn(lists, matches);
+  const first = lists[0];
+  if (first === undefined)
+    return hydratedResult({ key, success: Schema.Option(ConnectedAgent) })(watched);
+  return follows(watched, first);
+};
 /** The first assistant connected over MCP, not through the Executor HTTP API, that `matches`. */
 const agentIn = (
   lists: ReadonlyArray<Atom.Atom<AsyncResult.AsyncResult<ReadonlyArray<ConnectedAgent>, unknown>>>,

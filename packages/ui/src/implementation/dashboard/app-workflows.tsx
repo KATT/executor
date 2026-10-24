@@ -1,6 +1,8 @@
 import { LocalTime, shortMoment } from "../components/local-time.tsx";
 import { EmptyState, EmptyStatePanel } from "./empty-state.tsx";
-import { Suspense, useState, type ReactNode, type ComponentType } from "react";
+import { Suspense, useContext, useState, type ReactNode, type ComponentType } from "react";
+import { RegistryContext } from "@effect/atom-react";
+import { Loader } from "raf-effect-atom";
 import type {
   App,
   HostedWorkflow,
@@ -11,7 +13,7 @@ import type {
 import { Option } from "effect";
 import type { WorkflowBindings } from "../../contracts/app-browser.ts";
 import type { FailureProps } from "../../contracts/dashboard.ts";
-import { QueryView, QueryResult, useQuery, useStartedQuery } from "./context.tsx";
+import { QueryView, QueryResult, useStartedQuery, useWaterfallQuery } from "./context.tsx";
 import type { StartedRead } from "../../contracts/started-read.ts";
 import { WorkflowNamesLoading, WorkflowRunsLoading } from "./app-browser-loading.tsx";
 import { Button } from "../components/button.tsx";
@@ -113,12 +115,33 @@ function WorkflowBrowser<E>({
   readonly Failure: ComponentType<FailureProps<E>>;
 }) {
   return (
+    <Suspense fallback={<WorkflowNamesLoading />}>
+      <WorkflowBrowserLoaded
+        bindings={bindings}
+        Failure={Failure}
+        start={start}
+        runAction={runAction}
+      />
+    </Suspense>
+  );
+}
+function WorkflowBrowserLoaded<E>({
+  bindings,
+  Failure,
+  start,
+  runAction,
+}: WorkflowActions & {
+  readonly bindings: WorkflowBindings<E>;
+  readonly Failure: ComponentType<FailureProps<E>>;
+}) {
+  const definitions = useWaterfallQuery(bindings.workflows);
+  return (
     <WorkflowColumns
       bindings={bindings}
       Failure={Failure}
       start={start}
       runAction={runAction}
-      definitions={useQuery(bindings.workflows)}
+      definitions={definitions}
     />
   );
 }
@@ -132,7 +155,7 @@ function WorkflowColumns<E>({
 }: WorkflowActions & {
   readonly bindings: WorkflowBindings<E>;
   readonly Failure: ComponentType<FailureProps<E>>;
-  readonly definitions: ReturnType<typeof useQuery<readonly HostedWorkflow[], E>>;
+  readonly definitions: ReturnType<typeof useStartedQuery<readonly HostedWorkflow[], E>>;
   /** The first page of every workflow. Later pages stay with the cursor the member picks. */
   readonly runsRead?: StartedRead<WorkflowRunPage, E> | undefined;
 }) {
@@ -223,6 +246,7 @@ function WorkflowRuns<E>({
   readonly Failure: ComponentType<FailureProps<E>>;
   readonly runsRead?: StartedRead<WorkflowRunPage, E> | undefined;
 }) {
+  const registry = useContext(RegistryContext);
   const [pages, setPages] = useState<readonly (WorkflowRunId | undefined)[]>([undefined]);
   const cursor = pages[pages.length - 1];
   const selected = workflows.find((item) => item.name === workflow);
@@ -259,7 +283,9 @@ function WorkflowRuns<E>({
                   size="sm"
                   disabled={page.next === undefined}
                   onClick={() => {
-                    if (page.next !== undefined) setPages([...pages, page.next]);
+                    if (page.next === undefined) return;
+                    Loader.make(registry).prefetch(bindings.runs(workflow, page.next));
+                    setPages([...pages, page.next]);
                   }}
                 >
                   Older runs

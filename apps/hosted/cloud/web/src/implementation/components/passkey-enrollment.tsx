@@ -1,10 +1,10 @@
 import { LoginFrame } from "@executor-js/hosted-web/pages/login-frame";
-import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtomSet, useAtomValue } from "@effect/atom-react";
 import { Button } from "@executor-js/ui/components/button";
 import { Exit, Option } from "effect";
 import { AsyncResult } from "effect/reactivity";
-import { Suspense, useState, type ReactNode } from "react";
-import { useAtomResult, useWaterfall, type Handle } from "raf-effect-atom";
+import { Suspense, useContext, useState, type ReactNode } from "react";
+import { Loader, useAtomResult, type Handle } from "raf-effect-atom";
 import { addPasskeyAtom } from "../../contracts/auth.ts";
 import {
   dismissPasskeyEnrollmentAtom,
@@ -69,7 +69,8 @@ function BrowserEnrollment({
   readonly children: ReactNode;
   readonly canSubmit: boolean;
 }) {
-  const enrollment = useWaterfall(passkeyEnrollmentAtom, userId);
+  const registry = useContext(RegistryContext);
+  const enrollment = Loader.make(registry).prefetchInBrowser(passkeyEnrollmentAtom, userId);
   return (
     <Suspense fallback={<PasskeyEnrollmentPending />}>
       <EnrollmentRead userId={userId} enrollment={enrollment} canSubmit={canSubmit}>

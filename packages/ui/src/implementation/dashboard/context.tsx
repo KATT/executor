@@ -1,6 +1,6 @@
 import { Suspense, createContext, useContext, type ReactNode } from "react";
 import { RegistryContext, useAtomMount, useAtomRefresh, useAtomValue } from "@effect/atom-react";
-import { Hydration, releaseLease } from "raf-effect-atom";
+import { Hydration, releaseLease, useAtomResult, useWaterfall } from "raf-effect-atom";
 import { Cause, Option } from "effect";
 import { Skeleton } from "../components/skeleton.tsx";
 import { AsyncResult, Atom } from "effect/reactivity";
@@ -27,6 +27,17 @@ export const useOptionalDashboard = () => useContext(Context);
 export function useQuery<A, E>(atom: Query<A, E>) {
   const result = useAtomValue(atom);
   const refresh = useAtomRefresh(atom);
+  return { result, data: AsyncResult.value(result), refresh };
+}
+
+/**
+ * Start a query whose key exists only in this render, then read the settled result. The caller
+ * suspends until it settles, so it needs a Suspense boundary.
+ */
+export function useWaterfallQuery<A, E>(query: Query<A, E>) {
+  const handle = useWaterfall(query);
+  const result = useAtomResult(query, handle);
+  const refresh = useAtomRefresh(query);
   return { result, data: AsyncResult.value(result), refresh };
 }
 
@@ -260,7 +271,25 @@ function QueryViewQuery<A, E>({
   readonly children: (value: A) => ReactNode;
   readonly pending: ReactNode;
 }) {
-  const { result, refresh } = useQuery(query);
+  return (
+    <Suspense fallback={pending}>
+      <QueryViewWaterfall query={query} Failure={Failure} pending={pending}>
+        {children}
+      </QueryViewWaterfall>
+    </Suspense>
+  );
+}
+
+function QueryViewWaterfall<A, E>({
+  query,
+  Failure,
+  children,
+  pending,
+}: QueryProps<A, E> & {
+  readonly children: (value: A) => ReactNode;
+  readonly pending: ReactNode;
+}) {
+  const { result, refresh } = useWaterfallQuery(query);
   return (
     <QueryResult result={result} Failure={Failure} retry={refresh} pending={pending}>
       {children}

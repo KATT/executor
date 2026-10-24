@@ -1,6 +1,8 @@
 import { Skeleton } from "../components/skeleton.tsx";
-import type { ComponentProps, ComponentType, ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { Suspense, type ComponentProps, type ComponentType, type ReactNode } from "react";
+import { useContext, useMemo, useState } from "react";
+import { RegistryContext } from "@effect/atom-react";
+import { Loader } from "raf-effect-atom";
 import type {
   SourceDisplayEntries,
   SourceDisplayFile,
@@ -22,7 +24,7 @@ import {
   SelectValue,
 } from "../components/select.tsx";
 import { Code } from "./code.tsx";
-import { QueryResult, useQuery } from "./context.tsx";
+import { QueryResult, useWaterfallQuery } from "./context.tsx";
 import type { FailureProps, Query } from "../../contracts/dashboard.ts";
 import { cn } from "../lib/utils.ts";
 
@@ -157,11 +159,17 @@ export function SourceBrowser<E>({
   readonly Failure: ComponentType<FailureProps<E>>;
   readonly className?: string;
 }) {
+  const registry = useContext(RegistryContext);
   const [selected, setSelected] = useState("index.ts");
   const file = files.find((file) => file.path === selected) ?? files[0];
+  const selectFile = (path: string) => {
+    const next = files.find((item) => item.path === path);
+    if (next?.content === undefined) Loader.make(registry).prefetch(readFile(path));
+    setSelected(path);
+  };
   const tree = useMemo(() => sourceTree(files), [files]);
   const picker = (
-    <Select value={file.path} onValueChange={setSelected}>
+    <Select value={file.path} onValueChange={selectFile}>
       <SelectTrigger
         aria-label="Source file"
         className="max-w-full border-0 bg-transparent px-0 shadow-none"
@@ -188,7 +196,7 @@ export function SourceBrowser<E>({
           <span className="font-normal tabular-nums text-muted-foreground">{files.length}</span>
         </div>
         <div className="min-h-0 flex-1 overflow-auto p-2">
-          <SourceTree nodes={tree} selected={file.path} onSelect={setSelected} />
+          <SourceTree nodes={tree} selected={file.path} onSelect={selectFile} />
         </div>
       </nav>
       {file.content === undefined ? (
@@ -220,13 +228,34 @@ function RemoteSourceFile<E>({
   readonly Failure: ComponentType<FailureProps<NoInfer<E>>>;
   readonly picker: ReactNode;
 }) {
-  const { result, refresh } = useQuery(query);
   return (
-    <SourceFilePane
-      path={path}
-      content={Option.getOrUndefined(AsyncResult.value(result))?.content}
-      picker={picker}
+    <Suspense
+      fallback={
+        <SourceFilePane path={path} content={undefined} picker={picker}>
+          <SourceCodeLoading label={`Loading ${path}`} />
+        </SourceFilePane>
+      }
     >
+      <RemoteSourceBody path={path} query={query} Failure={Failure} picker={picker} />
+    </Suspense>
+  );
+}
+
+function RemoteSourceBody<E>({
+  path,
+  query,
+  Failure,
+  picker,
+}: {
+  readonly path: string;
+  readonly query: Query<SourceDisplayFile, E>;
+  readonly Failure: ComponentType<FailureProps<NoInfer<E>>>;
+  readonly picker: ReactNode;
+}) {
+  const { result, refresh } = useWaterfallQuery(query);
+  const content = Option.getOrUndefined(AsyncResult.value(result))?.content;
+  return (
+    <SourceFilePane path={path} content={content} picker={picker}>
       <QueryResult
         result={result}
         Failure={(props) => (

@@ -177,6 +177,7 @@ export function AppOverviewTools<E, A extends { readonly items: readonly ToolSum
       ) : (
         <OverviewCatalog
           sources={sources}
+          {...(read === undefined ? {} : { started: read })}
           items={(page) => page.items}
           Failure={Failure}
           label="Loading tools preview"

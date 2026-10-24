@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useEffectEvent, useState, type ReactNode } from "react";
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
-import { Loader } from "raf-effect-atom";
+import { Loader, useAtomResult, useWaterfall } from "raf-effect-atom";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft02Icon,
@@ -363,8 +363,24 @@ function CapturedBaseline({
   readonly assistant: string;
   readonly request: AgentBaselineRequest;
 } & AgentFound) {
+  return (
+    <Suspense fallback={<GuideStatus assistant={assistant} state={{ kind: "preparing" }} />}>
+      <CapturedBaselineRead assistant={assistant} request={request} {...found} />
+    </Suspense>
+  );
+}
+
+function CapturedBaselineRead({
+  assistant,
+  request,
+  ...found
+}: {
+  readonly assistant: string;
+  readonly request: AgentBaselineRequest;
+} & AgentFound) {
   const navigate = useNavigate();
-  const result = useAtomValue(agentBaselineAtom(request));
+  const baselineHandle = useWaterfall(agentBaselineAtom, request);
+  const result = useAtomResult(agentBaselineAtom, baselineHandle);
   const retry = useAtomRefresh(agentBaselineAtom(request));
   const baseline = AsyncResult.isSuccess(result) ? result.value : undefined;
   // A screen that hydrates with the server's read has not seen its entry's state yet. If the entry
@@ -423,7 +439,24 @@ function NewAgentWatch({
   readonly attempt: AgentConnectionAttempt;
   readonly onConnected: (agent: ConnectedAgent) => void;
 }) {
-  const result = useAtomValue(newMcpAgentAtom(attempt));
+  return (
+    <Suspense fallback={<GuideStatus assistant={assistant} state={{ kind: "waiting" }} />}>
+      <NewAgentWatchRead assistant={assistant} attempt={attempt} onConnected={onConnected} />
+    </Suspense>
+  );
+}
+
+function NewAgentWatchRead({
+  assistant,
+  attempt,
+  onConnected,
+}: {
+  readonly assistant: string;
+  readonly attempt: AgentConnectionAttempt;
+  readonly onConnected: (agent: ConnectedAgent) => void;
+}) {
+  const watch = useWaterfall(newMcpAgentAtom, attempt);
+  const result = useAtomResult(newMcpAgentAtom, watch);
   const retry = useAtomRefresh(newMcpAgentAtom(attempt));
   const agent = AsyncResult.isSuccess(result) ? Option.getOrUndefined(result.value) : undefined;
   useEffect(() => {
@@ -868,9 +901,25 @@ function ConfirmedAgent({
   readonly assistant: AssistantId;
   readonly confirmation: AgentConfirmation;
 }) {
+  const name = assistantName(assistant);
+  return (
+    <Suspense fallback={<PromptStatus assistant={name} state={{ kind: "checking" }} />}>
+      <ConfirmedAgentRead assistant={assistant} confirmation={confirmation} />
+    </Suspense>
+  );
+}
+
+function ConfirmedAgentRead({
+  assistant,
+  confirmation,
+}: {
+  readonly assistant: AssistantId;
+  readonly confirmation: AgentConfirmation;
+}) {
   const navigate = useNavigate();
   const name = assistantName(assistant);
-  const result = useAtomValue(confirmedMcpAgentAtom(confirmation));
+  const watch = useWaterfall(confirmedMcpAgentAtom, confirmation);
+  const result = useAtomResult(confirmedMcpAgentAtom, watch);
   const retry = useAtomRefresh(confirmedMcpAgentAtom(confirmation));
   const missing = AsyncResult.isSuccess(result) && Option.isNone(result.value);
   // The prompt's URL named an agent the member does not hold, so its guide takes this entry.
