@@ -135,7 +135,13 @@ export async function loadHostedApp(
   const tool = namedTool(search.tool);
   const known = search.version;
   const loadedApp = async () => {
-    const loaded = await atoms.ensure(liveAppAtom(key));
+    // Transport and decode defects settle the atom, then reject ensure. The page
+    // renders that failure; rejecting the loader would replace the whole page.
+    const loaded = await atoms.ensure(liveAppAtom(key)).catch((error: unknown) => {
+      if (error instanceof Error && error.name === "AbortError") throw error;
+      return undefined;
+    });
+    if (loaded === undefined) return undefined;
     const result = Loader.result(loaded);
     return AsyncResult.isSuccess(result) ? result.value : undefined;
   };
@@ -364,10 +370,13 @@ function AppDetail({
     void navigate({
       to: "/org/$organizationSlug/apps/$appId",
       params: { organizationSlug, appId },
-      search: { view, tool, version: activeVersion },
+      search: (previous: { readonly version?: VersionId | undefined }) => ({
+        ...previous,
+        version: activeVersion,
+      }),
       replace: true,
     });
-  }, [activeVersion, appId, navigate, organizationSlug, tool, version, view]);
+  }, [activeVersion, appId, navigate, organizationSlug, version]);
   const access = Option.getOrUndefined(authority.data);
   const canManage = access?.canManage === true,
     canUse = access?.canUse === true;

@@ -1,7 +1,12 @@
 import { Suspense, createContext, useContext, type ReactNode } from "react";
-import { RegistryContext, useAtomValue, useAtomRefresh } from "@effect/atom-react";
-import { useAtomResult } from "raf-effect-atom";
-import { type Cause, Option } from "effect";
+import {
+  RegistryContext,
+  useAtomMount,
+  useAtomRefresh,
+  useAtomSuspense,
+  useAtomValue,
+} from "@effect/atom-react";
+import { Cause, Option, Predicate } from "effect";
 import { Skeleton } from "../components/skeleton.tsx";
 import { AsyncResult, type Atom } from "effect/reactivity";
 import type { DashboardBindings, Query, QueryProps } from "../../contracts/dashboard.ts";
@@ -30,10 +35,39 @@ export function useQuery<A, E>(atom: Query<A, E>) {
   return { result, data: AsyncResult.value(result), refresh };
 }
 
+/**
+ * Tags a named boundary claims. A settled failure with one of these is thrown so that boundary
+ * renders. Any other failure, including a transport defect, stays in the result so the page can
+ * show it beside the last value and keep a retry in place while it refreshes.
+ */
+const claimedBoundaryTags = new Set([
+  "Unauthorized",
+  "AuthenticationUnavailable",
+  "OrganizationForbidden",
+  "DashboardUnauthorized",
+  "DashboardForbidden",
+  "AuthStorageError",
+  "StorageError",
+  "LiveConnectionLost",
+  "NoSuchElementError",
+]);
+
+const claimedDefect = (cause: Cause.Cause<unknown>) => {
+  if (Option.isSome(Cause.findErrorOption(cause))) return undefined;
+  const defect = Cause.squash(cause);
+  if (!Predicate.hasProperty(defect, "_tag") || typeof defect._tag !== "string") return undefined;
+  return claimedBoundaryTags.has(defect._tag) ? defect : undefined;
+};
+
 /** Read a handle the route loader started. */
 export function useStartedQuery<A, E>(read: StartedRead<A, E>) {
-  const result = useAtomResult(read.source, read.handle);
+  useAtomMount(read.source);
+  const result = useAtomSuspense(read.source, { includeFailure: true, suspendOnWaiting: false });
   const refresh = useAtomRefresh(read.source);
+  if (AsyncResult.isFailure(result) && !result.waiting) {
+    const claimed = claimedDefect(result.cause);
+    if (claimed !== undefined) throw claimed;
+  }
   return { result, data: AsyncResult.value(result), refresh };
 }
 
@@ -97,8 +131,7 @@ function StartedQueryBody<A, E>({
   readonly children: (value: A) => ReactNode;
   readonly pending: ReactNode;
 }) {
-  const result = useAtomResult(source, handle);
-  const refresh = useAtomRefresh(source);
+  const { result, refresh } = useStartedQuery({ source, handle });
   return (
     <QueryResult result={result} Failure={Failure} retry={refresh} pending={pending}>
       {children}
