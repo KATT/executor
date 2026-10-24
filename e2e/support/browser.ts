@@ -1,5 +1,5 @@
 /** Promise APIs are confined to this driver adapter; Effect owns browser and context scopes. */
-import "./localhost-names.ts";
+import { routeAppHostsToLoopback } from "./loopback-names.ts";
 import {
   chromium,
   webkit,
@@ -121,6 +121,7 @@ export class Browser extends Context.Service<
           recordVideo: { dir: `${evidence.directory}/raw`, size: { width: 1440, height: 960 } },
         }),
       );
+      routeAppHostsToLoopback(context.request);
       yield* driver("route batched reads through test routes", () =>
         splitRoutedReads(context, targetHosts(target).browser),
       );
