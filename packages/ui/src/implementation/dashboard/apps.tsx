@@ -1,5 +1,6 @@
 import { PageFrame, PageHeader } from "./page.tsx";
 import { Option } from "effect";
+import { AsyncResult } from "effect/reactivity";
 import { AppCardsSkeleton } from "./loading.tsx";
 import { Card } from "@executor-js/ui/components/card";
 import { useState, type ReactNode } from "react";
@@ -26,6 +27,8 @@ type AppsPageProps<E> = QueryProps<Inventory, E> & {
   readonly pending?: ReactNode;
   /** Present when the route loader started this inventory. */
   readonly read?: StartedRead<Inventory, E> | undefined;
+  /** Hide a retained list while this page's own reread is the one on screen. */
+  readonly conceal?: boolean;
 };
 
 /** A card for each configured app and its linked accounts. */
@@ -44,7 +47,44 @@ function AppsFromQuery<E>(props: AppsPageProps<E>) {
 
 function AppsFromRead<E>(props: AppsPageProps<E> & { readonly read: StartedRead<Inventory, E> }) {
   const state = useStartedQuery(props.read);
-  return <AppsBody {...props} {...state} />;
+  if (props.conceal)
+    return (
+      <AppsBody
+        {...props}
+        result={AsyncResult.initial<Inventory, E>(false)}
+        data={Option.none()}
+        refresh={state.refresh}
+      />
+    );
+  // A new filter is another atom. Keep the list on screen until that atom has its own value, and
+  // keep it beside a failure that has nothing of its own to show. Compare the inventory, not the
+  // Option wrapper: that wrapper is a new object on every read.
+  const incoming = Option.getOrUndefined(state.data);
+  const [retained, setRetained] = useState(incoming);
+  if (incoming !== undefined && retained !== incoming) setRetained(incoming);
+  const shown = incoming ?? retained;
+  if (shown === undefined || AsyncResult.isSuccess(state.result))
+    return <AppsBody {...props} {...state} />;
+  if (AsyncResult.isInitial(state.result))
+    return (
+      <AppsBody
+        {...props}
+        result={AsyncResult.success<Inventory, E>(shown, { waiting: true })}
+        data={Option.some(shown)}
+        refresh={state.refresh}
+      />
+    );
+  return (
+    <AppsBody
+      {...props}
+      result={AsyncResult.failure<Inventory, E>(state.result.cause, {
+        previousSuccess: Option.some(AsyncResult.success<Inventory, E>(shown)),
+        waiting: state.result.waiting,
+      })}
+      data={Option.some(shown)}
+      refresh={state.refresh}
+    />
+  );
 }
 
 function AppsBody<E>({

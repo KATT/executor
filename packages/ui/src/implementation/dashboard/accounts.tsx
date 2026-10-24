@@ -1,6 +1,7 @@
 import { LocalTime, shortMoment } from "../components/local-time.tsx";
 import { PageFrame, PageHeader } from "./page.tsx";
 import { Option } from "effect";
+import { AsyncResult } from "effect/reactivity";
 import { AccountRowsSkeleton } from "./loading.tsx";
 import { AccountCheckDot, AccountIdentity } from "./account-health.tsx";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -26,6 +27,8 @@ type AccountsPageProps<E> = QueryProps<Inventory, E> & {
   readonly highlight?: AccountId | undefined;
   /** Present when the route loader started this inventory. */
   readonly read?: StartedRead<Inventory, E> | undefined;
+  /** Hide a retained list while this page's own reread is the one on screen. */
+  readonly conceal?: boolean;
 };
 
 /** Saved account metadata is shared across app references, without exposing credential values. */
@@ -46,6 +49,15 @@ function AccountsFromRead<E>(
   props: AccountsPageProps<E> & { readonly read: StartedRead<Inventory, E> },
 ) {
   const state = useStartedQuery(props.read);
+  if (props.conceal)
+    return (
+      <AccountsBody
+        {...props}
+        result={AsyncResult.initial<Inventory, E>(false)}
+        data={Option.none()}
+        refresh={state.refresh}
+      />
+    );
   return <AccountsBody {...props} {...state} />;
 }
 

@@ -1,4 +1,5 @@
 import { Suspense, useState } from "react";
+import { useAtomRefresh } from "@effect/atom-react";
 import type { AccountId } from "@executor-js/sdk";
 import {
   HostedAccountActions,
@@ -15,6 +16,7 @@ import { Button } from "@executor-js/ui/components/button";
 import { Link } from "@tanstack/react-router";
 import { useStartedQuery } from "@executor-js/ui/dashboard/context";
 import { HostedFailure } from "../components/dashboard-bindings.tsx";
+import { useArrivalCover } from "../components/arrival-refresh.ts";
 import { useOrganizationDetails, useOrganizationRoute } from "../components/organization.tsx";
 import { OAuthClientsDialog } from "./oauth-clients.tsx";
 import { resourceDirectoryAtom, resourceInventoryAtom } from "../../contracts/resource-access.ts";
@@ -80,6 +82,10 @@ function Accounts({
     source: useAccessBoundary(resourceDirectoryAtom(organization)),
     handle: reads.directory,
   });
+  // The first time this document opens the list from another page, read it for that arrival and
+  // cover what the previous page left behind. A later visit keeps the list it already showed.
+  const refreshDirectory = useAtomRefresh(resourceDirectoryAtom(organization));
+  const covering = useArrivalCover("accounts", directory.result.waiting, refreshDirectory);
   const inventory = useAccessBoundary(resourceInventoryAtom(organization));
   const [dialog, setDialog] = useState<{ account: AccountId; kind: AccountDialogKind }>();
   const role = useOrganizationDetails()?.role;
@@ -97,6 +103,7 @@ function Accounts({
           source: inventory,
           handle: reads.inventory,
         }}
+        conceal={covering}
         Failure={HostedFailure}
         action={manageClients}
         empty={

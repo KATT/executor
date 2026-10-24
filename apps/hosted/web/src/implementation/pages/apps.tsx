@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { useAtomRefresh } from "@effect/atom-react";
 import { Option, Schema } from "effect";
 import { Loader } from "raf-effect-atom";
 import { OrganizationReference } from "@executor-js/hosted-server/organization";
@@ -19,8 +20,9 @@ import {
 } from "@executor-js/ui/components/select";
 import { useStartedQuery } from "@executor-js/ui/dashboard/context";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { useArrivalCover } from "../components/arrival-refresh.ts";
 import { useOrganizationRoute } from "../components/organization.tsx";
-import { resourceInventoryAtom } from "../../contracts/resource-access.ts";
+import { resourceDirectoryAtom, resourceInventoryAtom } from "../../contracts/resource-access.ts";
 import { groupsAtom } from "../../contracts/groups.ts";
 import {
   AccessBoundary,
@@ -93,10 +95,15 @@ function Apps({
   });
   const inventory = resourceInventoryAtom(organization, view, group);
   const claimedInventory = useAccessBoundary(inventory);
-  const { data } = useStartedQuery({
+  // The first time this document opens the list from another page, read it for that arrival and
+  // cover what the previous page left behind. A later visit keeps the list it already showed.
+  const refreshDirectory = useAtomRefresh(resourceDirectoryAtom(organization, view));
+  const listed = useStartedQuery({
     source: claimedInventory,
     handle: reads.inventory,
   });
+  const covering = useArrivalCover("apps", listed.result.waiting, refreshDirectory);
+  const { data } = listed;
   const apply = (next: AppsListSearch) => {
     void navigate({
       to: "/org/$organizationSlug/apps",
@@ -112,6 +119,7 @@ function Apps({
     <SharedPage
       query={inventory}
       read={{ source: claimedInventory, handle: reads.inventory }}
+      conceal={covering}
       Failure={HostedFailure}
       pending={
         Option.isSome(data) && data.value.pendingApp ? (

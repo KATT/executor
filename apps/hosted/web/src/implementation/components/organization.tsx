@@ -12,7 +12,7 @@ import { EmptyState } from "@executor-js/ui/dashboard/empty-state";
 import { RegistryContext, useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
 import type { OrganizationId, OrganizationAccess } from "@executor-js/hosted-server/organization";
 // oxlint-disable-next-line no-restricted-imports -- ResumeOrganization renders it only at /, which its navigation leaves; OrganizationEntry and OrganizationDestination read atoms, not the location
-import { Link, Navigate, useLocation, useNavigate } from "@tanstack/react-router";
+import { Link, Navigate, useLocation, useNavigate, useRouter } from "@tanstack/react-router";
 import { Cause, Exit, Match, Option, Schema } from "effect";
 import { lastOrganizationAtom, sessionAtom } from "../../contracts/auth.ts";
 import { OrganizationResume } from "../../contracts/navigation.ts";
@@ -62,6 +62,51 @@ import {
 } from "./organization-form.tsx";
 import { OrganizationSwitcherSkeleton } from "./dashboard-frame.tsx";
 import { HostedEntry, DashboardEntryPending, OrganizationLookupError } from "./entry.tsx";
+
+type PaintStore = {
+  readonly get: () => boolean;
+  readonly mark: () => void;
+  readonly subscribe: (listener: () => void) => () => void;
+  readonly seen: (list: string) => boolean;
+  readonly note: (list: string) => void;
+};
+
+/** One document's "the frame has painted" bit. Owned by the boundary, not the module. */
+const createPaintStore = (): PaintStore => {
+  let painted = false;
+  const lists = new Set<string>();
+  const listeners = new Set<() => void>();
+  return {
+    get: () => painted,
+    mark: () => {
+      if (painted) return;
+      painted = true;
+      for (const listener of listeners) listener();
+    },
+    seen: (list) => lists.has(list),
+    note: (list) => {
+      lists.add(list);
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+};
+
+export const PaintContext = createContext<PaintStore | null>(null);
+
+/** True once this document's organization frame has painted, including on a later page. */
+export function useOrganizationWasPainted() {
+  const store = useContext(PaintContext);
+  return useSyncExternalStore(
+    store === null ? () => () => {} : store.subscribe,
+    store === null ? () => false : store.get,
+    () => false,
+  );
+}
 
 const OrganizationContext = createContext<
   | (OrganizationAccess & {
@@ -316,6 +361,10 @@ export function OrganizationBoundary({
   const reference = useOrganizationQueryReference(
     Schema.decodeUnknownSync(OrganizationReference)(slug),
   );
+  const [paint] = useState(createPaintStore);
+  useEffect(() => {
+    paint.mark();
+  }, [paint]);
   usePreload(accessAtom(reference), organizationsAtom);
   const access = useAtomValue(accessAtom(reference));
   const accessSucceeded = AsyncResult.isSuccess(access);
@@ -333,6 +382,26 @@ export function OrganizationBoundary({
   const organizations = useAtomValue(organizationsAtom);
   const refreshAccess = useAtomRefresh(accessAtom(reference));
   const refreshOrganizations = useAtomRefresh(organizationsAtom);
+  const router = useRouter();
+  // The document shows a refusal it already has. Any other first paint has no page data, so the
+  // browser's own check has to succeed before the loaders start those reads.
+  const opened = useRef<"pending" | "ready" | "checking">("pending");
+  const rechecked = useRef(false);
+  useEffect(() => {
+    const ready = AsyncResult.isSuccess(access) && !access.waiting;
+    if (opened.current === "ready") return;
+    // A success that is still refreshing already started the page's reads.
+    if (opened.current === "pending")
+      opened.current = AsyncResult.isSuccess(access) ? "ready" : "checking";
+    if (opened.current !== "checking") return;
+    if (!rechecked.current && !ready && !access.waiting) {
+      rechecked.current = true;
+      refreshAccess();
+    }
+    if (!ready) return;
+    opened.current = "ready";
+    void router.invalidate();
+  }, [access, refreshAccess, router]);
   const navigate = useNavigate();
   const location = useLocation();
   const resume = Option.getOrUndefined(
@@ -420,9 +489,8 @@ export function OrganizationBoundary({
     location.hash,
     rejectedResume,
   ]);
-  // The document waits for these. A browser navigation keeps the shell and shows its own pending
-  // state while they are still initial.
-  suspendIfUnsettled(registry, accessAtom(reference), access);
+  // The loader already waited for access, or gave up. Suspending here would hold the document
+  // open until a check that never answers. Organization metadata still belongs in the document.
   suspendIfUnsettled(registry, organizationsAtom, organizations);
   const checked = AsyncResult.isFailure(access) ? undefined : snapshot;
   const details =
@@ -437,26 +505,28 @@ export function OrganizationBoundary({
       : null;
   if (rejectedResume) return <DashboardEntryPending />;
   return (
-    <OrganizationRouteContext
-      value={{
-        organization: reference,
-        slug,
-        role: checked?.role,
-        id: target,
-        name: organization?.name,
-        unavailable,
-        released,
-        metadataFailed: AsyncResult.isFailure(access) || AsyncResult.isFailure(organizations),
-        retry: () => {
-          refreshAccess();
-          refreshOrganizations();
-        },
-      }}
-    >
-      <OrganizationContext value={details}>
-        <HostedDashboard catalog={catalog}>{children}</HostedDashboard>
-      </OrganizationContext>
-    </OrganizationRouteContext>
+    <PaintContext value={paint}>
+      <OrganizationRouteContext
+        value={{
+          organization: reference,
+          slug,
+          role: checked?.role,
+          id: target,
+          name: organization?.name,
+          unavailable,
+          released,
+          metadataFailed: AsyncResult.isFailure(access) || AsyncResult.isFailure(organizations),
+          retry: () => {
+            refreshAccess();
+            refreshOrganizations();
+          },
+        }}
+      >
+        <OrganizationContext value={details}>
+          <HostedDashboard catalog={catalog}>{children}</HostedDashboard>
+        </OrganizationContext>
+      </OrganizationRouteContext>
+    </PaintContext>
   );
 }
 
