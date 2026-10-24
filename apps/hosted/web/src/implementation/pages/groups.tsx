@@ -1,7 +1,7 @@
 import { EmptyState } from "@executor-js/ui/dashboard/empty-state";
 import { resourceDirectoryAtom } from "../../contracts/resource-access.ts";
 import { QueryResult, useStartedQuery } from "@executor-js/ui/dashboard/context";
-import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 import { Cause, Exit, Option, Schema } from "effect";
 import { Loader } from "raf-effect-atom";
@@ -659,6 +659,12 @@ function GroupApps({
     source: useAccessBoundary(resourceDirectoryAtom(organization)),
     handle: directory,
   });
+  // Connect hydrates this directory. Read it again so this group's apps are the response in
+  // front of the navigation.
+  const refreshDirectory = useAtomRefresh(resourceDirectoryAtom(organization));
+  useEffect(() => {
+    refreshDirectory();
+  }, [refreshDirectory]);
   return (
     <section className="mt-7 space-y-3">
       <h3 className="text-sm font-medium">Apps</h3>

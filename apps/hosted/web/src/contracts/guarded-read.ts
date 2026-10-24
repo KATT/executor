@@ -7,9 +7,27 @@ import { accessAtom } from "./organization.ts";
 const organizationFromSlug = (slug: string) =>
   Schema.decodeUnknownSync(OrganizationReference)(slug);
 
+/**
+ * A check that has not answered by now is left out of the document. The browser reads it
+ * itself. Longer than a local check, shorter than a read that never answers.
+ */
+const accessDeadlineMs = 2_000;
+
+const readAccess = (atoms: Loader.Loader, organization: OrganizationReference) => {
+  const read = atoms.ensure(accessAtom(organization));
+  // The browser can wait: a held document check is not this navigation's request.
+  if (typeof window !== "undefined") return read;
+  return Promise.race([
+    read,
+    new Promise<undefined>((resolve) => {
+      setTimeout(resolve, accessDeadlineMs);
+    }),
+  ]);
+};
+
 /** Start the access check for this URL before the page renders. */
 export const ensureOrganizationAccess = (atoms: Loader.Loader, organizationSlug: string) =>
-  atoms.ensure(accessAtom(organizationFromSlug(organizationSlug)));
+  readAccess(atoms, organizationFromSlug(organizationSlug));
 
 /**
  * Start reads that name an organization only after its access check succeeded.
@@ -22,8 +40,8 @@ export const startAfterAccess = async <A>(
   start: (organization: OrganizationReference) => A | Promise<A>,
 ): Promise<A | undefined> => {
   const organization = organizationFromSlug(organizationSlug);
-  const access = await atoms.ensure(accessAtom(organization));
-  if (!AsyncResult.isSuccess(Loader.result(access))) return undefined;
+  const access = await readAccess(atoms, organization);
+  if (access === undefined || !AsyncResult.isSuccess(Loader.result(access))) return undefined;
   return await start(organization);
 };
 

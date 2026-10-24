@@ -1,8 +1,10 @@
 import { AsyncResult, AtomRegistry } from "effect/reactivity";
 import { RegistryContext, useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { useAtomResult } from "raf-effect-atom";
-import { Suspense, useContext, useState, type ReactNode } from "react";
+import { Component, Suspense, useContext, useState, type ReactNode } from "react";
 import { Cause, Effect, Exit, Option, Predicate } from "effect";
+import { HttpClientError } from "effect/http";
+import { isConnectionFailure } from "@executor-js/utils/connection-failure";
 import type { App, DeployedApp } from "@executor-js/sdk";
 import type { CatalogEntry } from "@executor-js/catalog/contracts";
 import type {
@@ -81,13 +83,50 @@ export function CatalogPage<E, IE>(
   },
 ) {
   const pending = <CatalogPending back={props.back} action={props.action} />;
+  const retry = useAtomRefresh(props.query);
   return (
     <AfterMount fallback={pending}>
       <Suspense fallback={pending}>
-        <CatalogLoaded {...props} />
+        <CatalogConnectionBoundary
+          renderFailure={(error, again) => <props.Failure cause={Cause.die(error)} retry={again} />}
+          retry={retry}
+        >
+          <CatalogLoaded {...props} />
+        </CatalogConnectionBoundary>
       </Suspense>
     </AfterMount>
   );
+}
+
+/**
+ * A lost catalog response stays on this page. Any other defect still reaches the route error page.
+ * The read throws a defect rather than returning it, so the boundary is what can tell them apart.
+ */
+class CatalogConnectionBoundary extends Component<
+  {
+    readonly renderFailure: (
+      error: HttpClientError.HttpClientError,
+      retry: () => void,
+    ) => ReactNode;
+    readonly retry: () => void;
+    readonly children: ReactNode;
+  },
+  { readonly error: unknown }
+> {
+  override state = { error: undefined as unknown };
+  static getDerivedStateFromError(error: unknown) {
+    return { error };
+  }
+  override render() {
+    const error = this.state.error;
+    if (error === undefined) return this.props.children;
+    // Thrown from this render, so the route boundary above receives it.
+    if (!isConnectionFailure(error)) throw error;
+    return this.props.renderFailure(error, () => {
+      this.props.retry();
+      this.setState({ error: undefined });
+    });
+  }
 }
 
 function CatalogPending({

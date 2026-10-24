@@ -47,6 +47,7 @@ export function AppVersions({
 }) {
   const { organization } = useOrganizationRoute();
   const shown = version ?? app.activeVersion;
+  if (versions === undefined) return <AppVersionsLoading />;
   if (shown == null)
     return (
       <EmptyStatePanel title="No versions yet">

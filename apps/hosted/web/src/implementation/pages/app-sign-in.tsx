@@ -1,6 +1,7 @@
 import { useAtomRefresh } from "@effect/atom-react";
 import type { App } from "@executor-js/sdk";
 import { Button } from "@executor-js/ui/components/button";
+import { AfterMount } from "@executor-js/ui/dashboard/common";
 import { AsyncResult } from "effect/reactivity";
 import { Suspense, useEffect } from "react";
 import { useAtomResult, type Handle } from "raf-effect-atom";
@@ -50,10 +51,13 @@ export function OpenAppAction({
   readonly app: App;
   readonly location: Handle<ReturnType<typeof appUiLocationAtom>> | undefined;
 }) {
+  // The location starts in the browser. Reading it during the server render aborts the document.
   return app.activeVersion === null || location === undefined ? null : (
-    <Suspense fallback={null}>
-      <DeployedOpenAppAction app={app} version={app.activeVersion} location={location} />
-    </Suspense>
+    <AfterMount fallback={null}>
+      <Suspense fallback={null}>
+        <DeployedOpenAppAction app={app} version={app.activeVersion} location={location} />
+      </Suspense>
+    </AfterMount>
   );
 }
 

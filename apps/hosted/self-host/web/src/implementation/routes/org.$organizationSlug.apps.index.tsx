@@ -13,6 +13,8 @@ export const Route = createFileRoute("/org/$organizationSlug/apps/")({
     startAfterAccess(context.atoms, params.organizationSlug, (organization) =>
       loadApps(context.atoms, organization, deps),
     ),
+  // A filter change keeps the current list. The page skeleton is for a load that does not resolve.
+  pendingMs: 10_000,
   component: AppsRoute,
 });
 

@@ -37,9 +37,12 @@ const entryConfiguration = Atom.make<Option.Option<SignInSettings>>(Option.none(
 export const configurationAtom = Atom.readable(
   (get) => {
     const entry = get(entryConfiguration);
-    return Option.isSome(entry)
-      ? AsyncResult.success<SignInSettings, AuthFailed>(entry.value)
-      : get(liveConfiguration);
+    if (Option.isSome(entry)) return AsyncResult.success<SignInSettings, AuthFailed>(entry.value);
+    // The document already gave this read its deadline. Waiting again would hold sign-in for a
+    // stall the page has given up on; the browser asks and reports a failure itself.
+    if (typeof window === "undefined")
+      return AsyncResult.initial<SignInSettings, AuthFailed>(false);
+    return get(liveConfiguration);
   },
   (refresh) => {
     refresh(entryConfiguration);
