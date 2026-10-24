@@ -1,8 +1,9 @@
 import { EmptyState } from "./empty-state.tsx";
 import { AppSectionHeader, AppSectionTitle } from "./app-section-header.tsx";
-import { useState, type ReactNode } from "react";
+import { Suspense, useState, type ComponentType, type MouseEvent, type ReactNode } from "react";
 import type { Tool, ToolRouter, ToolSummary } from "@executor-js/sdk";
 import { Option } from "effect";
+import { AsyncResult } from "effect/reactivity";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowRight01Icon,
@@ -13,7 +14,14 @@ import {
   ViewIcon,
 } from "@hugeicons/core-free-icons";
 import type { Query, QueryProps, ToolCatalog } from "../../contracts/dashboard.ts";
-import { QueryResult, useQuery } from "./context.tsx";
+import {
+  ClaimResult,
+  QueryResult,
+  useQuery,
+  useStartedQuery,
+  useWaterfallQuery,
+} from "./context.tsx";
+import type { StartedRead } from "../../contracts/started-read.ts";
 import { CopyButton } from "./code.tsx";
 import { humanize, SchemaSection } from "./tool-schema.tsx";
 import { ToolMarkdown } from "./markdown.tsx";
@@ -22,30 +30,97 @@ import { Empty, SearchInput } from "./common.tsx";
 import { Skeleton } from "../components/skeleton.tsx";
 import { cn } from "../lib/utils.ts";
 
+/** A tool row is an address on the app, so it can be opened in another tab. */
+export interface ToolLinkProps {
+  readonly tool: string;
+  readonly className?: string | undefined;
+  readonly title?: string | undefined;
+  readonly children?: ReactNode;
+  readonly onClick?: ((event: MouseEvent<HTMLAnchorElement>) => void) | undefined;
+  readonly "aria-label"?: string | undefined;
+  readonly "aria-current"?: "page" | undefined;
+}
+
 /**
  * Stable list/inspector layout. Hosts choose navigation and any tool execution controls.
  * The list carries no schemas; the selected tool's schemas are read through detail.
  * A group that is a router, such as one MCP server, shows the router's title and description.
  * On phones the inspector fills the section and the list opens as a panel over it.
  */
-export function ToolBrowser<E>({
-  query,
+export function ToolBrowser<E>(
+  props: QueryProps<ToolCatalog, E> & {
+    /** Undefined when the tool left the catalog after the list was read. */
+    readonly detail: (tool: ToolSummary) => Query<Tool | undefined, E>;
+    readonly selected: string | undefined;
+    /** Each tool name links to that tool on this app. */
+    readonly ToolLink: ComponentType<ToolLinkProps>;
+    readonly renderAction?: (tool: ToolSummary) => ReactNode;
+    /** Replaces the empty catalog message when the host knows why the app listed nothing. */
+    readonly empty?: ReactNode;
+    /** Present when the route loader started this catalog. */
+    readonly read?: StartedRead<ToolCatalog, E>;
+    /** Present when the route loader started the selected tool's schema. */
+    readonly detailRead?: StartedRead<Tool | undefined, E> | undefined;
+  },
+) {
+  return props.read === undefined ? (
+    <ToolBrowserFromQuery {...props} />
+  ) : (
+    <ToolBrowserFromRead {...props} read={props.read} />
+  );
+}
+
+function ToolBrowserFromQuery<E>(props: QueryProps<ToolCatalog, E> & ToolBrowserExtras<E>) {
+  const state = useQuery(props.query);
+  return <ToolBrowserView {...props} {...state} />;
+}
+
+function ToolBrowserFromRead<E>(
+  props: QueryProps<ToolCatalog, E> &
+    ToolBrowserExtras<E> & { readonly read: StartedRead<ToolCatalog, E> },
+) {
+  const { read, ...rest } = props;
+  const state = useStartedQuery(read);
+  return (
+    <ClaimResult source={read.source} result={state.result} claim={read.claim}>
+      {(result) => (
+        <ToolBrowserView
+          {...rest}
+          result={result}
+          data={AsyncResult.value(result)}
+          refresh={state.refresh}
+        />
+      )}
+    </ClaimResult>
+  );
+}
+
+type ToolBrowserExtras<E> = {
+  readonly detail: (tool: ToolSummary) => Query<Tool | undefined, E>;
+  readonly detailRead?: StartedRead<Tool | undefined, E> | undefined;
+  readonly selected: string | undefined;
+  readonly ToolLink: ComponentType<ToolLinkProps>;
+  readonly renderAction?: (tool: ToolSummary) => ReactNode;
+  readonly empty?: ReactNode;
+};
+
+function ToolBrowserView<E>({
   detail,
+  detailRead,
   Failure,
   selected,
-  onSelect,
+  ToolLink,
   renderAction,
   empty,
-}: QueryProps<ToolCatalog, E> & {
-  /** Undefined when the tool left the catalog after the list was read. */
-  readonly detail: (tool: ToolSummary) => Query<Tool | undefined, E>;
-  readonly selected: string | undefined;
-  readonly onSelect: (tool: string) => void;
-  readonly renderAction?: (tool: ToolSummary) => ReactNode;
-  /** Replaces the empty catalog message when the host knows why the app listed nothing. */
-  readonly empty?: ReactNode;
-}) {
-  const { result, data, refresh } = useQuery(query);
+  result,
+  data,
+  refresh,
+}: QueryProps<ToolCatalog, E> &
+  ToolBrowserExtras<E> & {
+    readonly result: ReturnType<typeof useQuery<ToolCatalog, E>>["result"];
+    readonly data: ReturnType<typeof useQuery<ToolCatalog, E>>["data"];
+    readonly refresh: () => void;
+  }) {
   const [search, setSearch] = useState("");
   const [listOpen, setListOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
@@ -117,10 +192,8 @@ export function ToolBrowser<E>({
                 return next;
               })
             }
-            onSelect={(name) => {
-              setListOpen(false);
-              onSelect(name);
-            }}
+            ToolLink={ToolLink}
+            onActivate={() => setListOpen(false)}
           />
         )}
       </nav>
@@ -201,7 +274,11 @@ export function ToolBrowser<E>({
                           current.description,
                           toolTitle(current, leafLabels.get(current.name)),
                         ) && <ToolDescription description={current.description} />}
-                        <ToolSchemas query={detail(current)} Failure={Failure} />
+                        {detailRead !== undefined && current.name === selected ? (
+                          <ToolSchemasFromRead read={detailRead} Failure={Failure} />
+                        ) : (
+                          <ToolSchemas query={detail(current)} Failure={Failure} />
+                        )}
                         {renderAction?.(current)}
                       </div>
                     </div>
@@ -222,7 +299,51 @@ export function ToolBrowser<E>({
 
 /** The selected tool's schemas, read on selection rather than with the list. */
 function ToolSchemas<E>({ query, Failure }: QueryProps<Tool | undefined, E>) {
-  const { result, refresh } = useQuery(query);
+  return (
+    <Suspense fallback={<SchemaLoading />}>
+      <ToolSchemasRead query={query} Failure={Failure} />
+    </Suspense>
+  );
+}
+
+function SchemaLoading() {
+  return (
+    <div role="status" aria-label="Loading schema">
+      <SchemaHeadingSkeleton />
+      <SchemaSkeleton />
+    </div>
+  );
+}
+
+function ToolSchemasRead<E>({ query, Failure }: QueryProps<Tool | undefined, E>) {
+  const { result, refresh } = useWaterfallQuery(query);
+  return <ToolSchemaResult result={result} refresh={refresh} Failure={Failure} />;
+}
+
+function ToolSchemasFromRead<E>({
+  read,
+  Failure,
+}: {
+  readonly read: StartedRead<Tool | undefined, E>;
+  readonly Failure: QueryProps<Tool | undefined, E>["Failure"];
+}) {
+  const { result, refresh } = useStartedQuery(read);
+  return (
+    <ClaimResult source={read.source} result={result} claim={read.claim}>
+      {(claimed) => <ToolSchemaResult result={claimed} refresh={refresh} Failure={Failure} />}
+    </ClaimResult>
+  );
+}
+
+function ToolSchemaResult<E>({
+  result,
+  refresh,
+  Failure,
+}: {
+  readonly result: ReturnType<typeof useQuery<Tool | undefined, E>>["result"];
+  readonly refresh: () => void;
+  readonly Failure: QueryProps<Tool | undefined, E>["Failure"];
+}) {
   return (
     <QueryResult
       result={result}
@@ -516,14 +637,17 @@ function ToolTree({
   current,
   collapsed,
   onToggle,
-  onSelect,
+  ToolLink,
+  onActivate,
 }: {
   readonly nodes: readonly ToolNode[];
   readonly depth: number;
   readonly current: string | undefined;
   readonly collapsed: ReadonlySet<string>;
   readonly onToggle: (key: string) => void;
-  readonly onSelect: (tool: string) => void;
+  readonly ToolLink: ComponentType<ToolLinkProps>;
+  /** Closes the phone list. The link itself changes the address. */
+  readonly onActivate: () => void;
 }) {
   return (
     <ul className={cn("space-y-px", depth > 0 && "ml-[15px] border-l pl-1.5")}>
@@ -565,18 +689,19 @@ function ToolTree({
                 current={current}
                 collapsed={collapsed}
                 onToggle={onToggle}
-                onSelect={onSelect}
+                ToolLink={ToolLink}
+                onActivate={onActivate}
               />
             )}
           </li>
         ) : (
           <li key={`tool:${node.tool.name}`}>
-            <button
-              type="button"
+            <ToolLink
+              tool={node.tool.name}
               title={node.tool.name}
               aria-label={node.tool.name}
-              aria-pressed={current === node.tool.name}
-              onClick={() => onSelect(node.tool.name)}
+              aria-current={current === node.tool.name ? "page" : undefined}
+              onClick={onActivate}
               className={cn(
                 "flex min-h-7.5 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-ring max-[740px]:min-h-11",
                 current === node.tool.name && "bg-muted font-medium text-foreground",
@@ -590,7 +715,7 @@ function ToolTree({
                 aria-hidden
               />
               <span className="truncate">{node.label}</span>
-            </button>
+            </ToolLink>
           </li>
         ),
       )}

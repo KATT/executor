@@ -1,9 +1,10 @@
 import { LoginFrame } from "@executor-js/hosted-web/pages/login-frame";
-import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtomSet, useAtomValue } from "@effect/atom-react";
 import { Button } from "@executor-js/ui/components/button";
 import { Exit, Option } from "effect";
 import { AsyncResult } from "effect/reactivity";
-import { useState, type ReactNode } from "react";
+import { Suspense, useContext, useState, type ReactNode } from "react";
+import { Loader, useAtomResult, type Handle } from "raf-effect-atom";
 import { addPasskeyAtom } from "../../contracts/auth.ts";
 import {
   dismissPasskeyEnrollmentAtom,
@@ -15,23 +16,51 @@ import {
 /** Optional enrollment after sign-in. Dashboard routes never mount or query this flow. */
 export function PasskeyEnrollment({
   userId,
+  enrollment,
   children,
   canSubmit = true,
 }: {
   readonly userId: string;
+  readonly enrollment?: Handle<typeof passkeyEnrollmentAtom> | undefined;
   readonly children: ReactNode;
   readonly canSubmit?: boolean;
 }) {
   const fromDocument = useAtomValue(documentPasskeyEnrollmentAtom(userId));
   if (!Option.getOrElse(fromDocument, () => hasPasskeyEnrollment(userId))) return children;
   return (
-    <Enrollment key={userId} userId={userId} canSubmit={canSubmit}>
+    <Enrollment key={userId} userId={userId} enrollment={enrollment} canSubmit={canSubmit}>
       {children}
     </Enrollment>
   );
 }
 
 function Enrollment({
+  userId,
+  enrollment,
+  children,
+  canSubmit,
+}: {
+  readonly userId: string;
+  readonly enrollment: Handle<typeof passkeyEnrollmentAtom> | undefined;
+  readonly children: ReactNode;
+  readonly canSubmit: boolean;
+}) {
+  if (enrollment === undefined)
+    return (
+      <BrowserEnrollment userId={userId} canSubmit={canSubmit}>
+        {children}
+      </BrowserEnrollment>
+    );
+  return (
+    <Suspense fallback={<PasskeyEnrollmentPending />}>
+      <EnrollmentRead userId={userId} enrollment={enrollment} canSubmit={canSubmit}>
+        {children}
+      </EnrollmentRead>
+    </Suspense>
+  );
+}
+
+function BrowserEnrollment({
   userId,
   children,
   canSubmit,
@@ -40,13 +69,42 @@ function Enrollment({
   readonly children: ReactNode;
   readonly canSubmit: boolean;
 }) {
-  const enrollment = useAtomValue(passkeyEnrollmentAtom(userId));
+  const registry = useContext(RegistryContext);
+  const enrollment = Loader.make(registry).prefetchInBrowser(passkeyEnrollmentAtom, userId);
+  return (
+    <Suspense fallback={<PasskeyEnrollmentPending />}>
+      <EnrollmentRead userId={userId} enrollment={enrollment} canSubmit={canSubmit}>
+        {children}
+      </EnrollmentRead>
+    </Suspense>
+  );
+}
+
+function PasskeyEnrollmentPending() {
+  return (
+    <LoginFrame title="Create a passkey">
+      <p className="text-sm text-muted-foreground">Checking your passkeys…</p>
+    </LoginFrame>
+  );
+}
+
+function EnrollmentRead({
+  userId,
+  enrollment: enrollmentHandle,
+  children,
+  canSubmit,
+}: {
+  readonly userId: string;
+  readonly enrollment: Handle<typeof passkeyEnrollmentAtom>;
+  readonly children: ReactNode;
+  readonly canSubmit: boolean;
+}) {
+  const enrollment = useAtomResult(passkeyEnrollmentAtom, enrollmentHandle);
   const add = useAtomSet(addPasskeyAtom, { mode: "promiseExit" });
   const dismiss = useAtomSet(dismissPasskeyEnrollmentAtom, { mode: "promiseExit" });
   const adding = useAtomValue(addPasskeyAtom);
   const [error, setError] = useState<string | null>(null);
   if (AsyncResult.isSuccess(enrollment) && !enrollment.value) return children;
-  const checking = AsyncResult.isInitial(enrollment);
   return (
     <LoginFrame title="Create a passkey">
       <div className="space-y-6 [&>button]:w-full">
@@ -56,10 +114,10 @@ function Enrollment({
         <Button
           className="h-10 text-base aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
           aria-label="Create a passkey"
-          loading={adding.waiting || checking}
-          aria-disabled={!canSubmit || checking || AsyncResult.isFailure(enrollment) || undefined}
+          loading={adding.waiting}
+          aria-disabled={!canSubmit || AsyncResult.isFailure(enrollment) || undefined}
           onClick={async () => {
-            if (!canSubmit || checking || AsyncResult.isFailure(enrollment)) return;
+            if (!canSubmit || AsyncResult.isFailure(enrollment)) return;
             setError(null);
             const result = await add("Passkey");
             if (Exit.isFailure(result))

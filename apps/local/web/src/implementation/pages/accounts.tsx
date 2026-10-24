@@ -1,6 +1,8 @@
+import { useLoaderData } from "@tanstack/react-router";
 import { Failure } from "../components/common.tsx";
 import { dashboardAtoms } from "../../contracts/dashboard-bindings.ts";
 import { AccountsPage as SharedPage } from "@executor-js/ui/dashboard/accounts";
+import { useMissingBoundary } from "../components/read-boundaries.tsx";
 import { EmptyState } from "@executor-js/ui/dashboard/empty-state";
 import { Button } from "@executor-js/ui/components/button";
 import { Link } from "@tanstack/react-router";
@@ -14,10 +16,12 @@ import {
 /** Local product supplies its own action and typed route. */
 export function AccountsPage({ highlight }: { readonly highlight?: AccountId | undefined }) {
   const [dialog, setDialog] = useState<{ account: AccountId; kind: AccountDialogKind }>();
+  const { overview } = useLoaderData({ from: "/_dashboard/_inventory" });
   return (
     <>
       <SharedPage
         query={dashboardAtoms.inventory}
+        read={{ source: dashboardAtoms.inventory, handle: overview, claim: useMissingBoundary }}
         Failure={Failure}
         highlight={highlight}
         empty={

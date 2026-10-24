@@ -1,4 +1,4 @@
-import { AccountConnectionId, AccountId } from "@executor-js/sdk";
+import { AccountConnectionId, AccountId, AppId, VersionId } from "@executor-js/sdk";
 import { GrantId } from "@executor-js/mcp-auth/grants";
 import { AppView, AppViewFromUrl, AssistantId } from "@executor-js/ui/contracts/dashboard";
 import { Option, Schema } from "effect";
@@ -111,11 +111,40 @@ export function parseAppSearch(search: Record<string, unknown>): ReturnType<
 > & {
   readonly view?: AppView | undefined;
   readonly tool?: string | undefined;
+  readonly version?: VersionId | undefined;
 } {
   return {
     ...parseConnectionSearch(search),
     view: Option.getOrUndefined(Schema.decodeUnknownOption(AppViewFromUrl)(search.view)),
     tool: Option.getOrUndefined(Schema.decodeUnknownOption(Schema.NonEmptyString)(search.tool)),
+    version: Option.getOrUndefined(Schema.decodeUnknownOption(VersionId)(search.version)),
+  };
+}
+
+const appListView = Schema.Literals(["available", "managed"]);
+
+/** The apps list's group and access filters. */
+export function parseAppsSearch(search: Record<string, unknown>): {
+  readonly view?: "available" | "managed" | undefined;
+  readonly group?: string | undefined;
+} {
+  const group = Option.getOrUndefined(
+    Schema.decodeUnknownOption(Schema.NonEmptyString)(search.group),
+  );
+  return {
+    view: Option.getOrUndefined(Schema.decodeUnknownOption(appListView)(search.view)),
+    ...(group !== undefined && group !== "all" ? { group } : {}),
+  };
+}
+
+/** The connection editor's open tool list. The version is the app's active version. */
+export function parseConnectSearch(search: Record<string, unknown>): {
+  readonly app?: AppId | undefined;
+  readonly version?: VersionId | undefined;
+} {
+  return {
+    app: Option.getOrUndefined(Schema.decodeUnknownOption(AppId)(search.app)),
+    version: Option.getOrUndefined(Schema.decodeUnknownOption(VersionId)(search.version)),
   };
 }
 
@@ -146,7 +175,14 @@ export function hostedPageTitle(
   if (page === "organization") return "Settings";
   if (page === "approvals") return item ? "Review request" : "Approvals";
   if (page === "groups") return item ? "Group" : "Groups";
-  if (page === "connect") return "Connections";
+  if (page === "connect")
+    return item === "new"
+      ? "New connection"
+      : action === "edit"
+        ? "Edit connection"
+        : item === undefined
+          ? "Connections"
+          : "Connection";
   if (page === "webhooks") return "Webhook setup";
   if (page === "connections") return "Connect account";
   if (page === "apps")
@@ -175,10 +211,13 @@ export const signInCallback = (redirect: string): string =>
 /** Account pages can carry the organization a visitor came from; it only preselects choices. */
 export function parseAccountSearch(search: Record<string, unknown>): {
   readonly organization?: string | undefined;
+  readonly offset?: number | undefined;
 } {
+  const offset = Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Int)(search.offset));
   return {
     organization: Option.getOrUndefined(
       Schema.decodeUnknownOption(Schema.NonEmptyString)(search.organization),
     ),
+    ...(offset !== undefined && offset >= 0 && offset % 50 === 0 ? { offset } : {}),
   };
 }

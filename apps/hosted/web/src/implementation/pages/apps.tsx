@@ -1,9 +1,12 @@
-import { useMemo } from "react";
-import { useAtom } from "@effect/atom-react";
-import { Option } from "effect";
+import { Suspense } from "react";
+import { useAtomRefresh } from "@effect/atom-react";
+import { Option, Schema } from "effect";
+import { AsyncResult } from "effect/reactivity";
+import { Loader, type LoadedHandle } from "raf-effect-atom";
+import { OrganizationReference } from "@executor-js/hosted-server/organization";
 import { HostedFailure } from "../components/dashboard-bindings.tsx";
 import { AppsPage as SharedPage } from "@executor-js/ui/dashboard/apps";
-import { AppCardSkeleton } from "@executor-js/ui/dashboard/loading";
+import { AppCardSkeleton, AppCardsSkeleton } from "@executor-js/ui/dashboard/loading";
 import { Button } from "@executor-js/ui/components/button";
 import { EmptyState } from "@executor-js/ui/dashboard/empty-state";
 import { Popover, PopoverContent, PopoverTrigger } from "@executor-js/ui/components/popover";
@@ -16,31 +19,152 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@executor-js/ui/components/select";
-import { useQuery } from "@executor-js/ui/dashboard/context";
-import { Link } from "@tanstack/react-router";
-import { type OrganizationPageReads, useOrganizationRoute } from "../components/organization.tsx";
-import { createAppListAtoms, resourceInventoryAtom } from "../../contracts/resource-access.ts";
+import { useClaimedResult, useStartedQuery } from "@executor-js/ui/dashboard/context";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { startRead } from "../../contracts/guarded-read.ts";
+import { useArrivalCover } from "../components/arrival-refresh.ts";
+import { useOrganizationRoute } from "../components/organization.tsx";
+import { resourceDirectoryAtom, resourceInventoryAtom } from "../../contracts/resource-access.ts";
 import { groupsAtom } from "../../contracts/groups.ts";
-import { usePreload } from "@executor-js/ui/dashboard/context";
+import {
+  AccessBoundary,
+  AvailabilityBoundary,
+  SessionBoundary,
+  useAccessBoundary,
+} from "../components/read-boundaries.tsx";
 
-/** The groups and the unfiltered list the page opens with. */
-export const appsPageReads: OrganizationPageReads = (organization) => [
-  groupsAtom(organization),
-  resourceInventoryAtom(organization),
-];
+const organizationFromSlug = (slug: string) =>
+  Schema.decodeUnknownSync(OrganizationReference)(slug);
 
-/** One authorized list, with independent group and explicit management filters. */
-export function AppsPage() {
-  const { organization, slug: organizationSlug } = useOrganizationRoute();
-  const atoms = useMemo(() => createAppListAtoms(organization), [organization]);
-  const [{ view, group }, setFilters] = useAtom(atoms.filters);
-  usePreload(...appsPageReads(organization, {}), atoms.query);
-  const groups = useQuery(groupsAtom(organization));
-  const { data } = useQuery(atoms.query);
+export type AppsListSearch = {
+  readonly view: "available" | "managed";
+  readonly group: string;
+};
+
+/** How long a document waits for the background Executor app before sending the list it has. */
+const installWaitMs = 20_000;
+const installPollMs = 250;
+
+type InventoryList = ReturnType<typeof resourceInventoryAtom>;
+
+const appStillInstalling = (handle: LoadedHandle<InventoryList>) => {
+  const result = Loader.result(handle);
+  return AsyncResult.isSuccess(result) && result.value.pendingApp;
+};
+
+/**
+ * Start the filtered inventory and the groups that name the filter. A document waits while the
+ * directory says the Executor app is still installing: that app is a background job, and the list
+ * the server sends is the list the page shows. The browser keeps the current list and paints the
+ * installing placeholder.
+ */
+export async function loadApps(
+  atoms: Loader.Loader,
+  organization: OrganizationReference,
+  search: AppsListSearch,
+) {
+  const list = resourceInventoryAtom(organization, search.view, search.group);
+  const groups = startRead(atoms, groupsAtom(organization));
+  if (typeof window !== "undefined") {
+    return { groups: await groups, inventory: await startRead(atoms, list) };
+  }
+  const settled = (error: unknown): undefined => {
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    return undefined;
+  };
+  let inventory: LoadedHandle<InventoryList> | undefined = await atoms.ensure(list).catch(settled);
+  const deadline = Date.now() + installWaitMs;
+  while (inventory !== undefined && appStillInstalling(inventory) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, installPollMs));
+    inventory = await atoms.fetch(list);
+  }
+  return { groups: await groups, inventory: inventory ?? atoms.prefetch(list) };
+}
+
+export type AppsReads = Awaited<ReturnType<typeof loadApps>>;
+
+/** One authorized list. Group and access filters are search params. */
+export function AppsPage({
+  view,
+  group,
+  reads,
+}: {
+  readonly view: "available" | "managed";
+  readonly group: string;
+  readonly reads: AppsReads | undefined;
+}) {
+  if (reads === undefined) return null;
+  return (
+    <SessionBoundary>
+      <AvailabilityBoundary>
+        <AccessBoundary>
+          <Suspense fallback={<AppCardsSkeleton />}>
+            <Apps view={view} group={group} reads={reads} />
+          </Suspense>
+        </AccessBoundary>
+      </AvailabilityBoundary>
+    </SessionBoundary>
+  );
+}
+
+function Apps({
+  view,
+  group,
+  reads,
+}: {
+  readonly view: "available" | "managed";
+  readonly group: string;
+  readonly reads: AppsReads;
+}) {
+  const { slug: organizationSlug } = useOrganizationRoute();
+  const organization = organizationFromSlug(organizationSlug);
+  const navigate = useNavigate();
+  const groupsState = useStartedQuery({
+    source: groupsAtom(organization),
+    handle: reads.groups,
+  });
+  const groupsResult = useClaimedResult(
+    groupsAtom(organization),
+    groupsState.result,
+    useAccessBoundary,
+  );
+  const groups = {
+    result: groupsResult,
+    data: AsyncResult.value(groupsResult),
+    refresh: groupsState.refresh,
+  };
+  const inventory = resourceInventoryAtom(organization, view, group);
+  // The first time this document opens the list from another page, read it for that arrival and
+  // cover what the previous page left behind. A later visit keeps the list it already showed.
+  const refreshDirectory = useAtomRefresh(resourceDirectoryAtom(organization, view));
+  const listedState = useStartedQuery({
+    source: inventory,
+    handle: reads.inventory,
+  });
+  const listedResult = useClaimedResult(inventory, listedState.result, useAccessBoundary);
+  const listed = {
+    result: listedResult,
+    data: AsyncResult.value(listedResult),
+    refresh: listedState.refresh,
+  };
+  const covering = useArrivalCover("apps", listed.result.waiting, refreshDirectory);
+  const { data } = listed;
+  const apply = (next: AppsListSearch) => {
+    void navigate({
+      to: "/org/$organizationSlug/apps",
+      params: { organizationSlug },
+      search: {
+        ...(next.view === "available" ? {} : { view: next.view }),
+        ...(next.group === "all" ? {} : { group: next.group }),
+      },
+    });
+  };
   const activeFilters = Number(group !== "all") + Number(view !== "available");
   return (
     <SharedPage
-      query={atoms.query}
+      query={inventory}
+      read={{ source: inventory, handle: reads.inventory, claim: useAccessBoundary }}
+      conceal={covering}
       Failure={HostedFailure}
       pending={
         Option.isSome(data) && data.value.pendingApp ? (
@@ -68,7 +192,7 @@ export function AppsPage() {
               <Button
                 variant="outline"
                 onClick={() => {
-                  setFilters({ group: "all", view: "available" });
+                  apply({ group: "all", view: "available" });
                 }}
               >
                 Clear filters
@@ -116,7 +240,7 @@ export function AppsPage() {
                   variant="ghost"
                   size="sm"
                   onClick={() => {
-                    setFilters({ group: "all", view: "available" });
+                    apply({ group: "all", view: "available" });
                   }}
                 >
                   Reset
@@ -125,10 +249,7 @@ export function AppsPage() {
             </div>
             <div className="space-y-2">
               <p className="text-xs font-medium text-muted-foreground">Group</p>
-              <Select
-                value={group}
-                onValueChange={(group) => setFilters((current) => ({ ...current, group }))}
-              >
+              <Select value={group} onValueChange={(group) => apply({ view, group })}>
                 <SelectTrigger aria-label="Filter apps by group" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
@@ -149,8 +270,7 @@ export function AppsPage() {
               <Select
                 value={view}
                 onValueChange={(value) => {
-                  if (value === "available" || value === "managed")
-                    setFilters((current) => ({ ...current, view: value }));
+                  if (value === "available" || value === "managed") apply({ view: value, group });
                 }}
               >
                 <SelectTrigger aria-label="App list" className="w-full">

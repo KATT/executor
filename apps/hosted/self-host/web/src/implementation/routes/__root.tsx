@@ -2,7 +2,10 @@ import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 import { clearSessionDisplay, sessionAtom } from "@executor-js/hosted-web/contracts/auth";
 import { ExecutorDevtools } from "@executor-js/devtools";
-import { ClientOnly, createRootRoute, Outlet } from "@tanstack/react-router";
+import { ClientOnly, createRootRouteWithContext, Outlet } from "@tanstack/react-router";
+import { createMiddleware } from "@tanstack/react-start";
+import { signInLocation } from "@executor-js/dashboard-start/document";
+import type { Loader } from "raf-effect-atom";
 import { PageError, PageNotFound } from "@executor-js/hosted-web/route-fallbacks";
 import { AuthBoundary } from "@executor-js/hosted-web/auth";
 import { OrganizationResumeBoundary } from "@executor-js/hosted-web/organization";
@@ -15,17 +18,32 @@ import { fontPreloads } from "@executor-js/ui/lib/fonts";
 import { requireSession, restoreLastOrganization } from "@executor-js/hosted-web/document";
 import { serverDocument } from "../document.ts";
 
+const publicPaths = ["/login"];
+
+/**
+ * Sign-in is decided before the router canonicalizes search. A rewritten query would otherwise
+ * replace the address sign-in returns to.
+ */
+const signedOut = createMiddleware({ type: "request" }).server(({ pathname, next }) => {
+  const href = signInLocation(serverDocument(), pathname, publicPaths);
+  if (href === undefined) return next();
+  return new Response(null, { status: 307, headers: { location: href } });
+});
+
 /** Global auth, invitation and callback routes have no selected organization. */
-export const Route = createRootRoute({
+export const Route = createRootRouteWithContext<{
+  readonly atoms: Loader.Loader;
+}>()({
   head: () => ({
     links: [...fontPreloads, { rel: "stylesheet", href: styles }],
     meta: [{ title: "Executor" }],
   }),
   shellComponent: DashboardDocument,
-  // Sign-in is decided before any HTML; the browser's session check only revalidates.
+  server: { middleware: [signedOut] },
+  // The browser's session check only revalidates. The server already redirected above.
   beforeLoad: async ({ location }) => {
     if (!import.meta.env.SSR) return;
-    requireSession(serverDocument(), location.pathname, ["/login"]);
+    requireSession(serverDocument(), location.pathname, publicPaths);
     await restoreLastOrganization(serverDocument(), location.pathname);
   },
   component: Root,

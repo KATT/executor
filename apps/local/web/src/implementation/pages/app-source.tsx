@@ -5,20 +5,30 @@ import { acknowledgeApp } from "../../contracts/apps.ts";
 import { toolsAtom } from "../../contracts/api.ts";
 import { VersionId } from "@executor-js/sdk";
 import type { DashboardApp } from "@executor-js/local-server/contracts";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { sourceAtom, sourceFileAtom } from "../../contracts/api.ts";
 import { AppVersions as SharedAppVersions } from "@executor-js/ui/dashboard/app-versions";
 import { Failure } from "../components/common.tsx";
+import type { LocalAppReads } from "./app-detail.tsx";
 
 /** Inspect immutable source versions; choosing a version never changes the active version. */
-export function AppVersions({ data }: { readonly data: DashboardApp }) {
-  const [selectedVersion, setSelectedVersion] = useState<VersionId | undefined>(undefined);
-  const version = selectedVersion ?? data.app.activeVersion;
+export function AppVersions({
+  data,
+  version,
+  source,
+  onVersionChange,
+}: {
+  readonly data: DashboardApp;
+  readonly version: VersionId | undefined;
+  readonly source: LocalAppReads["source"];
+  readonly onVersionChange: (version: VersionId | undefined) => void;
+}) {
+  const selected = version ?? data.app.activeVersion;
   const query = useMemo(
-    () => (version === null ? undefined : sourceAtom({ app: data.app.id, version })),
-    [data.app.id, version],
+    () => (selected == null ? undefined : sourceAtom({ app: data.app.id, version: selected })),
+    [data.app.id, selected],
   );
-  if (version === null || query === undefined)
+  if (selected == null || query === undefined)
     return (
       <EmptyStatePanel title="No versions yet">
         Deploy from Source when you’re ready.
@@ -28,9 +38,10 @@ export function AppVersions({ data }: { readonly data: DashboardApp }) {
     <SharedAppVersions
       app={data.app}
       versions={data.versions}
-      version={version}
-      onVersionChange={setSelectedVersion}
+      version={selected}
+      onVersionChange={onVersionChange}
       query={query}
+      {...(source === undefined ? {} : { read: { source: query, handle: source } })}
       file={(version, path) => sourceFileAtom({ app: data.app.id, version, path })}
       Failure={Failure}
     />
@@ -41,10 +52,20 @@ export function AppVersions({ data }: { readonly data: DashboardApp }) {
 export function AppSource({
   data,
   view,
+  working,
+  history,
+  live,
+  liveVersion,
 }: {
   readonly data: DashboardApp;
   readonly view: "source" | "history";
+  readonly working: NonNullable<LocalAppReads["working"]>;
+  readonly history: NonNullable<LocalAppReads["history"]>;
+  readonly live?: NonNullable<LocalAppReads["live"]> | undefined;
+  readonly liveVersion?: VersionId | undefined;
 }) {
+  const shown = appManagement.source(data.app.id);
+  const commits = appManagement.history(data.app.id);
   return (
     <AppWorkspace
       Failure={Failure}
@@ -55,11 +76,16 @@ export function AppSource({
         get.refresh(toolsAtom({ app: app.id }));
       }}
       view={view}
-      live={
-        data.app.activeVersion === null
-          ? undefined
-          : sourceAtom({ app: data.app.id, version: data.app.activeVersion })
-      }
+      sourceRead={{ source: shown, handle: working }}
+      historyRead={{ source: commits, handle: history }}
+      {...(live === undefined || liveVersion === undefined
+        ? {}
+        : {
+            liveRead: {
+              source: sourceAtom({ app: data.app.id, version: liveVersion }),
+              handle: live,
+            },
+          })}
     />
   );
 }

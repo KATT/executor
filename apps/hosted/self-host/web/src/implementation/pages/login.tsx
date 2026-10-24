@@ -1,5 +1,7 @@
 import { usePageUrl } from "@executor-js/dashboard-start/page";
-import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useAtomMount, useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
+import { Suspense } from "react";
+import type { Handle } from "raf-effect-atom";
 import { AuthFailed, sessionAtom } from "@executor-js/hosted-web/contracts/auth";
 import {
   ContinueAfterSignIn,
@@ -22,9 +24,34 @@ import { productTitle, useDocumentTitle } from "@executor-js/ui/hooks/document-t
 import { SelfHostLoginPending } from "../components/login-pending.tsx";
 
 /** Password login and first-run setup; only an operator-configured SSO button is shown. */
-export function SelfHostLoginPage({ redirect, error: callbackError }: LoginProps) {
+export function SelfHostLoginPage({
+  redirect,
+  error: callbackError,
+  config,
+}: LoginProps & { readonly config: Handle<typeof configurationAtom> }) {
+  return (
+    <Suspense fallback={<SelfHostLoginPending />}>
+      <SelfHostLoginForm
+        redirect={redirect}
+        config={config}
+        {...(callbackError === undefined ? {} : { error: callbackError })}
+      />
+    </Suspense>
+  );
+}
+
+function SelfHostLoginForm({
+  redirect,
+  error: callbackError,
+  config: configHandle,
+}: LoginProps & { readonly config: Handle<typeof configurationAtom> }) {
   useDocumentTitle(productTitle("Sign in"));
   const page = usePageUrl();
+  // The loader started this read. A document that already has the settings renders the form. A
+  // document that gave up on them renders the pending screen, and the browser's own read replaces
+  // it or reports the failure. Waiting here would hold the document for that second read.
+  useAtomMount(configurationAtom);
+  void configHandle;
   const config = useAtomValue(configurationAtom);
   const session = useAtomValue(sessionAtom);
   const refreshSession = useAtomRefresh(sessionAtom);

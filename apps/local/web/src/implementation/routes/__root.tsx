@@ -1,13 +1,9 @@
 import { ExecutorDevtools } from "@executor-js/devtools";
 import { ClientOnly, createRootRouteWithContext, Outlet } from "@tanstack/react-router";
-import { useAtomSet } from "@effect/atom-react";
-import { useEffect } from "react";
-import { connectionEntryAtom } from "../../contracts/account-connections.ts";
-import { pairingTokenAtom } from "../../contracts/connection.ts";
-import { oauthCallbackAtom } from "../../contracts/oauth.ts";
-import type { BrowserEntryValues } from "../router.tsx";
+import type { Loader } from "raf-effect-atom";
+import { bootstrapAtom } from "../../contracts/connection.ts";
 import { localPageTitle } from "../../contracts/navigation.ts";
-import { NotFoundPage } from "../components/not-found.tsx";
+import { NotFoundPage, PageError } from "../components/not-found.tsx";
 import { useLocation } from "@tanstack/react-router";
 import { DocumentTitleProvider, productTitle } from "@executor-js/ui/hooks/document-title";
 import { DashboardDocument } from "@executor-js/dashboard-start/shell";
@@ -16,8 +12,11 @@ import { fontPreloads } from "@executor-js/ui/lib/fonts";
 
 /** Standalone connection handoffs and authenticated dashboard routes share only the router. */
 export const Route = createRootRouteWithContext<{
-  readonly entry: BrowserEntryValues | undefined;
+  readonly atoms: Loader.Loader;
 }>()({
+  loader: ({ context }) => ({
+    bootstrap: context.atoms.prefetchInBrowser(bootstrapAtom),
+  }),
   head: () => ({
     links: [...fontPreloads, { rel: "stylesheet", href: styles }],
     meta: [{ title: "Executor · Local" }],
@@ -25,13 +24,13 @@ export const Route = createRootRouteWithContext<{
   shellComponent: DashboardDocument,
   component: Root,
   notFoundComponent: NotFoundPage,
+  errorComponent: PageError,
 });
 
 function Root() {
   const { pathname } = useLocation();
   return (
     <DocumentTitleProvider fallbackTitle={productTitle(localPageTitle(pathname))}>
-      <BrowserEntry />
       <Outlet />
       {/* A development overlay; it reads the browser origin and has no server markup. */}
       <ClientOnly>
@@ -39,22 +38,4 @@ function Root() {
       </ClientOnly>
     </DocumentTitleProvider>
   );
-}
-
-/**
- * Apply the entry credentials the browser erased from its address. The server rendered without
- * them, so they take effect after hydration instead of changing the first render.
- */
-function BrowserEntry() {
-  const { entry } = Route.useRouteContext();
-  const setPairingToken = useAtomSet(pairingTokenAtom);
-  const setOAuthCallback = useAtomSet(oauthCallbackAtom);
-  const setConnection = useAtomSet(connectionEntryAtom);
-  useEffect(() => {
-    if (entry === undefined) return;
-    if (entry.pairingToken !== undefined) setPairingToken(entry.pairingToken);
-    if (entry.oauthCallback !== undefined) setOAuthCallback(entry.oauthCallback);
-    if (entry.connection !== undefined) setConnection(entry.connection);
-  }, [entry, setPairingToken, setOAuthCallback, setConnection]);
-  return null;
 }

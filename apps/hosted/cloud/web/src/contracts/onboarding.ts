@@ -1,7 +1,7 @@
 import { organizationsAtom } from "@executor-js/hosted-web/contracts/organization";
 import type { OrganizationReference } from "@executor-js/hosted-server/organization";
-import { hydrated } from "@executor-js/ui/contracts/http";
-import { acknowledge } from "@executor-js/ui/contracts/mutations";
+import { hydrated, hydratedResult } from "@executor-js/ui/contracts/http";
+import { acknowledge, follows } from "@executor-js/ui/contracts/mutations";
 import { Effect, Option, Schema } from "effect";
 import { Atom, AsyncResult } from "effect/reactivity";
 import {
@@ -43,7 +43,13 @@ export const prepareTeamAtom = Atom.family((userId: string) => {
       refresh(entryTeamAtom(userId));
       refresh(query);
     },
-  ).pipe(Atom.withLabel("ui.onboarding.prepare"));
+  ).pipe(
+    Atom.withLabel("ui.onboarding.prepare"),
+    hydratedResult({
+      key: `cloud:prepare-team:${userId}`,
+      success: OnboardingEntry,
+    }),
+  );
 });
 
 /** Only confirmation creates a team; publish its identity before the router changes pages. */
@@ -79,11 +85,14 @@ const createdSetupAtom = Atom.family((_organization: string) =>
  */
 export const setupSequenceAtom = Atom.family((organization: OrganizationReference) => {
   const query = CloudClient.query("setup", "sequence", hydrated({ params: { organization } }));
-  return Atom.readable(
-    (get) => {
-      const created = get(createdSetupAtom(organization));
-      return Option.isSome(created) ? AsyncResult.success(created.value) : get(query);
-    },
-    (refresh) => refresh(query),
-  ).pipe(Atom.withLabel("ui.onboarding.setup"));
+  return follows(
+    Atom.readable(
+      (get) => {
+        const created = get(createdSetupAtom(organization));
+        return Option.isSome(created) ? AsyncResult.success(created.value) : get(query);
+      },
+      (refresh) => refresh(query),
+    ).pipe(Atom.withLabel("ui.onboarding.setup")),
+    query,
+  );
 });

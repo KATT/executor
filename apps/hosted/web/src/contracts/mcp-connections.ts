@@ -8,20 +8,26 @@ import {
   OrganizationId,
   type OrganizationReference,
 } from "@executor-js/hosted-server/organization";
-import type { ConnectedAgent } from "@executor-js/mcp-auth/agents";
+import { ConnectedAgent } from "@executor-js/mcp-auth/agents";
 import type { ConnectionId } from "@executor-js/mcp-auth/connections";
 import { GrantId } from "@executor-js/mcp-auth/grants";
 import type { ConnectionSave } from "@executor-js/ui/contracts/scoped-connections";
-import { acknowledge, acknowledgedQuery, upsert } from "@executor-js/ui/contracts/mutations";
+import {
+  acknowledge,
+  acknowledgedQuery,
+  follows,
+  upsert,
+} from "@executor-js/ui/contracts/mutations";
 import { HostedClient } from "./api.ts";
 import { resourceInventoryAtom } from "./resource-access.ts";
 
+/** The list endpoint. Loaders start this atom; `mcpConnectionsAtom` is the view over it. */
+export const mcpConnectionsQuery = Atom.family((organization: OrganizationReference) =>
+  HostedClient.query("mcpConnections", "list", hydrated({ params: { organization } })),
+);
 /** Keep confirmed connections visible while background reconciliation runs. */
 export const mcpConnectionsAtom = Atom.family((organization: OrganizationReference) =>
-  HostedClient.query("mcpConnections", "list", hydrated({ params: { organization } })).pipe(
-    revalidated,
-    acknowledgedQuery,
-  ),
+  mcpConnectionsQuery(organization).pipe(revalidated, acknowledgedQuery),
 );
 /** Create with the editor's chosen ID, or replace an existing connection's name and access. */
 export const saveMcpConnectionAtom = Atom.family((organization: OrganizationReference) =>
@@ -60,12 +66,13 @@ export const revokeMcpConnectionAtom = Atom.family((organization: OrganizationRe
   ),
 );
 
+/** The agents endpoint. Loaders start this atom; `mcpAgentsAtom` is the view over it. */
+export const mcpAgentsQuery = Atom.family((organization: OrganizationReference) =>
+  HostedClient.query("mcpConnections", "agents", hydrated({ params: { organization } })),
+);
 /** Agents the member authorized over OAuth in this organization. */
 export const mcpAgentsAtom = Atom.family((organization: OrganizationReference) =>
-  HostedClient.query("mcpConnections", "agents", hydrated({ params: { organization } })).pipe(
-    revalidated,
-    acknowledgedQuery,
-  ),
+  mcpAgentsQuery(organization).pipe(revalidated, acknowledgedQuery),
 );
 /**
  * The agents that already held a grant when a guide's baseline was read, in each of the member's
@@ -124,11 +131,12 @@ export const agentBaselineAtom = Atom.family((request: AgentBaselineRequest) =>
  * unmounted.
  */
 export const newMcpAgentAtom = Atom.family((attempt: AgentConnectionAttempt) =>
-  agentIn(
+  watchAgents(
     attempt.organizations.map((organization) =>
       pollingQuery(mcpAgentsAtom(organization), steadyPolling),
     ),
     (agent) => !attempt.existing.includes(agent.id),
+    `hosted:new-mcp-agent:${attempt.organizations.join(",")}:${attempt.existing.join(",")}`,
   ),
 );
 /** An agent named by a link to the first prompt, in any of the member's organizations. */
@@ -141,11 +149,29 @@ export class AgentConfirmation extends Data.Class<{
  * lists; a revoked agent, an API client or another member's grant is not found.
  */
 export const confirmedMcpAgentAtom = Atom.family((confirmation: AgentConfirmation) =>
-  agentIn(
-    confirmation.organizations.map(mcpAgentsAtom),
+  watchAgents(
+    confirmation.organizations.map((organization) => mcpAgentsAtom(organization)),
     (agent) => agent.id === confirmation.agent,
+    `hosted:confirmed-mcp-agent:${confirmation.organizations.join(",")}:${confirmation.agent}`,
   ),
 );
+/**
+ * A render-time watch. It follows one serializable agents query so `useWaterfall` can lease that
+ * query; the readable still loads every organization, and an empty watch is serializable itself.
+ * Polling lives in the lists the readable gets, so the browser runs this atom rather than a
+ * hydrated copy that would skip that first read.
+ */
+const watchAgents = (
+  lists: ReadonlyArray<Atom.Atom<AsyncResult.AsyncResult<ReadonlyArray<ConnectedAgent>, unknown>>>,
+  matches: (agent: ConnectedAgent) => boolean,
+  key: string,
+) => {
+  const watched = agentIn(lists, matches);
+  const first = lists[0];
+  if (first === undefined)
+    return hydratedResult({ key, success: Schema.Option(ConnectedAgent) })(watched);
+  return follows(watched, first);
+};
 /** The first assistant connected over MCP, not through the Executor HTTP API, that `matches`. */
 const agentIn = (
   lists: ReadonlyArray<Atom.Atom<AsyncResult.AsyncResult<ReadonlyArray<ConnectedAgent>, unknown>>>,

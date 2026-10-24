@@ -13,12 +13,11 @@ The client received a 500 for a request it had already given up on, and the Clou
 session object reported the failure to Sentry as `Done`, an Executor fault with no
 diagnosis.
 
-`effect@4.0.1.patch` changes, in source and distributed JavaScript:
+`effect@4.0.6.patch` changes `ai/McpServer` in source and distributed JavaScript.
+Effect 4.0.6 already ends an empty RPC response queue with `Pull.catchDone`, so
+the patch no longer changes `rpc/RpcServer`. An empty end alone says nothing
+about why: a response may also have failed to be written.
 
-- `rpc/RpcServer`: a queue that ends empty gives an empty body, as a buffered
-  response without messages already does, instead of the untyped `Done` failure.
-  An empty end alone says nothing about why: a response may also have failed to
-  be written.
 - `ai/McpServer`: the server records, per HTTP POST, the requests it registered
   and the ones whose response its encoder dropped because the server had
   processed a cancellation for them. The record is made by the server's own code

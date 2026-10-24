@@ -70,15 +70,6 @@ export const hydratedResult =
     });
 
 /**
- * A read that is not sent with the page. The server renders its loading state and the browser
- * requests it after hydration, so both render the same markup.
- */
-export const browserOnly = <A, E>(
-  atom: Atom.Atom<AsyncResult.AsyncResult<A, E>>,
-): Atom.Atom<AsyncResult.AsyncResult<A, E>> =>
-  typeof window === "undefined" ? Atom.make(AsyncResult.initial<A, E>()) : atom;
-
-/**
  * Better Auth client options for dashboard code. On the server there is no page origin, and the
  * library would otherwise read the host's own configuration; address the host in-process instead.
  */

@@ -1,5 +1,7 @@
 import { EmptyState } from "@executor-js/ui/dashboard/empty-state";
-import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { Loader } from "raf-effect-atom";
+import { useStartedQuery } from "@executor-js/ui/dashboard/context";
 import { Avatar, AvatarFallback, AvatarImage } from "@executor-js/ui/components/avatar";
 import { DisabledTooltip } from "@executor-js/ui/components/disabled-tooltip";
 import { Button } from "@executor-js/ui/components/button";
@@ -32,9 +34,11 @@ import { Exit, Option, type Schema } from "effect";
 import { QueryResult } from "@executor-js/ui/dashboard/context";
 import type { FailureProps } from "@executor-js/ui/contracts/dashboard";
 import { AsyncResult } from "effect/reactivity";
+import type { OrganizationReference } from "@executor-js/hosted-server/organization";
 import { useState, type ReactNode } from "react";
 import { sessionAtom } from "../../contracts/auth.ts";
 import {
+  accessAtom,
   inviteAtom,
   membersAtom,
   removeMemberAtom,
@@ -78,18 +82,32 @@ export interface MemberLimit {
   readonly upgrade: ReactNode;
 }
 
+/** Start the member list once this organization's access check has its id. */
+export async function loadMembers(atoms: Loader.Loader, organization: OrganizationReference) {
+  const access = await atoms.ensure(accessAtom(organization));
+  const result = Loader.result(access);
+  if (!AsyncResult.isSuccess(result)) return undefined;
+  return { members: atoms.prefetch(membersAtom(result.value.organization)) };
+}
+
+export type MembersReads = NonNullable<Awaited<ReturnType<typeof loadMembers>>>;
+
 /** Shared hosted membership view; the product's access and invitation delivery remain authoritative. */
 export function OrganizationMembers({
   emailInvitations,
   memberLimit,
+  members: handle,
 }: {
   readonly emailInvitations: boolean;
   /** Hosts without a limit omit it; the server refuses invitations at the same limit. */
   readonly memberLimit?: MemberLimit | undefined;
+  readonly members: MembersReads["members"];
 }) {
   const organization = useOrganization();
-  const members = useAtomValue(membersAtom(organization.organization));
-  const retry = useAtomRefresh(membersAtom(organization.organization));
+  const { result: members, refresh: retry } = useStartedQuery({
+    source: membersAtom(organization.organization),
+    handle,
+  });
   const session = useAtomValue(sessionAtom);
   const userId = AsyncResult.isSuccess(session) ? session.value?.user.id : undefined;
   const invite = useAtomSet(inviteAtom(organization.organization), { mode: "promiseExit" });

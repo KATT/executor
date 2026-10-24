@@ -2,7 +2,7 @@ import { observeBrowserUsage } from "@executor-js/hosted-web/contracts/product-a
 import { BrowserAtoms } from "@executor-js/hosted-web/contracts/telemetry";
 import { passkeyClient } from "@better-auth/passkey/client";
 import { createAuthClient } from "better-auth/client";
-import { dashboardAuthClientOptions } from "@executor-js/ui/contracts/http";
+import { dashboardAuthClientOptions, hydratedResult } from "@executor-js/ui/contracts/http";
 import { emailOTPClient } from "better-auth/client/plugins";
 import { AuthFailed, authRequest, sessionAtom } from "@executor-js/hosted-web/contracts/auth";
 import { Effect, Schema } from "effect";
@@ -82,7 +82,14 @@ const passkeysQuery = BrowserAtoms.atom(
     Effect.mapError(() => new AccountFailed({ message: "Unable to load your passkeys." })),
     Effect.withSpan("ui.auth.passkeys"),
   ),
-).pipe(revalidated);
+).pipe(
+  hydratedResult({
+    key: "cloud:account-passkeys",
+    success: Schema.Array(PasskeySummary),
+    error: AccountFailed,
+  }),
+  revalidated,
+);
 /** The signed-in user's passkeys, for the account security page. */
 export const passkeysAtom = acknowledgedQuery(passkeysQuery);
 /** Register with the server's configured origin and relying-party identity. */

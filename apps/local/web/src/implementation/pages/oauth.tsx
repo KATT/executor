@@ -1,7 +1,8 @@
 import { AsyncResult } from "effect/reactivity";
-import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useAtomSet } from "@effect/atom-react";
+import { useAtomResult, type Handle } from "raf-effect-atom";
+import { Suspense, useEffect } from "react";
 import { Effect } from "effect";
-import { useEffect } from "react";
 import { completeOAuthAtom } from "../../contracts/oauth.ts";
 import { accountToNameAtom } from "../../contracts/accounts.ts";
 import { oauthDestination } from "../oauth.ts";
@@ -9,9 +10,27 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { Empty, Failure } from "../components/common.tsx";
 
 /** The provider returns here; authenticated Atom calls complete the saved sign-in. */
-export function OAuthCallbackPage() {
+export function OAuthCallbackPage({
+  completion,
+}: {
+  readonly completion: Handle<typeof completeOAuthAtom>;
+}) {
+  return (
+    <Suspense
+      fallback={<Empty title="Connecting your account">Completing provider sign-in…</Empty>}
+    >
+      <OAuthCompletion completion={completion} />
+    </Suspense>
+  );
+}
+
+function OAuthCompletion({
+  completion,
+}: {
+  readonly completion: Handle<typeof completeOAuthAtom>;
+}) {
   const navigate = useNavigate();
-  const result = useAtomValue(completeOAuthAtom);
+  const result = useAtomResult(completeOAuthAtom, completion);
   const requestName = useAtomSet(accountToNameAtom);
   useEffect(() => {
     if (!AsyncResult.isSuccess(result) || result.value === undefined) return;

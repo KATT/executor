@@ -9,5 +9,8 @@ export const Route = createFileRoute("/account")({
       <Outlet />
     </AccountShell>
   ),
+  // This bundle is the first match still loading. Its pending view names the page in the
+  // address, so the token heading has to paint on the first frame of a client navigation.
+  pendingMs: 0,
   pendingComponent: () => <AccountPending security={<ChangePasswordPending />} />,
 });

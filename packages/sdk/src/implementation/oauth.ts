@@ -572,7 +572,7 @@ export const makeOAuth = (
       Effect.map(Hex.encode),
       Effect.mapError(() => new StorageError()),
     );
-  const nextId = crypto.randomUUIDv4.pipe(Effect.mapError(() => new StorageError()));
+  const nextId = crypto.randomUUIDv4().pipe(Effect.mapError(() => new StorageError()));
   const protocol = options === undefined ? undefined : makeOAuthProtocol(options);
   const firstPartyClients = new Map(
     (options?.firstPartyClients ?? []).map((client) => [client.id, client] as const),

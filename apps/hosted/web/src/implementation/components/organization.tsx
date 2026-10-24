@@ -1,5 +1,8 @@
-import { usePreload } from "@executor-js/ui/dashboard/context";
-import { useGuardedPreload } from "@executor-js/dashboard-start/registry";
+import {
+  pinHydratedValue,
+  suspendIfUnsettled,
+  usePreload,
+} from "@executor-js/ui/dashboard/context";
 import { PageFrame, PageHeader } from "@executor-js/ui/dashboard/page";
 import {
   OrganizationSlug,
@@ -8,12 +11,13 @@ import {
   organizationSlugMaxLength,
 } from "@executor-js/hosted-server/organization";
 import { organizationTargetAtom } from "../../contracts/organization-reference.ts";
+import { Hydration } from "raf-effect-atom";
 import { type Atom, AsyncResult } from "effect/reactivity";
 import { EmptyState } from "@executor-js/ui/dashboard/empty-state";
 import { RegistryContext, useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
 import type { OrganizationId, OrganizationAccess } from "@executor-js/hosted-server/organization";
 // oxlint-disable-next-line no-restricted-imports -- ResumeOrganization renders it only at /, which its navigation leaves; OrganizationEntry and OrganizationDestination read atoms, not the location
-import { Link, Navigate, useLocation, useMatches, useNavigate } from "@tanstack/react-router";
+import { Link, Navigate, useLocation, useNavigate, useRouter } from "@tanstack/react-router";
 import { Cause, Exit, Match, Option, Schema } from "effect";
 import { lastOrganizationAtom, sessionAtom } from "../../contracts/auth.ts";
 import { OrganizationResume } from "../../contracts/navigation.ts";
@@ -31,7 +35,15 @@ import {
   DropdownMenuTrigger,
 } from "@executor-js/ui/components/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@executor-js/ui/components/avatar";
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import {
   accessAtom,
   organizationPresentation,
@@ -44,6 +56,8 @@ import { Button } from "@executor-js/ui/components/button";
 import { Spinner } from "@executor-js/ui/components/spinner";
 
 import { HostedDashboard } from "./dashboard-bindings.tsx";
+import type { Handle } from "raf-effect-atom";
+import { catalogAtom } from "../../contracts/api.ts";
 import {
   OrganizationForm,
   OrganizationFormError,
@@ -53,6 +67,70 @@ import {
 } from "./organization-form.tsx";
 import { OrganizationSwitcherSkeleton } from "./dashboard-frame.tsx";
 import { HostedEntry, DashboardEntryPending, OrganizationLookupError } from "./entry.tsx";
+
+type PaintStore = {
+  readonly get: () => boolean;
+  readonly mark: () => void;
+  readonly subscribe: (listener: () => void) => () => void;
+  readonly seen: (list: string) => boolean;
+  readonly note: (list: string) => void;
+  /** 0 before an arrival read, 1 once it starts, 2 after that read could have reported a wait. */
+  readonly phase: (list: string) => 0 | 1 | 2;
+  readonly arm: (list: string) => void;
+  readonly ready: (list: string) => void;
+};
+
+/** One document's "the frame has painted" bit. Owned by the boundary, not the module. */
+const createPaintStore = (): PaintStore => {
+  let painted = false;
+  const lists = new Set<string>();
+  const phases = new Map<string, 1 | 2>();
+  const listeners = new Set<() => void>();
+  const notify = () => {
+    for (const listener of listeners) listener();
+  };
+  return {
+    get: () => painted,
+    mark: () => {
+      if (painted) return;
+      painted = true;
+      notify();
+    },
+    seen: (list) => lists.has(list),
+    note: (list) => {
+      lists.add(list);
+    },
+    phase: (list) => phases.get(list) ?? 0,
+    arm: (list) => {
+      if (phases.has(list)) return;
+      phases.set(list, 1);
+      notify();
+    },
+    ready: (list) => {
+      if (phases.get(list) !== 1) return;
+      phases.set(list, 2);
+      notify();
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+};
+
+export const PaintContext = createContext<PaintStore | null>(null);
+
+/** True once this document's organization frame has painted, including on a later page. */
+export function useOrganizationWasPainted() {
+  const store = useContext(PaintContext);
+  return useSyncExternalStore(
+    store === null ? () => () => {} : store.subscribe,
+    store === null ? () => false : store.get,
+    () => false,
+  );
+}
 
 const OrganizationContext = createContext<
   | (OrganizationAccess & {
@@ -70,7 +148,10 @@ const OrganizationRouteContext = createContext<{
   readonly id: OrganizationId | undefined;
   readonly name: string | undefined;
   readonly unavailable: boolean;
-  /** Whether the page may render; see `useGuardedPreload`. */
+  /**
+   * Whether the page may render. The server and hydration show it only after access
+   * succeeded. Once hydrated the browser keeps it mounted.
+   */
   readonly released: boolean;
   readonly metadataFailed: boolean;
   readonly retry: () => void;
@@ -270,23 +351,14 @@ function useOrganizationQueryReference(routeReference: OrganizationReference) {
 }
 
 /**
- * The reads an organization page starts with, from its URL alone. A server render waits for the
- * access check before it renders the page, so without these the page's reads would start only
- * after access settles. The boundary starts them with the check, and a document whose access
- * does not succeed carries none of their values. The browser renders the page while access loads
- * and needs no list.
+ * The reads an organization page starts with, from its URL alone. Its loader `ensure`s access
+ * and prefetches these only when that check succeeded.
  */
 export type OrganizationPageReads = (
   organization: OrganizationReference,
   params: Readonly<Record<string, unknown>>,
+  search?: Readonly<Record<string, unknown>>,
 ) => ReadonlyArray<Atom.Atom<unknown>>;
-
-declare module "@tanstack/react-router" {
-  interface StaticDataRouteOption {
-    /** Started by the organization boundary together with its access check. */
-    readonly organizationReads?: OrganizationPageReads;
-  }
-}
 
 /** The API refused this user the organization, as opposed to failing to answer. */
 const refused = (access: Atom.Type<ReturnType<typeof accessAtom>>) =>
@@ -303,28 +375,69 @@ const refused = (access: Atom.Type<ReturnType<typeof accessAtom>>) =>
 /** Start page reads from the URL immediately. Access and organization controls resolve alongside them. */
 export function OrganizationBoundary({
   slug,
+  catalog,
   children,
 }: {
   readonly slug: string;
+  readonly catalog: Handle<typeof catalogAtom>;
   readonly children: ReactNode;
 }) {
   const reference = useOrganizationQueryReference(
     Schema.decodeUnknownSync(OrganizationReference)(slug),
   );
-  const matches = useMatches();
+  const [paint] = useState(createPaintStore);
+  useEffect(() => {
+    paint.mark();
+  }, [paint]);
   usePreload(accessAtom(reference), organizationsAtom);
-  const released = useGuardedPreload(
-    accessAtom(reference),
-    matches.flatMap((match) => match.staticData.organizationReads?.(reference, match.params) ?? []),
-  );
-  const access = useAtomValue(accessAtom(reference));
-  const session = useAtomValue(sessionAtom);
-  const snapshot = useAtomValue(organizationPresentation(reference));
   const registry = useContext(RegistryContext);
-  const target = useAtomValue(organizationTargetAtom(reference));
-  const organizations = useAtomValue(organizationsAtom);
+  const accessQuery = accessAtom(reference);
+  const sessionQuery = sessionAtom;
+  const presentationQuery = organizationPresentation(reference);
+  const targetQuery = organizationTargetAtom(reference);
+  const organizationsQuery = organizationsAtom;
+  // The first browser read must keep the value the server sent. These views are derived, so pin
+  // the serializable atom first; reading the view directly runs its effect again.
+  pinHydratedValue(registry, accessQuery);
+  pinHydratedValue(registry, sessionQuery);
+  pinHydratedValue(registry, presentationQuery);
+  pinHydratedValue(registry, targetQuery);
+  pinHydratedValue(registry, organizationsQuery);
+  const access = useAtomValue(Hydration.hydrated(accessQuery));
+  const accessSucceeded = AsyncResult.isSuccess(access);
+  // The verdict itself is the snapshot, so a document whose check succeeded does not re-render
+  // here after hydration; that update would reach regions still waiting to hydrate.
+  const released = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => accessSucceeded,
+  );
+  const session = useAtomValue(Hydration.hydrated(sessionQuery));
+  const snapshot = useAtomValue(Hydration.hydrated(presentationQuery));
+  const target = useAtomValue(Hydration.hydrated(targetQuery));
+  const organizations = useAtomValue(Hydration.hydrated(organizationsQuery));
   const refreshAccess = useAtomRefresh(accessAtom(reference));
   const refreshOrganizations = useAtomRefresh(organizationsAtom);
+  const router = useRouter();
+  // The document shows a refusal it already has. Any other first paint has no page data, so the
+  // browser's own check has to succeed before the loaders start those reads.
+  const opened = useRef<"pending" | "ready" | "checking">("pending");
+  const rechecked = useRef(false);
+  useEffect(() => {
+    const ready = AsyncResult.isSuccess(access) && !access.waiting;
+    if (opened.current === "ready") return;
+    // A success that is still refreshing already started the page's reads.
+    if (opened.current === "pending")
+      opened.current = AsyncResult.isSuccess(access) ? "ready" : "checking";
+    if (opened.current !== "checking") return;
+    if (!rechecked.current && !ready && !access.waiting) {
+      rechecked.current = true;
+      refreshAccess();
+    }
+    if (!ready) return;
+    opened.current = "ready";
+    void router.invalidate();
+  }, [access, refreshAccess, router]);
   const navigate = useNavigate();
   const location = useLocation();
   const resume = Option.getOrUndefined(
@@ -412,6 +525,9 @@ export function OrganizationBoundary({
     location.hash,
     rejectedResume,
   ]);
+  // The loader already waited for access, or gave up. Suspending here would hold the document
+  // open until a check that never answers. Organization metadata still belongs in the document.
+  suspendIfUnsettled(registry, organizationsAtom, organizations);
   const checked = AsyncResult.isFailure(access) ? undefined : snapshot;
   const details =
     organization !== undefined && checked !== undefined
@@ -425,26 +541,28 @@ export function OrganizationBoundary({
       : null;
   if (rejectedResume) return <DashboardEntryPending />;
   return (
-    <OrganizationRouteContext
-      value={{
-        organization: reference,
-        slug,
-        role: checked?.role,
-        id: target,
-        name: organization?.name,
-        unavailable,
-        released,
-        metadataFailed: AsyncResult.isFailure(access) || AsyncResult.isFailure(organizations),
-        retry: () => {
-          refreshAccess();
-          refreshOrganizations();
-        },
-      }}
-    >
-      <OrganizationContext value={details}>
-        <HostedDashboard>{children}</HostedDashboard>
-      </OrganizationContext>
-    </OrganizationRouteContext>
+    <PaintContext value={paint}>
+      <OrganizationRouteContext
+        value={{
+          organization: reference,
+          slug,
+          role: checked?.role,
+          id: target,
+          name: organization?.name,
+          unavailable,
+          released,
+          metadataFailed: AsyncResult.isFailure(access) || AsyncResult.isFailure(organizations),
+          retry: () => {
+            refreshAccess();
+            refreshOrganizations();
+          },
+        }}
+      >
+        <OrganizationContext value={details}>
+          <HostedDashboard catalog={catalog}>{children}</HostedDashboard>
+        </OrganizationContext>
+      </OrganizationRouteContext>
+    </PaintContext>
   );
 }
 

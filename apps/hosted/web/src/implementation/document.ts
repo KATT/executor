@@ -1,5 +1,6 @@
 /** Server-rendered hosted pages: the session and API a document receives from its host. */
 import { documentValues } from "@executor-js/dashboard-start/api";
+import { signInLocation } from "@executor-js/dashboard-start/document";
 import type { DocumentApi } from "@executor-js/dashboard-start/document-api";
 import type { HostedDocumentContext } from "@executor-js/hosted-server/browser/contracts";
 import { redirect } from "@tanstack/react-router";
@@ -29,8 +30,8 @@ export const requireSession = (
   pathname: string,
   publicPaths: ReadonlyArray<string>,
 ) => {
-  if (document.session !== null || publicPaths.includes(pathname.replace(/(.)\/$/, "$1"))) return;
-  throw redirect({ href: `/login?redirect=${encodeURIComponent(document.path)}` });
+  const href = signInLocation(document, pathname, publicPaths);
+  if (href !== undefined) throw redirect({ href });
 };
 
 /**

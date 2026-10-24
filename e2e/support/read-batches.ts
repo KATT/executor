@@ -207,7 +207,26 @@ const binding = "__executorRoutedReads";
 /** Split every batch pages of `context` send so that reads test routes match leave it. */
 export const splitRoutedReads = (context: BrowserContext, base: string) => {
   const active = new Map<Matcher, number>();
-  let document: Promise<ReadonlyMap<string, string>> | undefined;
+  const documents = new Map<string, Promise<ReadonlyMap<string, string>>>();
+  /** The page's own origin. A fresh product does not listen on the context's base URL. */
+  const originOf = (pageUrl: string) => {
+    try {
+      const url = new URL(pageUrl);
+      return url.origin === "null" ? base : url.origin;
+    } catch {
+      return base;
+    }
+  };
+  const openApi = (origin: string) => {
+    const cached = documents.get(origin);
+    if (cached !== undefined) return cached;
+    const pending = context.request
+      .get(new URL("/openapi.json", origin).href)
+      .then((response) => response.json())
+      .then(operationPaths);
+    documents.set(origin, pending);
+    return pending;
+  };
   const track = (target: Routable) => {
     const route = target.route.bind(target);
     const unroute = target.unroute.bind(target);
@@ -222,24 +241,24 @@ export const splitRoutedReads = (context: BrowserContext, base: string) => {
         else active.delete(url);
       });
   };
-  /** For each read of a batch, its URL if an active test route matches it. */
-  const routed = (body: string): Promise<ReadonlyArray<string | null>> => {
+  /**
+   * For each read of a batch, the URL the page itself would request when an active test route
+   * matches it. Globs still resolve against the context base, as Playwright's own routes do.
+   */
+  const routed = (body: string, pageUrl: string): Promise<ReadonlyArray<string | null>> => {
     const reads = batchedReads(body);
     if (active.size === 0) return Promise.resolve(reads.map(() => null));
-    document ??= context.request
-      .get(new URL("/openapi.json", base).href)
-      .then((response) => response.json())
-      .then(operationPaths);
-    return document.then((paths) =>
+    const origin = originOf(pageUrl);
+    return openApi(origin).then((paths) =>
       reads.map((read) => {
-        const url = readUrl(paths, read, base);
+        const url = readUrl(paths, read, origin);
         return [...active.keys()].some((matcher) => matches(matcher, url, base)) ? url.href : null;
       }),
     );
   };
   const trackPage = (page: Page) => track(page as unknown as Routable);
   return context
-    .exposeBinding(binding, (_source, body: string) => routed(body))
+    .exposeBinding(binding, (source, body: string) => routed(body, source.page.url()))
     .then(() => context.addInitScript(splitInPage, { batchPath, binding }))
     .then(() => {
       track(context as unknown as Routable);

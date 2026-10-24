@@ -1,4 +1,9 @@
-import { dashboardHttpClient, hydrated } from "@executor-js/ui/contracts/http";
+import {
+  dashboardHttpClient,
+  hydrated,
+  hydratedResult,
+  requestKey,
+} from "@executor-js/ui/contracts/http";
 import { DashboardClient } from "./api.ts";
 
 /** OAuth endpoint and management app IDs; this response contains no administrative credential. */
@@ -49,13 +54,21 @@ const json = <A>(request: HttpClientRequest.HttpClientRequest, schema: Schema.De
     ),
     Effect.provide(dashboardHttpClient),
   );
+const McpClient = Schema.Struct({ client_name: Schema.optionalKey(Schema.String) });
+
 /** Registered client metadata is loaded from the issuer, never trusted from a URL label. */
 export const localMcpClientAtom = Atom.family((id: string) =>
   BrowserAtoms.atom(
     json(
       HttpClientRequest.get(`/api/auth/oauth2/public-client?client_id=${encodeURIComponent(id)}`),
-      Schema.Struct({ client_name: Schema.optionalKey(Schema.String) }),
+      McpClient,
     ),
+  ).pipe(
+    hydratedResult({
+      key: `local:mcp-client:${requestKey(id)}`,
+      success: McpClient,
+      error: McpConnectionFailed,
+    }),
   ),
 );
 /** Pairing cookies authorize the selected grant; no MCP bearer key is sent from this page. */

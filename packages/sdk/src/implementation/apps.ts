@@ -301,7 +301,7 @@ export const makeApps = (
       const code =
         before === null
           ? AppCodeId.make(
-              `code_${yield* crypto.randomUUIDv4.pipe(Effect.mapError(() => new StorageError()))}`,
+              `code_${yield* crypto.randomUUIDv4().pipe(Effect.mapError(() => new StorageError()))}`,
             )
           : before.code;
       const sequence = before === null ? 1 : before.deploySequence;
@@ -421,7 +421,7 @@ export const makeApps = (
         before?.id ??
         reserved ??
         AppId.make(
-          `app_${yield* crypto.randomUUIDv4.pipe(Effect.mapError(() => new StorageError()))}`,
+          `app_${yield* crypto.randomUUIDv4().pipe(Effect.mapError(() => new StorageError()))}`,
         );
       // Migrations are the database. A build without any would drop the ones an earlier version
       // applied, whichever version is active now, so the app's whole version history decides.
@@ -494,7 +494,7 @@ export const makeApps = (
 
       const version = {
         id: VersionId.make(
-          `dpl_${yield* crypto.randomUUIDv4.pipe(Effect.mapError(() => new StorageError()))}`,
+          `dpl_${yield* crypto.randomUUIDv4().pipe(Effect.mapError(() => new StorageError()))}`,
         ),
         code,
         owner: input.owner,

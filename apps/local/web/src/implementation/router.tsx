@@ -6,38 +6,39 @@ import { parseSearchParams, type NavigationSection } from "../contracts/navigati
 import { readAccountConnection } from "./account-connections.ts";
 import { readPairingToken } from "./connection.ts";
 import { readOAuthCallback } from "./oauth.ts";
+import { PageError } from "./components/not-found.tsx";
 import { routeTree } from "./routeTree.gen.ts";
 import { serverDocument } from "./document.ts";
 
 /**
  * Browser entry credentials live in the URL fragment or query. Consume and erase them before the
- * router reads the location. They are applied after hydration, because the server rendered the
- * page without them; see `BrowserEntry`. A connection link's OAuth return also arrives at the
- * dashboard callback path, so the connection reader claims its own attempt first.
+ * router reads the location, and stash them where the browser-only atoms read them. A connection
+ * link's OAuth return also arrives at the dashboard callback path, so the connection reader claims
+ * its own attempt first.
  */
-const readBrowserEntry = () => ({
-  pairingToken: Effect.runSync(readPairingToken),
-  connection: Effect.runSync(readAccountConnection),
-  oauthCallback: Effect.runSync(readOAuthCallback),
-});
-export type BrowserEntryValues = ReturnType<typeof readBrowserEntry>;
+const consumeBrowserEntry = () => {
+  Effect.runSync(readPairingToken);
+  Effect.runSync(readAccountConnection);
+  Effect.runSync(readOAuthCallback);
+};
 
 /** One router and atom registry per document request on the server, and one per page in the browser. */
 export function getRouter() {
-  const { connect, Wrap } = dashboardRegistry(
+  const { atoms, connect, Wrap } = dashboardRegistry(
     import.meta.env.SSR ? documentValues(serverDocument()) : [],
   );
-  const entry = import.meta.env.SSR ? undefined : readBrowserEntry();
+  if (!import.meta.env.SSR) consumeBrowserEntry();
   return connect(
     createRouter({
       routeTree,
-      context: { entry },
+      context: { atoms },
       defaultPreload: "intent",
       // Existing links use ordinary strings, including tool names such as "123".
       parseSearch: parseSearchParams,
       stringifySearch: stringifySearchWith(JSON.stringify),
       scrollRestoration: true,
       scrollToTopSelectors: ["main.main"],
+      defaultErrorComponent: PageError,
       Wrap,
     }),
   );

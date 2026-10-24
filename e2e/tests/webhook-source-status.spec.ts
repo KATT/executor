@@ -130,7 +130,7 @@ layer(HostedLive, { excludeTestServices: true })("Webhook source status", (it) =
         );
         yield* provider.requested;
         yield* browser.use("Tools remain usable during setup", (page) =>
-          page.getByRole("button", { name: "ready", exact: true }).waitFor(),
+          page.getByRole("link", { name: "ready", exact: true }).waitFor(),
         );
         const pending = yield* webhookSources(actors.owner, path);
         expect(pending).toMatchObject([

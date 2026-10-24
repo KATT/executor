@@ -1,8 +1,10 @@
 import { OverviewCatalog } from "./overview-catalog.tsx";
+import { StartedPreview } from "./app-overview-entries.tsx";
 import type { App, ToolSummary } from "@executor-js/sdk";
+import type { StartedRead } from "../../contracts/started-read.ts";
 import type { AppAuthoringMetadata } from "@executor-js/app-management/contracts";
 import type { RequirementAccounts } from "../../contracts/app-accounts.ts";
-import type { ComponentType, ReactNode } from "react";
+import { Suspense, type ComponentType, type ReactNode } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowRight02Icon } from "@hugeicons/core-free-icons";
 import {
@@ -12,6 +14,8 @@ import {
   type AccountSummary,
 } from "../../contracts/dashboard.ts";
 import { useDashboard } from "./context.tsx";
+import { EmptyState } from "./empty-state.tsx";
+import { OverviewCardLoading } from "./app-loading.tsx";
 import { AppProviderIcon } from "./common.tsx";
 import { Button } from "../components/button.tsx";
 import { cn } from "../lib/utils.ts";
@@ -42,7 +46,7 @@ export function AppOverview({
           action={
             source ? (
               <Button asChild disabledReason={sourceDisabledReason}>
-                <AppLink app={app.id} view="source">
+                <AppLink app={app.id} version={app.activeVersion ?? undefined} view="source">
                   Open source
                 </AppLink>
               </Button>
@@ -78,6 +82,7 @@ export function AppOverview({
             {!undeployed && (
               <AppLink
                 app={app.id}
+                version={app.activeVersion ?? undefined}
                 view="accounts"
                 className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
               >
@@ -109,7 +114,7 @@ export function AppOverview({
                 className="h-auto gap-1.5 rounded-none p-0 text-xs font-normal text-muted-foreground max-[740px]:min-h-0"
                 disabledReason={sourceDisabledReason}
               >
-                <AppLink app={app.id} view="source">
+                <AppLink app={app.id} version={app.activeVersion ?? undefined} view="source">
                   View files
                   <HugeiconsIcon
                     icon={ArrowRight02Icon}
@@ -129,9 +134,10 @@ export function AppOverview({
 }
 
 /** The overview lists each tool once; the Tools tab runs them. */
-export function AppOverviewTools<E>({
+export function AppOverviewTools<E, A extends { readonly items: readonly ToolSummary[] }>({
   app,
   sources,
+  read,
   Failure,
   empty,
   accountsNeeded = false,
@@ -139,14 +145,15 @@ export function AppOverviewTools<E>({
   readonly app: App;
   readonly sources: readonly {
     readonly key: string;
-    readonly query: Query<{ readonly items: readonly ToolSummary[] }, E>;
+    readonly query: Query<A, E>;
   }[];
+  /** The one catalog the route loader started. */
+  readonly read?: StartedRead<A, E> | undefined;
   readonly Failure: ComponentType<FailureProps<E>>;
   readonly empty: ReactNode;
   /** Every source lists tools per account and has none linked, so an empty list is expected. */
   readonly accountsNeeded?: boolean;
 }) {
-  const { AppLink } = useDashboard();
   return (
     <ToolsPreviewFrame app={app}>
       {app.activeVersion === null ? (
@@ -155,53 +162,28 @@ export function AppOverviewTools<E>({
         </EmptyState>
       ) : sources.length === 0 ? (
         empty
+      ) : read !== undefined && sources.length === 1 ? (
+        <Suspense fallback={<OverviewCardLoading label="Loading tools preview" />}>
+          <StartedPreview
+            read={read}
+            items={(page) => page.items}
+            Failure={Failure}
+            label="Loading tools preview"
+            empty={toolPreviewEmpty(accountsNeeded)}
+          >
+            {(tools) => <ToolPreviewLinks app={app} tools={tools} />}
+          </StartedPreview>
+        </Suspense>
       ) : (
         <OverviewCatalog
           sources={sources}
+          {...(read === undefined ? {} : { started: read })}
           items={(page) => page.items}
           Failure={Failure}
           label="Loading tools preview"
-          empty={
-            accountsNeeded ? (
-              <EmptyState size="card" heading="h3" title="No accounts linked">
-                This app lists tools for each linked account.
-              </EmptyState>
-            ) : (
-              <EmptyState size="card" heading="h3" title="No tools">
-                This app does not expose any tools.
-              </EmptyState>
-            )
-          }
+          empty={toolPreviewEmpty(accountsNeeded)}
         >
-          {(tools) => (
-            <div className="grid">
-              {tools.slice(0, 4).map((tool) => (
-                <AppLink
-                  key={tool.name}
-                  app={app.id}
-                  view="tools"
-                  className="group flex min-w-0 items-center gap-3 border-b py-3.5 last:border-b-0 hover:bg-muted/20 focus-visible:outline-ring"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-mono text-xs font-medium" title={tool.name}>
-                      {tool.name}
-                    </p>
-                    {tool.description && (
-                      <p className="mt-1 truncate text-xs leading-5 text-muted-foreground">
-                        {tool.description}
-                      </p>
-                    )}
-                  </div>
-                  <HugeiconsIcon
-                    icon={ArrowRight02Icon}
-                    size={14}
-                    className="shrink-0 text-muted-foreground/50 group-hover:text-foreground"
-                    aria-hidden
-                  />
-                </AppLink>
-              ))}
-            </div>
-          )}
+          {(tools) => <ToolPreviewLinks app={app} tools={tools} />}
         </OverviewCatalog>
       )}
     </ToolsPreviewFrame>
@@ -217,6 +199,7 @@ function ToolsPreviewFrame({ app, children }: { readonly app: App; readonly chil
         {app.activeVersion !== null && (
           <AppLink
             app={app.id}
+            version={app.activeVersion ?? undefined}
             view="tools"
             className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
           >
@@ -316,4 +299,55 @@ export function AppOverviewSource({
     </div>
   );
 }
-import { EmptyState } from "./empty-state.tsx";
+
+function toolPreviewEmpty(accountsNeeded: boolean) {
+  return accountsNeeded ? (
+    <EmptyState size="card" heading="h3" title="No accounts linked">
+      This app lists tools for each linked account.
+    </EmptyState>
+  ) : (
+    <EmptyState size="card" heading="h3" title="No tools">
+      This app does not expose any tools.
+    </EmptyState>
+  );
+}
+function ToolPreviewLinks({
+  app,
+  tools,
+}: {
+  readonly app: App;
+  readonly tools: readonly ToolSummary[];
+}) {
+  const { AppLink } = useDashboard();
+  return (
+    <div className="grid">
+      {tools.slice(0, 4).map((tool) => (
+        <AppLink
+          key={tool.name}
+          app={app.id}
+          version={app.activeVersion ?? undefined}
+          view="tools"
+          tool={tool.name}
+          className="group flex min-w-0 items-center gap-3 border-b py-3.5 last:border-b-0 hover:bg-muted/20 focus-visible:outline-ring"
+        >
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-mono text-xs font-medium" title={tool.name}>
+              {tool.name}
+            </p>
+            {tool.description && (
+              <p className="mt-1 truncate text-xs leading-5 text-muted-foreground">
+                {tool.description}
+              </p>
+            )}
+          </div>
+          <HugeiconsIcon
+            icon={ArrowRight02Icon}
+            size={14}
+            className="shrink-0 text-muted-foreground/50 group-hover:text-foreground"
+            aria-hidden
+          />
+        </AppLink>
+      ))}
+    </div>
+  );
+}

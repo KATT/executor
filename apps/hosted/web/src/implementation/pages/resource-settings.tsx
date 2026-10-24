@@ -1,7 +1,6 @@
 /** Hosted access settings use the same persisted policy enforced by execution. */
-import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import { AsyncResult } from "effect/reactivity";
-import { Option } from "effect";
+import { useAtomSet } from "@effect/atom-react";
+import type { Handle } from "raf-effect-atom";
 import type { AppId, AccountId } from "@executor-js/sdk";
 import { QueryView } from "@executor-js/ui/dashboard/context";
 import { DetailSkeleton } from "@executor-js/ui/dashboard/loading";
@@ -11,28 +10,40 @@ import {
   shareAppAtom,
   shareAccountAtom,
 } from "../../contracts/resource-access.ts";
-import { sessionAtom } from "../../contracts/auth.ts";
 import { groupsAtom } from "../../contracts/groups.ts";
 import { HostedFailure } from "../components/dashboard-bindings.tsx";
 import { useOrganizationRoute } from "../components/organization.tsx";
 import { SharingEditor } from "../components/sharing.tsx";
 /** These controls change app and account access; linked accounts are separate. */
-export function AppAccessSettings({ app }: { readonly app: AppId }) {
+export function AppAccessSettings({
+  app,
+  userId,
+  access,
+  groups,
+}: {
+  readonly app: AppId;
+  readonly userId: string | undefined;
+  readonly access: Handle<ReturnType<typeof appAccessAtom>>;
+  readonly groups: Handle<ReturnType<typeof groupsAtom>>;
+}) {
   const { organization } = useOrganizationRoute();
   const save = useAtomSet(shareAppAtom({ organization, app }), { mode: "promiseExit" });
-  const session = AsyncResult.value(useAtomValue(sessionAtom));
-  const user = Option.isSome(session) ? session.value?.user.id : undefined;
+  const user = userId;
+  const accessRead = { source: appAccessAtom({ organization, app }), handle: access };
+  const groupsRead = { source: groupsAtom(organization), handle: groups };
   return (
     <section className="max-w-xl space-y-4">
       <h2 className="text-base font-medium">App access</h2>
       <QueryView
         query={appAccessAtom({ organization, app })}
+        read={accessRead}
         Failure={HostedFailure}
         pending={<DetailSkeleton label="Loading app access" />}
       >
         {(access) => (
           <QueryView
             query={groupsAtom(organization)}
+            read={groupsRead}
             Failure={HostedFailure}
             pending={<DetailSkeleton label="Loading groups" />}
           >

@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useEffectEvent, useState, type ReactNode } from "react";
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
+import { Loader, useAtomResult, useWaterfall } from "raf-effect-atom";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft02Icon,
@@ -13,6 +14,8 @@ import { AsyncResult, type Atom } from "effect/reactivity";
 import type { ConnectedAgent } from "@executor-js/mcp-auth/agents";
 import type { GrantId } from "@executor-js/mcp-auth/grants";
 import type { AssistantId } from "@executor-js/ui/contracts/dashboard";
+import type { AssistantChoiceLinkProps } from "@executor-js/ui/dashboard/connect";
+import type { OrganizationReference } from "@executor-js/hosted-server/organization";
 import { executorCatalogPackage } from "@executor-js/hosted-server/catalog";
 import {
   AssistantChoices,
@@ -28,6 +31,7 @@ import { Button } from "@executor-js/ui/components/button";
 import { Skeleton } from "@executor-js/ui/components/skeleton";
 import { Spinner } from "@executor-js/ui/components/spinner";
 import { useHydrated } from "@executor-js/ui/hooks/hydrated";
+import { useStartedQuery } from "@executor-js/ui/dashboard/context";
 import { cn } from "@executor-js/ui/lib/utils";
 import { inventoryAtom, organizationsAtom } from "../../contracts/organization.ts";
 import {
@@ -58,6 +62,13 @@ import { useMcpOrigin } from "../resource-origin.ts";
 /** Moves focus to a screen's heading when it replaces the previous one, without scrolling to it. */
 const focusHeading = (node: HTMLHeadingElement | null) => node?.focus({ preventScroll: true });
 
+/** The first prompt names connected accounts. The assistant watch stays with the history entry. */
+export function loadAgentSetup(atoms: Loader.Loader, organization: OrganizationReference) {
+  return { inventory: atoms.prefetch(inventoryAtom(organization)) };
+}
+
+type AgentSetupReads = ReturnType<typeof loadAgentSetup>;
+
 /**
  * A reloadable handoff from the assistants to the first prompt. Each screen the member chooses is
  * a history entry named by the URL: the assistants, one assistant's guide, then the first prompt
@@ -73,7 +84,11 @@ const focusHeading = (node: HTMLHeadingElement | null) => node?.focus({ preventS
  * confirms that the member holds a usable MCP grant for its agent, so its URL alone never claims a
  * connection.
  */
-export function AgentSetupPage() {
+export function AgentSetupPage({
+  inventory,
+}: {
+  readonly inventory: AgentSetupReads["inventory"];
+}) {
   const endpoint = `${useMcpOrigin()}/mcp`;
   // The screen and its saved baseline come from one location. The matched route's search can
   // trail the location by a render, which would pair one entry's URL with another's state.
@@ -109,6 +124,7 @@ export function AgentSetupPage() {
             endpoint={endpoint}
             assistant={search.assistant}
             agent={search.agent}
+            inventory={inventory}
           />
         ) : (
           <GuideStep
@@ -147,12 +163,15 @@ interface ScreenBaseline {
   readonly saved: AgentBaseline | undefined;
 }
 
+function AssistantChoiceLink({ assistant, ...props }: AssistantChoiceLinkProps) {
+  return <Link {...props} to="." search={{ assistant }} />;
+}
+
 /**
  * The assistants, then any MCP client by its URL. Picking an assistant opens its guide; an agent
  * that connects from here, by the URL, leads on to its first prompt like a guide's.
  */
 function ChooseStep({ endpoint, ...baseline }: { readonly endpoint: string } & ScreenBaseline) {
-  const navigate = useNavigate();
   const [agent, setAgent] = useState<ConnectedAgent>();
   useSetupViewed("setup_assistant");
   const name = "your assistant";
@@ -165,9 +184,7 @@ function ChooseStep({ endpoint, ...baseline }: { readonly endpoint: string } & S
         Executor works inside the AI assistant you already use. Pick yours to see how to add it.
       </SetupLede>
       <div className="mt-6">
-        <AssistantChoices
-          onSelect={(chosen) => void navigate({ to: ".", search: { assistant: chosen } })}
-        />
+        <AssistantChoices ChoiceLink={AssistantChoiceLink} />
       </div>
       <div className="mt-6 flex items-center gap-3 text-xs text-muted-foreground" role="separator">
         <span className="h-px flex-1 bg-border" />
@@ -346,8 +363,24 @@ function CapturedBaseline({
   readonly assistant: string;
   readonly request: AgentBaselineRequest;
 } & AgentFound) {
+  return (
+    <Suspense fallback={<GuideStatus assistant={assistant} state={{ kind: "preparing" }} />}>
+      <CapturedBaselineRead assistant={assistant} request={request} {...found} />
+    </Suspense>
+  );
+}
+
+function CapturedBaselineRead({
+  assistant,
+  request,
+  ...found
+}: {
+  readonly assistant: string;
+  readonly request: AgentBaselineRequest;
+} & AgentFound) {
   const navigate = useNavigate();
-  const result = useAtomValue(agentBaselineAtom(request));
+  const baselineHandle = useWaterfall(agentBaselineAtom, request);
+  const result = useAtomResult(agentBaselineAtom, baselineHandle);
   const retry = useAtomRefresh(agentBaselineAtom(request));
   const baseline = AsyncResult.isSuccess(result) ? result.value : undefined;
   // A screen that hydrates with the server's read has not seen its entry's state yet. If the entry
@@ -406,7 +439,24 @@ function NewAgentWatch({
   readonly attempt: AgentConnectionAttempt;
   readonly onConnected: (agent: ConnectedAgent) => void;
 }) {
-  const result = useAtomValue(newMcpAgentAtom(attempt));
+  return (
+    <Suspense fallback={<GuideStatus assistant={assistant} state={{ kind: "waiting" }} />}>
+      <NewAgentWatchRead assistant={assistant} attempt={attempt} onConnected={onConnected} />
+    </Suspense>
+  );
+}
+
+function NewAgentWatchRead({
+  assistant,
+  attempt,
+  onConnected,
+}: {
+  readonly assistant: string;
+  readonly attempt: AgentConnectionAttempt;
+  readonly onConnected: (agent: ConnectedAgent) => void;
+}) {
+  const watch = useWaterfall(newMcpAgentAtom, attempt);
+  const result = useAtomResult(newMcpAgentAtom, watch);
   const retry = useAtomRefresh(newMcpAgentAtom(attempt));
   const agent = AsyncResult.isSuccess(result) ? Option.getOrUndefined(result.value) : undefined;
   useEffect(() => {
@@ -648,19 +698,33 @@ function PromptStep({
   endpoint,
   assistant,
   agent,
+  inventory,
 }: {
   readonly endpoint: string;
   readonly assistant: AssistantId;
   readonly agent: GrantId;
+  readonly inventory: AgentSetupReads["inventory"];
 }) {
   const { organization, slug } = useOrganizationRoute();
   const sequence = useSetupSequence();
   useSetupViewed("setup_prompt");
   const docsUrl = useDocumentationUrl();
-  const inventory = useAtomValue(inventoryAtom(organization));
-  const retry = useAtomRefresh(inventoryAtom(organization));
-  const connected = Option.map(AsyncResult.value(inventory), connectedAccounts);
   const name = assistantName(assistant);
+  const waiting = (
+    <div aria-busy="true" aria-label="Loading your prompt">
+      <PromptText>
+        {promptOpening(endpoint)}
+        {"\n\n"}
+        <span className="flex h-6 items-center">
+          <Skeleton className="h-3.5 w-full" />
+        </span>
+        <span className="flex h-6 items-center">
+          <Skeleton className="h-3.5 w-3/5" />
+        </span>
+      </PromptText>
+      <PromptCopy prompt={undefined} />
+    </div>
+  );
   return (
     <>
       <SetupTitle id="agent-setup-title" ref={focusHeading}>
@@ -668,39 +732,14 @@ function PromptStep({
       </SetupTitle>
       <SetupLede>Paste this into {assistant === "other" ? "your assistant" : name}.</SetupLede>
       <SetupCard>
-        {Option.match(connected, {
-          onNone: () =>
-            AsyncResult.isFailure(inventory) ? (
-              <div className="p-4 max-sm:px-6">
-                <HostedFailure cause={inventory.cause} retry={retry} layout="compact" />
-              </div>
-            ) : (
-              // The opening needs no data, so only the part naming the accounts waits, at the size
-              // it usually takes, above the copy button it will enable.
-              <div aria-busy="true" aria-label="Loading your prompt">
-                <PromptText>
-                  {promptOpening(endpoint)}
-                  {"\n\n"}
-                  <span className="flex h-6 items-center">
-                    <Skeleton className="h-3.5 w-full" />
-                  </span>
-                  <span className="flex h-6 items-center">
-                    <Skeleton className="h-3.5 w-3/5" />
-                  </span>
-                </PromptText>
-                <PromptCopy prompt={undefined} />
-              </div>
-            ),
-          onSome: (accounts) => {
-            const prompt = firstPrompt(endpoint, docsUrl, accounts);
-            return (
-              <>
-                <PromptText>{prompt}</PromptText>
-                <PromptCopy prompt={prompt} />
-              </>
-            );
-          },
-        })}
+        <Suspense fallback={waiting}>
+          <PromptAccounts
+            endpoint={endpoint}
+            docsUrl={docsUrl}
+            organization={organization}
+            inventory={inventory}
+          />
+        </Suspense>
         <StatusRow connected={false}>
           <Suspense fallback={<PromptStatus assistant={name} state={{ kind: "checking" }} />}>
             <AgentConfirmationStatus assistant={assistant} agent={agent} />
@@ -721,6 +760,38 @@ function PromptStep({
       </SetupActions>
     </>
   );
+}
+
+function PromptAccounts({
+  endpoint,
+  docsUrl,
+  organization,
+  inventory,
+}: {
+  readonly endpoint: string;
+  readonly docsUrl: string;
+  readonly organization: OrganizationReference;
+  readonly inventory: AgentSetupReads["inventory"];
+}) {
+  const listed = useStartedQuery({ source: inventoryAtom(organization), handle: inventory });
+  const connected = Option.map(AsyncResult.value(listed.result), connectedAccounts);
+  return Option.match(connected, {
+    onNone: () =>
+      AsyncResult.isFailure(listed.result) ? (
+        <div className="p-4 max-sm:px-6">
+          <HostedFailure cause={listed.result.cause} retry={listed.refresh} layout="compact" />
+        </div>
+      ) : null,
+    onSome: (accounts) => {
+      const prompt = firstPrompt(endpoint, docsUrl, accounts);
+      return (
+        <>
+          <PromptText>{prompt}</PromptText>
+          <PromptCopy prompt={prompt} />
+        </>
+      );
+    },
+  });
 }
 
 function PromptText({ children }: { readonly children: ReactNode }) {
@@ -830,9 +901,25 @@ function ConfirmedAgent({
   readonly assistant: AssistantId;
   readonly confirmation: AgentConfirmation;
 }) {
+  const name = assistantName(assistant);
+  return (
+    <Suspense fallback={<PromptStatus assistant={name} state={{ kind: "checking" }} />}>
+      <ConfirmedAgentRead assistant={assistant} confirmation={confirmation} />
+    </Suspense>
+  );
+}
+
+function ConfirmedAgentRead({
+  assistant,
+  confirmation,
+}: {
+  readonly assistant: AssistantId;
+  readonly confirmation: AgentConfirmation;
+}) {
   const navigate = useNavigate();
   const name = assistantName(assistant);
-  const result = useAtomValue(confirmedMcpAgentAtom(confirmation));
+  const watch = useWaterfall(confirmedMcpAgentAtom, confirmation);
+  const result = useAtomResult(confirmedMcpAgentAtom, watch);
   const retry = useAtomRefresh(confirmedMcpAgentAtom(confirmation));
   const missing = AsyncResult.isSuccess(result) && Option.isNone(result.value);
   // The prompt's URL named an agent the member does not hold, so its guide takes this entry.

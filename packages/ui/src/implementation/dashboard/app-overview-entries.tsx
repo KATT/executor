@@ -1,10 +1,11 @@
+import { Suspense, type ComponentType, type ReactNode } from "react";
 import { EmptyState } from "./empty-state.tsx";
 import { OverviewCatalog } from "./overview-catalog.tsx";
-import type { App, HostedWorkflow } from "@executor-js/sdk";
-import type { ComponentType, ReactNode } from "react";
+import type { App, AppSkillCatalog, HostedWorkflow } from "@executor-js/sdk";
 import type { SkillBindings } from "../../contracts/app-browser.ts";
 import type { FailureProps, Query } from "../../contracts/dashboard.ts";
-import { QueryView, useDashboard } from "./context.tsx";
+import type { StartedRead } from "../../contracts/started-read.ts";
+import { QueryResult, QueryView, useDashboard, useStartedQuery } from "./context.tsx";
 import { OverviewCardLoading } from "./app-loading.tsx";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowRight02Icon } from "@hugeicons/core-free-icons";
@@ -15,11 +16,13 @@ export function AppOverviewEntries<E>({
   bindings,
   Failure,
   workflows,
+  skillsRead,
 }: {
   readonly app: App;
   readonly bindings: SkillBindings<E>;
   readonly workflows: ReactNode;
   readonly Failure: ComponentType<FailureProps<E>>;
+  readonly skillsRead?: StartedRead<AppSkillCatalog, E> | undefined;
 }) {
   return (
     <>
@@ -36,6 +39,7 @@ export function AppOverviewEntries<E>({
           ) : (
             <QueryView
               query={bindings.skills}
+              {...(skillsRead === undefined ? {} : { read: skillsRead })}
               Failure={Failure}
               pending={<OverviewCardLoading label="Loading skills preview" descriptionLines={2} />}
             >
@@ -63,22 +67,40 @@ export function AppOverviewEntries<E>({
   );
 }
 /** Workflow descriptions appear once across the available account catalogs. */
-export function AppWorkflowPreview<E>({
+export function AppWorkflowPreview<E, A extends readonly HostedWorkflow[]>({
   sources,
+  read,
   Failure,
   empty,
 }: {
   readonly sources: readonly {
     readonly key: string;
-    readonly query: Query<readonly HostedWorkflow[], E>;
+    readonly query: Query<A, E>;
   }[];
+  /** The one catalog the route loader started. */
+  readonly read?: StartedRead<A, E> | undefined;
   readonly Failure: ComponentType<FailureProps<E>>;
   readonly empty: ReactNode;
 }) {
   if (sources.length === 0) return empty;
+  if (read !== undefined && sources.length === 1)
+    return (
+      <Suspense fallback={<OverviewCardLoading label="Loading workflows preview" />}>
+        <StartedPreview
+          read={read}
+          items={(workflows) => workflows}
+          Failure={Failure}
+          label="Loading workflows preview"
+          empty={<p className="py-5 text-sm text-muted-foreground">This app has no workflows.</p>}
+        >
+          {(workflows) => <EntryList items={workflows} empty="This app has no workflows." />}
+        </StartedPreview>
+      </Suspense>
+    );
   return (
     <OverviewCatalog
       sources={sources}
+      {...(read === undefined ? {} : { started: read })}
       items={(workflows) => workflows}
       Failure={Failure}
       label="Loading workflows preview"
@@ -111,6 +133,36 @@ function EntryHeader({
         </AppLink>
       )}
     </div>
+  );
+}
+export function StartedPreview<A, E, Item extends { readonly name: string }>({
+  read,
+  items,
+  Failure,
+  label,
+  empty,
+  children,
+}: {
+  readonly read: StartedRead<A, E>;
+  readonly items: (value: A) => readonly Item[];
+  readonly Failure: ComponentType<FailureProps<E>>;
+  readonly label: string;
+  readonly empty: ReactNode;
+  readonly children: (entries: readonly Item[]) => ReactNode;
+}) {
+  const { result, refresh } = useStartedQuery(read);
+  return (
+    <QueryResult
+      result={result}
+      Failure={Failure}
+      retry={refresh}
+      pending={<OverviewCardLoading label={label} />}
+    >
+      {(value) => {
+        const entries = items(value);
+        return entries.length === 0 ? empty : children(entries);
+      }}
+    </QueryResult>
   );
 }
 function EntryList({

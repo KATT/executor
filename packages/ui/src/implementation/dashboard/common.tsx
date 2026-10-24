@@ -1,12 +1,12 @@
 import { HugeiconsIcon } from "@hugeicons/react";
 import { PackageIcon, Search01Icon } from "@hugeicons/core-free-icons";
-import { Atom } from "effect/reactivity";
-import { useOptionalDashboard } from "./context.tsx";
-import { useState, type ReactNode } from "react";
-import { useAtomValue } from "@effect/atom-react";
+import { useOptionalDashboard, useDashboard } from "./context.tsx";
+import { Suspense, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useAtomResult } from "raf-effect-atom";
 import {
   appIconSources,
   catalogIconSources,
+  catalogIconsFrom,
   faviconUrl,
   noCatalogIcons,
   type AppIconSources,
@@ -18,32 +18,71 @@ import type { CatalogIcon } from "@executor-js/catalog/contracts";
 import { Input } from "@executor-js/ui/components/input";
 import { cn } from "@executor-js/ui/lib/utils";
 import { Skeleton } from "../components/skeleton.tsx";
-const noIcons = Atom.make(noCatalogIcons);
 
-/** The dashboard's catalog icons, or none outside a dashboard. */
+/** The dashboard's catalog icons. Suspends until the browser read settles. */
 const useCatalogIcons = (): CatalogIcons => {
-  const dashboard = useOptionalDashboard();
-  return useAtomValue(dashboard ? dashboard.catalogIcons : noIcons);
+  const dashboard = useDashboard();
+  return catalogIconsFrom(useAtomResult(dashboard.catalog, dashboard.catalogHandle));
 };
+
+/**
+ * Catalog icons are started in the browser. Hydration draws the skeleton the server rendered;
+ * the catalog read begins on the following paint, when a browser-only handle can resolve.
+ */
+export function AfterMount({
+  fallback,
+  children,
+}: {
+  readonly fallback: ReactNode;
+  readonly children: ReactNode;
+}) {
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
+  return mounted ? children : fallback;
+}
+
+const iconFrameClass = (large: boolean) =>
+  cn(
+    "provider-icon w-8.5 h-8.5 border border-border rounded-[7px] inline-flex items-center justify-center bg-background shrink-0 [&_img]:w-4.25 [&_img]:h-4.25 [&_img]:object-contain [&_>_svg]:w-4.25 [&_>_svg]:h-4.25 [&_>_svg]:object-contain max-[740px]:[.catalog-row_>_&]:row-[1_/_3]",
+    large &&
+      "provider-icon-large w-11 h-11 rounded-[9px] [&_img]:w-6 [&_img]:h-6 [&_>_svg]:w-6 [&_>_svg]:h-6",
+  );
+
+function IconFrame({
+  large = false,
+  children,
+}: {
+  readonly large?: boolean;
+  readonly children: ReactNode;
+}) {
+  return (
+    <span className={iconFrameClass(large)} aria-hidden>
+      {children}
+    </span>
+  );
+}
+
+function IconSkeleton({ large = false }: { readonly large?: boolean }) {
+  return (
+    <IconFrame large={large}>
+      <Skeleton className="size-full rounded-[inherit]" data-icon="loading" />
+    </IconFrame>
+  );
+}
 
 /**
  * An app's own icons: those it declares on `defineApp`, else those of the catalog entry it was
  * installed from, matched by package. `pending` while that catalog entry may still arrive.
  */
-export function useAppIconSources(app: App | undefined): {
-  readonly sources: AppIconSources | null;
-  readonly pending: boolean;
-} {
-  const catalog = useCatalogIcons();
-  if (app === undefined) return { sources: null, pending: false };
+function appSources(app: App | undefined, catalog: CatalogIcons): AppIconSources | null {
+  if (app === undefined) return null;
   const declared = appIconSources(app.requirements.icons);
-  if (declared !== null) return { sources: declared, pending: false };
+  if (declared !== null) return declared;
   const origin = app.copiedFrom?.name;
-  if (origin === undefined) return { sources: null, pending: false };
-  return {
-    sources: catalogIconSources(catalog.byPackage.get(origin)),
-    pending: !catalog.settled,
-  };
+  return origin === undefined ? null : catalogIconSources(catalog.byPackage.get(origin));
 }
 
 /**
@@ -51,14 +90,7 @@ export function useAppIconSources(app: App | undefined): {
  * domain-derived logo, with a neutral fallback on image failure. While an own icon may still
  * arrive, the tile shows the loading skeleton instead of a domain logo that would then be replaced.
  */
-export function ProviderIcon({
-  name,
-  url,
-  icons,
-  large = false,
-  declared = null,
-  pending = false,
-}: {
+interface ProviderIconProps {
   readonly name: string;
   readonly url?: string | null | undefined;
   readonly icons?: readonly CatalogIcon[] | undefined;
@@ -67,8 +99,39 @@ export function ProviderIcon({
   readonly declared?: AppIconSources | null;
   /** The app's own icon is still loading. */
   readonly pending?: boolean;
-}) {
-  const catalogIcons = useCatalogIcons();
+}
+
+export function ProviderIcon(props: ProviderIconProps) {
+  const dashboard = useOptionalDashboard();
+  if (dashboard === null) return <ProviderIconView {...props} catalog={noCatalogIcons} />;
+  // A declared icon does not come from the catalog. The catalog read still starts, so other icons
+  // on the page can use it, and the fallback keeps the declared icon visible while that read waits.
+  const ready =
+    props.declared != null ? <ProviderIconView {...props} catalog={noCatalogIcons} /> : null;
+  const skeleton = <IconSkeleton large={props.large ?? false} />;
+  const fallback = ready ?? skeleton;
+  return (
+    <AfterMount fallback={fallback}>
+      <Suspense fallback={fallback}>
+        <ProviderIconCatalog {...props} />
+      </Suspense>
+    </AfterMount>
+  );
+}
+
+function ProviderIconCatalog(props: ProviderIconProps) {
+  return <ProviderIconView {...props} catalog={useCatalogIcons()} />;
+}
+
+function ProviderIconView({
+  name,
+  url,
+  icons,
+  large = false,
+  declared = null,
+  pending = false,
+  catalog: catalogIcons,
+}: ProviderIconProps & { readonly catalog: CatalogIcons }) {
   const [failed, setFailed] = useState<readonly string[]>([]);
   const normalized = name.toLowerCase().trim();
   const size = large ? 24 : 17;
@@ -83,14 +146,7 @@ export function ProviderIcon({
   const fail = (key: string) => () =>
     setFailed((current) => (current.includes(key) ? current : [...current, key]));
   return (
-    <span
-      className={cn(
-        "provider-icon w-8.5 h-8.5 border border-border rounded-[7px] inline-flex items-center justify-center bg-background shrink-0 [&_img]:w-4.25 [&_img]:h-4.25 [&_img]:object-contain [&_>_svg]:w-4.25 [&_>_svg]:h-4.25 [&_>_svg]:object-contain max-[740px]:[.catalog-row_>_&]:row-[1_/_3]",
-        large &&
-          "provider-icon-large w-11 h-11 rounded-[9px] [&_img]:w-6 [&_img]:h-6 [&_>_svg]:w-6 [&_>_svg]:h-6",
-      )}
-      aria-hidden
-    >
+    <IconFrame large={large}>
       {own ? (
         // The browser picks the variant for the color scheme, so the server renders the same
         // markup. A srcset ends a URL at whitespace, which a data URI may hold escaped.
@@ -125,7 +181,7 @@ export function ProviderIcon({
       ) : (
         <HugeiconsIcon icon={PackageIcon} aria-hidden size={large ? 23 : 17} strokeWidth={1.5} />
       )}
-    </span>
+    </IconFrame>
   );
 }
 
@@ -142,15 +198,50 @@ export function AppIcon({
   readonly name?: string;
   readonly large?: boolean;
 }) {
+  const dashboard = useOptionalDashboard();
+  const declared = app === undefined ? null : appIconSources(app.requirements.icons);
+  if (declared !== null)
+    return <AppIconView app={app} name={name} large={large} sources={declared} />;
+  if (dashboard === null)
+    return (
+      <AppIconView app={app} name={name} large={large} sources={appSources(app, noCatalogIcons)} />
+    );
+  const skeleton = <IconSkeleton large={large} />;
+  return (
+    <AfterMount fallback={skeleton}>
+      <Suspense fallback={skeleton}>
+        <AppIconCatalog app={app} name={name} large={large} />
+      </Suspense>
+    </AfterMount>
+  );
+}
+
+function AppIconCatalog(props: {
+  readonly app: App | undefined;
+  readonly name?: string | undefined;
+  readonly large: boolean;
+}) {
+  return <AppIconView {...props} sources={appSources(props.app, useCatalogIcons())} />;
+}
+
+function AppIconView({
+  app,
+  name,
+  large,
+  sources,
+}: {
+  readonly app: App | undefined;
+  readonly name?: string | undefined;
+  readonly large: boolean;
+  readonly sources: AppIconSources | null;
+}) {
   const provider = app && Object.values(app.requirements.accounts)[0]?.definition;
-  const { sources, pending } = useAppIconSources(app);
   return (
     <ProviderIcon
       name={provider?.name ?? app?.name ?? name ?? "App"}
       url={providerDisplayUrl(provider)}
       large={large}
       declared={sources}
-      pending={pending}
     />
   );
 }
@@ -168,7 +259,59 @@ export function AppProviderIcon({
   readonly provider: ProviderDefinition;
   readonly large?: boolean;
 }) {
-  const { sources, pending } = useAppIconSources(app);
+  const dashboard = useOptionalDashboard();
+  const declared = appIconSources(app.requirements.icons);
+  if (declared !== null)
+    return <AppProviderIconView app={app} provider={provider} large={large} sources={declared} />;
+  if (dashboard === null)
+    return (
+      <AppProviderIconView
+        app={app}
+        provider={provider}
+        large={large}
+        sources={appSources(app, noCatalogIcons)}
+      />
+    );
+  const skeleton = <IconSkeleton large={large} />;
+  return (
+    <AfterMount fallback={skeleton}>
+      <Suspense fallback={skeleton}>
+        <AppProviderIconCatalog app={app} provider={provider} large={large} />
+      </Suspense>
+    </AfterMount>
+  );
+}
+
+function AppProviderIconCatalog({
+  app,
+  provider,
+  large,
+}: {
+  readonly app: App;
+  readonly provider: ProviderDefinition;
+  readonly large: boolean;
+}) {
+  return (
+    <AppProviderIconView
+      app={app}
+      provider={provider}
+      large={large}
+      sources={appSources(app, useCatalogIcons())}
+    />
+  );
+}
+
+function AppProviderIconView({
+  app,
+  provider,
+  large,
+  sources,
+}: {
+  readonly app: App;
+  readonly provider: ProviderDefinition;
+  readonly large: boolean;
+  readonly sources: AppIconSources | null;
+}) {
   const single =
     new Set(Object.values(app.requirements.accounts).map((slot) => slot.definition.name)).size ===
     1;
@@ -177,7 +320,7 @@ export function AppProviderIcon({
       name={provider.name}
       url={providerDisplayUrl(provider)}
       large={large}
-      {...(single ? { declared: sources, pending } : {})}
+      {...(single ? { declared: sources } : {})}
     />
   );
 }

@@ -12,8 +12,8 @@ import type {
   ToolRouter,
   ToolSummary,
 } from "@executor-js/sdk";
-import type { CatalogImport } from "@executor-js/catalog/contracts";
-import type { CatalogIcons } from "./icons.ts";
+import type { CatalogEntry, CatalogImport } from "@executor-js/catalog/contracts";
+import type { Handle } from "raf-effect-atom";
 import {
   missingRequirements,
   usedAccounts,
@@ -25,6 +25,7 @@ import type {
   SourceDisplayFile,
 } from "@executor-js/app-management/contracts/source-display";
 import type { Atom, AsyncResult } from "effect/reactivity";
+import type { StartedRead } from "./started-read.ts";
 import { Schema, SchemaGetter, type Cause } from "effect";
 import type { ComponentType, ReactNode } from "react";
 import { parse } from "tldts";
@@ -81,6 +82,8 @@ export interface AppVersionsProps<E> {
   readonly version: VersionId;
   readonly onVersionChange: (version: VersionId | undefined) => void;
   readonly query: Query<VersionDisplay, E>;
+  /** Present when the route loader started this version's source. */
+  readonly read?: StartedRead<VersionDisplay, E> | undefined;
   /** Reads one file of the listed version when the listing did not inline it. */
   readonly file: (version: VersionId, path: string) => Query<SourceDisplayFile, E>;
   readonly Failure: ComponentType<FailureProps<NoInfer<E>>>;
@@ -142,6 +145,8 @@ export interface AppLinkProps {
   readonly app: AppId;
   readonly view?: AppView;
   readonly tool?: string;
+  /** The version whose data the destination reads. Absent until the app has one. */
+  readonly version?: VersionId | undefined;
   readonly className?: string;
   readonly children: ReactNode;
   readonly "aria-label"?: string;
@@ -162,9 +167,13 @@ export interface FailureProps<E> {
   readonly layout?: "inline" | "compact" | undefined;
 }
 /** Only error-independent presentation belongs in context. Queries keep their own error types. */
-export interface DashboardBindings {
-  /** Catalog apps' icons by package and by name; see `catalogIconsAtom`. */
-  readonly catalogIcons: Atom.Atom<CatalogIcons>;
+export interface DashboardBindings<E = unknown> {
+  /**
+   * The catalog query and the handle a layout started in the browser. Icons read it through
+   * `useAtomResult`, so the catalog stays out of the document.
+   */
+  readonly catalog: Query<readonly CatalogEntry[], E>;
+  readonly catalogHandle: Handle<Query<readonly CatalogEntry[], E>>;
   readonly AppLink: ComponentType<AppLinkProps>;
   readonly AccountLink: ComponentType<AccountLinkProps>;
 }

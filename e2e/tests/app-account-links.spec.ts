@@ -161,8 +161,15 @@ const linkedFixture = Effect.gen(function* () {
   return { ...fixture, personal, work };
 });
 
-/** The tool runner's read-only line naming the accounts a call runs with. */
-const runningAs = (page: Page) => page.getByText(/^Running as/).textContent();
+/**
+ * The tool runner's read-only line naming the accounts a call runs with. A document that hydrates
+ * beside a hidden server tree has two copies; the visible one is the page.
+ */
+const runningAs = (page: Page) =>
+  page
+    .getByText(/^Running as/)
+    .filter({ visible: true })
+    .textContent();
 
 /** Run the selected tool and return the call's JSON result once the page shows it. */
 const runTool = (page: Page) =>
@@ -687,14 +694,14 @@ export default defineApp({user: { accounts:{extra:service.many()} }},async ctx=>
           page.goto(`${url}?view=tools&tool=who`),
         );
         yield* browser.use("The first tab has the original catalog", (page) =>
-          page.getByRole("button", { name: "who", exact: true }).waitFor(),
+          page.getByRole("link", { name: "who", exact: true }).waitFor(),
         );
         const other = yield* browser.use("Open another tab", (page) => page.context().newPage());
         yield* browser.use("Load the tool in the second tab", () =>
           other.goto(`${url}?view=tools&tool=who`),
         );
         yield* browser.use("The second tab has the original catalog", () =>
-          other.getByRole("button", { name: "who", exact: true }).waitFor(),
+          other.getByRole("link", { name: "who", exact: true }).waitFor(),
         );
         const changed = yield* saveAndDeploy(actors.owner, path, {
           files: files.map((file) =>
@@ -713,10 +720,10 @@ export default defineApp({user: { accounts:{extra:service.many()} }},async ctx=>
         // Both open tabs follow the version at their next idle reconciliation.
         yield* advanceToReconciliation;
         yield* browser.use("The first tab follows the new version", (page) =>
-          page.getByRole("button", { name: "version", exact: true }).first().waitFor(),
+          page.getByRole("link", { name: "version", exact: true }).first().waitFor(),
         );
         yield* browser.use("The second tab follows the same version", () =>
-          other.getByRole("button", { name: "version", exact: true }).first().waitFor(),
+          other.getByRole("link", { name: "version", exact: true }).first().waitFor(),
         );
         expect(
           yield* browser.use("Both tabs still run with the linked accounts", (page) =>

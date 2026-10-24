@@ -1,7 +1,10 @@
 import { AsyncResult, AtomRegistry } from "effect/reactivity";
-import { RegistryContext, useAtomRefresh, useAtomValue } from "@effect/atom-react";
-import { useContext, useState, type ReactNode } from "react";
+import { RegistryContext, useAtomRefresh } from "@effect/atom-react";
+import { useAtomResult } from "raf-effect-atom";
+import { Component, Suspense, useContext, useState, type ReactNode } from "react";
 import { Cause, Effect, Exit, Option, Predicate } from "effect";
+import { HttpClientError } from "effect/http";
+import { isConnectionFailure } from "@executor-js/utils/connection-failure";
 import type { App, DeployedApp } from "@executor-js/sdk";
 import type { CatalogEntry } from "@executor-js/catalog/contracts";
 import type {
@@ -9,9 +12,10 @@ import type {
   MutationProps,
   InstallApp,
   Inventory,
-  Query,
 } from "../../contracts/dashboard.ts";
-import { Empty, LoadingRows, ProviderIcon, SearchInput } from "./common.tsx";
+import type { StartedRead } from "../../contracts/started-read.ts";
+import { useDashboard, useStartedQuery } from "./context.tsx";
+import { AfterMount, Empty, LoadingRows, ProviderIcon, SearchInput } from "./common.tsx";
 import { Button } from "../components/button.tsx";
 import {
   Dialog,
@@ -65,7 +69,89 @@ export function useCatalogInstall<IE>(
  * their copy origin, so the most recent copy of that package is the one Open leads to. The user
  * then connects an account through the app's own providers.
  */
-export function CatalogPage<E, IE>({
+export function CatalogPage<E, IE>(
+  props: QueryProps<readonly CatalogEntry[], E> & {
+    /** The install command for one catalog entry; each row has its own. */
+    readonly mutation: (entry: string) => MutationProps<InstallApp, DeployedApp, IE>["mutation"];
+    readonly InstallFailure: MutationProps<InstallApp, DeployedApp, IE>["Failure"];
+    readonly back: ReactNode;
+    readonly action?: ReactNode;
+    /** The apps already installed. The route loader started this read. A failed read leaves every row on Add. */
+    readonly inventory: StartedRead<Inventory, unknown>;
+    /** A link to the installed app, rendered inside the row's Open button. */
+    readonly open: (app: App) => ReactNode;
+  },
+) {
+  const pending = <CatalogPending back={props.back} action={props.action} />;
+  const retry = useAtomRefresh(props.query);
+  return (
+    <AfterMount fallback={pending}>
+      <Suspense fallback={pending}>
+        <CatalogConnectionBoundary
+          renderFailure={(error, again) => <props.Failure cause={Cause.die(error)} retry={again} />}
+          retry={retry}
+        >
+          <CatalogLoaded {...props} />
+        </CatalogConnectionBoundary>
+      </Suspense>
+    </AfterMount>
+  );
+}
+
+/**
+ * A lost catalog response stays on this page. Any other defect still reaches the route error page.
+ * The read throws a defect rather than returning it, so the boundary is what can tell them apart.
+ */
+class CatalogConnectionBoundary extends Component<
+  {
+    readonly renderFailure: (
+      error: HttpClientError.HttpClientError,
+      retry: () => void,
+    ) => ReactNode;
+    readonly retry: () => void;
+    readonly children: ReactNode;
+  },
+  { readonly error: unknown }
+> {
+  override state = { error: undefined as unknown };
+  static getDerivedStateFromError(error: unknown) {
+    return { error };
+  }
+  override render() {
+    const error = this.state.error;
+    if (error === undefined) return this.props.children;
+    // Thrown from this render, so the route boundary above receives it.
+    if (!isConnectionFailure(error)) throw error;
+    return this.props.renderFailure(error, () => {
+      this.props.retry();
+      this.setState({ error: undefined });
+    });
+  }
+}
+
+function CatalogPending({
+  back,
+  action,
+}: {
+  readonly back: ReactNode;
+  readonly action?: ReactNode;
+}) {
+  return (
+    <div className="page w-full shrink-0 max-w-315 [padding:24px_24px_48px] my-0 mx-auto max-[1000px]:[padding:20px_20px_40px] max-[740px]:[padding:18px_max(16px,_env(safe-area-inset-right))_max(32px,_env(safe-area-inset-bottom))_max(16px,_env(safe-area-inset-left))]">
+      {back}
+      <div className="page-heading gap-4 flex justify-between items-center min-h-12 mb-4.5">
+        <div>
+          <h1 className="text-[22px] font-semibold tracking-[-0.035em] leading-[1.35]">Add app</h1>
+          <p className="text-muted-foreground text-[13px] mt-1.25">Find a service to connect.</p>
+        </div>
+        {action}
+      </div>
+      <LoadingRows />
+    </div>
+  );
+}
+
+function CatalogLoaded<E, IE>({
   query,
   Failure,
   mutation,
@@ -75,19 +161,18 @@ export function CatalogPage<E, IE>({
   inventory,
   open,
 }: QueryProps<readonly CatalogEntry[], E> & {
-  /** The install command for one catalog entry; each row has its own. */
   readonly mutation: (entry: string) => MutationProps<InstallApp, DeployedApp, IE>["mutation"];
   readonly InstallFailure: MutationProps<InstallApp, DeployedApp, IE>["Failure"];
   readonly back: ReactNode;
   readonly action?: ReactNode;
-  /** The apps already installed; a failed read just leaves every row on Add. */
-  readonly inventory: Query<Inventory, unknown>;
-  /** A link to the installed app, rendered inside the row's Open button. */
+  readonly inventory: StartedRead<Inventory, unknown>;
   readonly open: (app: App) => ReactNode;
 }) {
-  const result = useAtomValue(query);
+  const dashboard = useDashboard();
+  const result = useAtomResult(query, dashboard.catalogHandle);
+  const installed = useStartedQuery(inventory);
   const installedByPackage = installedCatalogApps(
-    Option.getOrUndefined(AsyncResult.value(useAtomValue(inventory)))?.apps,
+    Option.getOrUndefined(AsyncResult.value(installed.result))?.apps,
   );
   const install = useCatalogInstall(mutation);
   const [adding, setAdding] = useState<ReadonlySet<string>>(new Set());
@@ -158,9 +243,7 @@ export function CatalogPage<E, IE>({
       </div>
       {AsyncResult.isFailure(result) && <Failure cause={result.cause} retry={retry} />}
       {failure && conflict === undefined && <InstallFailure cause={failure} />}
-      {!entries.length && AsyncResult.isInitial(result) ? (
-        <LoadingRows />
-      ) : !entries.length && AsyncResult.isFailure(result) ? null : !entries.length ? (
+      {!entries.length && AsyncResult.isFailure(result) ? null : !entries.length ? (
         <Empty
           title={search ? "No matching apps" : "No apps available"}
           action={

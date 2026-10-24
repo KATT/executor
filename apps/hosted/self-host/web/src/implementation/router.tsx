@@ -9,7 +9,7 @@ import { routeTree } from "./routeTree.gen.ts";
 
 /** One router and atom registry per document request on the server, and one per page in the browser. */
 export const getRouter = () => {
-  const { connect, Wrap } = dashboardRegistry(
+  const { atoms, connect, Wrap } = dashboardRegistry(
     import.meta.env.SSR
       ? [...hostedServerValues(serverDocument()), ...signInInitialValues(serverDocument().signIn)]
       : [],
@@ -17,6 +17,7 @@ export const getRouter = () => {
   return connect(
     createRouter({
       routeTree,
+      context: { atoms },
       defaultPreload: "intent",
       defaultPendingComponent: PagePending,
       defaultPendingMs: 100,

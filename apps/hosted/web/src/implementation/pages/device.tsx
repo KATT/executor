@@ -1,6 +1,9 @@
+import { Suspense } from "react";
 import { EmptyState } from "@executor-js/ui/dashboard/empty-state";
+import { useStartedQuery } from "@executor-js/ui/dashboard/context";
 import { reportBrowserUsage } from "../../contracts/product-analytics.ts";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { Loader } from "raf-effect-atom";
 import { useNavigate } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
 import { Cause, Exit } from "effect";
@@ -40,6 +43,23 @@ export const deviceSearch = (search: Record<string, unknown>) => ({
   user_code: typeof search.user_code === "string" ? search.user_code : "",
 });
 
+/** Start the device request, then the client it names, plus the caller's organizations. */
+export async function loadDevice(atoms: Loader.Loader, userCode: string) {
+  const code = normalizeUserCode(userCode);
+  if (code === undefined) return undefined;
+  const organizations = atoms.prefetch(organizationsAtom);
+  const request = await atoms.ensure(deviceRequestAtom(code));
+  const view = Loader.result(request);
+  const clientId = AsyncResult.isSuccess(view) ? view.value.clientId : undefined;
+  return {
+    organizations,
+    request,
+    client: clientId === undefined ? undefined : atoms.prefetch(mcpClientAtom(clientId)),
+  };
+}
+
+export type DeviceReads = NonNullable<Awaited<ReturnType<typeof loadDevice>>>;
+
 const actions =
   "mcp-consent-actions flex items-center justify-end gap-2.5 border-t border-t-border pt-5 max-[480px]:flex-wrap";
 
@@ -48,13 +68,21 @@ const actions =
  * which registered client asks and for what, chooses the organization as consent does, and
  * approves or denies. The device finishes signing in on its own.
  */
-export function DevicePage({ user_code }: { readonly user_code: string }) {
+export function DevicePage({
+  user_code,
+  reads,
+}: {
+  readonly user_code: string;
+  readonly reads: DeviceReads | undefined;
+}) {
   const code = normalizeUserCode(user_code);
   // A new code starts a new decision; nothing from a previous code carries over.
-  return code === undefined ? (
+  return code === undefined || reads === undefined ? (
     <EnterCode initial={user_code} error={user_code === "" ? null : invalidCode} />
   ) : (
-    <DeviceLookup key={code} code={code} />
+    <Suspense fallback={<McpConsentLoading />}>
+      <DeviceLookup key={code} code={code} reads={reads} />
+    </Suspense>
   );
 }
 
@@ -110,10 +138,9 @@ function EnterCode({
   );
 }
 
-function DeviceLookup({ code }: { readonly code: string }) {
-  const request = useAtomValue(deviceRequestAtom(code));
-  return AsyncResult.builder(request)
-    .onInitial(() => <McpConsentLoading />)
+function DeviceLookup({ code, reads }: { readonly code: string; readonly reads: DeviceReads }) {
+  const request = useStartedQuery({ source: deviceRequestAtom(code), handle: reads.request });
+  return AsyncResult.builder(request.result)
     .onFailure((cause) => {
       const failure = Cause.squash(cause);
       return (
@@ -127,15 +154,46 @@ function DeviceLookup({ code }: { readonly code: string }) {
         />
       );
     })
-    .onSuccess((view) => <DeviceReview code={code} view={view} />)
+    .onInitial(() => <McpConsentLoading />)
+    .onWaiting(() => <McpConsentLoading />)
+    .onSuccess((view) =>
+      reads.client === undefined ? (
+        <McpConsentLoading />
+      ) : (
+        <DeviceReview
+          code={code}
+          view={view}
+          organizations={reads.organizations}
+          client={reads.client}
+        />
+      ),
+    )
     .exhaustive();
 }
 
-function DeviceReview({ code, view }: { readonly code: string; readonly view: DeviceRequestView }) {
+function DeviceReview({
+  code,
+  view,
+  organizations: organizationsHandle,
+  client: clientHandle,
+}: {
+  readonly code: string;
+  readonly view: DeviceRequestView;
+  readonly organizations: DeviceReads["organizations"];
+  readonly client: NonNullable<DeviceReads["client"]>;
+}) {
   const resourceOrigins = useResourceOrigins();
   const target = grantTarget(resourceOrigins, [view.resource]);
-  const client = useAtomValue(mcpClientAtom(view.clientId));
-  const organizations = useAtomValue(organizationsAtom);
+  const clientQuery = useStartedQuery({
+    source: mcpClientAtom(view.clientId),
+    handle: clientHandle,
+  });
+  const organizationsQuery = useStartedQuery({
+    source: organizationsAtom,
+    handle: organizationsHandle,
+  });
+  const client = clientQuery.result;
+  const organizations = organizationsQuery.result;
   const decide = useAtomSet(deviceDecisionAtom, { mode: "promiseExit" });
   const state = useAtomValue(deviceDecisionAtom);
   const [selected, setSelected] = useState("");

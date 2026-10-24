@@ -3,7 +3,6 @@ import { Effect } from "effect";
 import { Atom } from "effect/reactivity";
 import type { CompleteWebhookSetup, WebhookSetupView, WebhookSubscription } from "@executor-js/sdk";
 import { acknowledge, acknowledgedQuery, invalidate } from "./mutations.ts";
-import { browserOnly } from "./http.ts";
 
 /** Browser form inputs omit product-owned resource identities. */
 export type WebhookSetupSubmission = Omit<typeof CompleteWebhookSetup.Type, "app" | "subscription">;
@@ -17,9 +16,9 @@ export const webhookSetupAtoms = <R, RE, E>(
     readonly confirmRemoval: Effect.Effect<WebhookSubscription, E, R>;
   },
 ) => {
-  // The view can hold a generated signing secret, which the page masks. The server renders the
-  // loading state instead of sending the secret with the page, and the browser reads it once.
-  const details = acknowledgedQuery(browserOnly(runtime.atom(operations.read)));
+  // The view can hold a generated signing secret, which the page masks. The route starts this
+  // read in the browser, so the server never sends the secret with the page.
+  const details = acknowledgedQuery(runtime.atom(operations.read));
   const complete = runtime.fn((input: WebhookSetupSubmission, get) =>
     operations
       .complete(input)

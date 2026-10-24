@@ -7,8 +7,8 @@ import {
   type ConnectionOAuthStart,
   type ConnectionSubmission,
 } from "@executor-js/local-server/account-connections";
-import { HttpUrl } from "@executor-js/sdk";
-import { Data, Effect, Schema } from "effect";
+import { AccountConnectionId, HttpUrl } from "@executor-js/sdk";
+import { Data, Effect, Option, Schema } from "effect";
 import { Atom, AtomHttpApi } from "effect/reactivity";
 
 /** Only a connection grant authenticates these calls; no dashboard session is needed. */
@@ -22,47 +22,62 @@ export const ConnectionEntry = Schema.Struct({
   callbackUrl: Schema.optional(Schema.RedactedFromValue(HttpUrl)),
 });
 export type ConnectionEntry = typeof ConnectionEntry.Type;
-/** Bootstrap capability for this document, never a global Executor API key. */
-export const connectionEntryAtom = Atom.make<ConnectionEntry | undefined>(undefined).pipe(
-  Atom.keepAlive,
-);
-/** Complete an OAuth return once per document, including React remounts and later reloads. */
-const connectionCompletionAtom = ConnectionClient.runtime
-  .atom((get) =>
-    Effect.gen(function* () {
-      const entry = get(connectionEntryAtom);
-      if (entry === undefined || entry.callbackUrl === undefined) return undefined;
-      const client = yield* ConnectionClient;
-      return yield* client.accountConnect
-        .completeOAuth({ payload: { ...entry, callbackUrl: entry.callbackUrl } })
-        .pipe(Effect.result);
-    }),
-  )
-  .pipe(Atom.keepAlive);
-/** Public request metadata, read after any completion. Refreshing reads the request again. */
-export const connectionDetailsAtom = ConnectionClient.runtime
-  .atom((get) =>
-    Effect.gen(function* () {
-      const entry = get(connectionEntryAtom);
-      if (entry === undefined) return undefined;
-      const completion = yield* get.result(connectionCompletionAtom);
-      const client = yield* ConnectionClient;
-      const connection = yield* client.accountConnect.read({ payload: entry });
-      return { connection, completion };
-    }),
-  )
-  .pipe(Atom.keepAlive);
+const storedEntry = Schema.fromJsonString(ConnectionEntry);
+/** The grant `getRouter` stashed for this connection link, including an OAuth return when there is one. */
+export const connectionEntryKey = (connection: string) => `executor.account-connect.${connection}`;
+export const encodeConnectionEntry = Schema.encodeSync(storedEntry);
+export const decodeConnectionEntry = Schema.decodeUnknownOption(storedEntry);
+/** The browser reads the stashed grant. The server never sees it. */
+export const readStashedConnection = (
+  connection: AccountConnectionId,
+): ConnectionEntry | undefined => {
+  if (typeof sessionStorage === "undefined") return undefined;
+  const saved = sessionStorage.getItem(connectionEntryKey(connection));
+  return saved === null ? undefined : Option.getOrUndefined(decodeConnectionEntry(saved));
+};
 /**
  * A request whose app changed can never complete. Every read and write of it on this page reads
  * it again when it reports the change, so the page drops its old form.
  */
-const reloadConnection = (get: Atom.FnContext | Atom.AtomContext) =>
-  Effect.sync(() => get.registry.refresh(connectionDetailsAtom));
+const reloadConnection =
+  (connection: AccountConnectionId) => (get: Atom.FnContext | Atom.AtomContext) =>
+    Effect.sync(() => get.registry.refresh(connectionDetailsAtom(connection)));
+const connectionDetails = Atom.family((connection: AccountConnectionId) => {
+  const completion = ConnectionClient.runtime
+    .atom(
+      Effect.gen(function* () {
+        const entry = readStashedConnection(connection);
+        if (entry?.callbackUrl === undefined) return undefined;
+        const client = yield* ConnectionClient;
+        return yield* client.accountConnect
+          .completeOAuth({ payload: { ...entry, callbackUrl: entry.callbackUrl } })
+          .pipe(Effect.result);
+      }),
+    )
+    .pipe(Atom.keepAlive);
+  return ConnectionClient.runtime
+    .atom((get) =>
+      Effect.gen(function* () {
+        const entry = readStashedConnection(connection);
+        if (entry === undefined) return undefined;
+        const finished = yield* get.result(completion);
+        const client = yield* ConnectionClient;
+        const request = yield* client.accountConnect.read({ payload: entry });
+        return { grant: entry, connection: request, completion: finished };
+      }),
+    )
+    .pipe(Atom.keepAlive);
+});
+/** Public request metadata for the connection named by the URL. The grant stays in session storage. */
+export const connectionDetailsAtom = (connection: AccountConnectionId) =>
+  connectionDetails(connection);
 /** Idempotent saves return account metadata only. */
 export const submitConnectionAtom = ConnectionClient.runtime.fn(
   (payload: typeof ConnectionSubmission.Type, get) =>
     Effect.flatMap(ConnectionClient, (client) => client.accountConnect.submit({ payload })).pipe(
-      Effect.tapErrorTag("AccountConnectionTargetChanged", () => reloadConnection(get)),
+      Effect.tapErrorTag("AccountConnectionTargetChanged", () =>
+        reloadConnection(payload.connection)(get),
+      ),
     ),
 );
 /** Cancellation closes the same request observed by the agent. */
@@ -78,7 +93,9 @@ const connectionSetup = Atom.family((key: ConnectionSetupKey) =>
       Effect.flatMap(ConnectionClient, (client) =>
         client.accountConnect.oauthSetup({ payload: key }),
       ).pipe(
-        Effect.tapErrorTag("AccountConnectionTargetChanged", () => reloadConnection(get)),
+        Effect.tapErrorTag("AccountConnectionTargetChanged", () =>
+          reloadConnection(key.connection)(get),
+        ),
         // As in the client's own queries, an unreachable server or malformed response is a defect.
         Effect.catchTag(["HttpClientError", "SchemaError"], Effect.die),
       ),
@@ -93,5 +110,9 @@ export const startConnectionOAuthAtom = ConnectionClient.runtime.fn(
   (payload: typeof ConnectionOAuthStart.Type, get) =>
     Effect.flatMap(ConnectionClient, (client) =>
       client.accountConnect.startOAuth({ payload }),
-    ).pipe(Effect.tapErrorTag("AccountConnectionTargetChanged", () => reloadConnection(get))),
+    ).pipe(
+      Effect.tapErrorTag("AccountConnectionTargetChanged", () =>
+        reloadConnection(payload.connection)(get),
+      ),
+    ),
 );

@@ -1,8 +1,9 @@
 # Child process input descriptors
 
-`@effect%2Fplatform-node-shared@4.0.1.patch` keeps an `error` listener on
-each extra input descriptor (`additionalFds` with `type: "input"`) for the
-child's lifetime.
+Effect 4.0.6 keeps an `error` listener on each extra input descriptor
+(`additionalFds` with `type: "input"`) until the child closes, in
+`NodeChildProcessSpawner.handleInputErrors`. The 4.0.1 patch that did this
+is gone.
 
 Node opens every extra descriptor as a duplex socket and reads from it, even
 one the parent only writes to. On Linux these are Unix socket pairs: a child
@@ -18,6 +19,5 @@ write has finished carries nothing to act on; the child's exit is observed
 through its exit code. Output descriptors already keep a listener for their
 whole lifetime.
 
-The patch changes both source and distributed JavaScript. Regenerate it with
-`bun patch` when upgrading, and remove the patch once upstream keeps
-an input descriptor's listener.
+4.0.6's `handleInputErrors` is that listener, so nothing in
+`patchedDependencies` covers this anymore.

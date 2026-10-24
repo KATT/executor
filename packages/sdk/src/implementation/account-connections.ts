@@ -107,7 +107,7 @@ export const makeAccountConnections = (
           );
         }
         const id = AccountConnectionId.make(
-          `con_${yield* crypto.randomUUIDv4.pipe(Effect.mapError(() => new StorageError()))}`,
+          `con_${yield* crypto.randomUUIDv4().pipe(Effect.mapError(() => new StorageError()))}`,
         );
         const now = yield* Clock.currentTimeMillis;
         const target = yield* Schema.encodeEffect(StoredConnectionTarget)(

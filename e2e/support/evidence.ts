@@ -12,7 +12,7 @@ import {
   Ref,
   Schema,
 } from "effect";
-import { HttpClient, HttpClientRequest } from "effect/http";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 import type { TestContext } from "vitest";
 import { createHash } from "node:crypto";
 import { EvidenceEntries } from "../report-model.ts";
@@ -116,8 +116,16 @@ export class Telemetry extends Context.Service<
         Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(Collector))),
         Effect.map((collector) => collector.url),
       );
+      // The collector read sits in an uninterruptible acquire, so Effect.timeout cannot
+      // end it. Aborting the socket at 5 seconds lets that acquire finish.
+      const boundedFetch: typeof globalThis.fetch = (input, init) => {
+        const limit = AbortSignal.timeout(5_000);
+        const signal = init?.signal === undefined ? limit : AbortSignal.any([init.signal, limit]);
+        return globalThis.fetch(input, { ...init, signal });
+      };
       const safe = <A, E>(program: Effect.Effect<A, E>) =>
         program.pipe(
+          Effect.provideService(FetchHttpClient.Fetch, boundedFetch),
           Effect.timeout("5 seconds"),
           Effect.mapError(() => new TelemetryUnavailable()),
         );
@@ -358,7 +366,6 @@ export const scenarioEvidence = (identity: { readonly file: string; readonly nam
       const write = (cause: Cause.Cause<unknown> | undefined, final: boolean) =>
         Effect.gen(function* () {
           const failed = cause !== undefined;
-          const collectUntil = (yield* Clock.currentTimeMillis) + traceCollectionTime;
           const outcome = final ? report(cause) : Effect.void;
           const rows = yield* Ref.get(requests);
           yield* json("requests.json", rows);
@@ -510,8 +517,8 @@ export const scenarioEvidence = (identity: { readonly file: string; readonly nam
             );
           // The server exports its spans every second, so the requests just before the failure
           // are not delivered yet. Each read waits a bounded time for the server span that
-          // answered the test's client span.
-          const deadline = (yield* Clock.currentTimeMillis) + failureDeliveryWait;
+          // answered the test's client span. Elapsed time, so a wall-clock step cannot extend it.
+          const waitStarted = performance.now();
           const delivered = (
             traceId: string,
             spanId: string,
@@ -521,7 +528,7 @@ export const scenarioEvidence = (identity: { readonly file: string; readonly nam
                 Effect.gen(function* () {
                   if (
                     found.data.some(({ span }) => span.parentSpanId === spanId) ||
-                    (yield* Clock.currentTimeMillis) >= deadline
+                    performance.now() - waitStarted >= failureDeliveryWait
                   )
                     return found;
                   yield* Effect.sleep("250 millis");
@@ -588,10 +595,7 @@ export const scenarioEvidence = (identity: { readonly file: string; readonly nam
             [0, 1, 2],
             (group) => readAll(boundaries[group]!, boundaries[group + 1]!),
             { discard: true },
-          ).pipe(
-            Effect.interruptible,
-            Effect.timeoutOption(Math.max(0, collectUntil - (yield* Clock.currentTimeMillis))),
-          );
+          ).pipe(Effect.interruptible, Effect.timeoutOption(traceCollectionTime));
           // The batch the deadline stopped keeps the traces it had read.
           yield* settle;
           const { unfetched, ids } = listed(Option.isSome(finished) ? "complete" : "partial");

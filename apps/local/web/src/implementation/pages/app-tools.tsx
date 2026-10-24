@@ -1,7 +1,10 @@
-import type { AppId } from "@executor-js/sdk";
+import { useMemo } from "react";
+import type { Handle } from "raf-effect-atom";
+import { ToolName, type AppId, type VersionId } from "@executor-js/sdk";
+import { useStartedQuery } from "@executor-js/ui/dashboard/context";
+import { useMissingBoundary } from "../components/read-boundaries.tsx";
 import { AsyncResult } from "effect/reactivity";
 import { Failure } from "../components/common.tsx";
-import { useAtomValue } from "@effect/atom-react";
 import { AccountNotFound, OAuthReconnectRequired, type App } from "@executor-js/sdk";
 import type { DashboardAccount } from "@executor-js/local-server/contracts";
 import { Cause, Option, Schema } from "effect";
@@ -14,16 +17,22 @@ import { Key01Icon } from "@hugeicons/core-free-icons";
 import {
   callToolAtom,
   toolDetailAtom,
-  toolsAtom,
   toolCatalogAtom,
   toolRunApprovalAtoms,
 } from "../../contracts/api.ts";
 import { appToolReadiness, accountSetupFailure } from "../../contracts/dashboard.ts";
 import { Button } from "@executor-js/ui/components/button";
-import { Link, useNavigate } from "@tanstack/react-router";
+import type { ToolLinkProps } from "@executor-js/ui/dashboard/tools";
+import { Link } from "@tanstack/react-router";
 
 interface AppToolsProps {
   readonly app: App;
+  /** The version named by the URL. */
+  readonly version: VersionId;
+  /** Handle started by the route loader for this version. */
+  readonly tools: Handle<ReturnType<typeof toolCatalogAtom>>;
+  /** Handle started for the tool named in the URL. */
+  readonly detail: Handle<ReturnType<typeof toolDetailAtom>> | undefined;
   /** The app's requirements with their linked accounts. */
   readonly requirements: readonly RequirementAccounts<DashboardAccount>[];
   readonly selected: string | undefined;
@@ -128,11 +137,31 @@ function AccountReconnect({
 }
 
 /** Browse the complete live tool catalog with a stable, separate schema inspector. */
-function LiveAppTools({ app, requirements, selected }: AppToolsProps) {
-  const navigate = useNavigate();
-  const catalog = { app: app.id, version: app.activeVersion };
-  const atom = toolsAtom(catalog);
-  const result = useAtomValue(atom);
+function LiveAppTools({ app, version, tools, detail, requirements, selected }: AppToolsProps) {
+  const catalog = { app: app.id, version };
+  const read = { source: toolCatalogAtom(catalog), handle: tools, claim: useMissingBoundary };
+  const named =
+    selected === undefined
+      ? undefined
+      : Option.getOrUndefined(Schema.decodeUnknownOption(ToolName)(selected));
+  const detailRead =
+    detail === undefined || named === undefined
+      ? undefined
+      : { source: toolDetailAtom({ ...catalog, tool: named }), handle: detail };
+  const ToolLink = useMemo(() => {
+    const appId = app.id;
+    return function AppToolLink({ tool, ...props }: ToolLinkProps) {
+      return (
+        <Link
+          {...props}
+          to="/apps/$appId"
+          params={{ appId }}
+          search={{ view: "tools", tool, version }}
+        />
+      );
+    };
+  }, [app.id, version]);
+  const { result } = useStartedQuery(read);
   const setup = AsyncResult.isFailure(result) ? accountSetupFailure(result.cause) : Option.none();
   if (Option.isSome(setup))
     return <AccountSetup app={app} disconnected={Schema.is(AccountNotFound)(setup.value)} />;
@@ -152,34 +181,31 @@ function LiveAppTools({ app, requirements, selected }: AppToolsProps) {
   return (
     <ToolBrowser
       Failure={Failure}
-      key={`${app.id}:${app.activeVersion}`}
+      key={`${app.id}:${version}`}
       query={toolCatalogAtom(catalog)}
+      read={read}
       detail={(tool) => toolDetailAtom({ ...catalog, tool: tool.name })}
+      detailRead={detailRead}
       selected={selected}
       empty={
         emptyManyRequirements(requirements).length > 0 ? (
           <AccountSetup app={app} disconnected={false} />
         ) : undefined
       }
-      onSelect={(tool) => {
-        void navigate({
-          to: "/apps/$appId",
-          params: { appId: app.id },
-          search: { view: "tools", tool },
-        });
-      }}
+      ToolLink={ToolLink}
       renderAction={(tool) => (
         <ToolRunner
           key={tool.name}
           tool={tool.name}
           call={callToolAtom({
             app: app.id,
-            version: app.activeVersion ?? undefined,
+            version,
             tool: tool.name,
             kind: tool.readOnly === true ? "query" : "mutation",
           })}
           approval={(requestId) => toolRunApprovalAtoms({ app: app.id, requestId })}
           detail={toolDetailAtom({ ...catalog, tool: tool.name })}
+          detailRead={tool.name === selected ? detailRead : undefined}
           Failure={Failure}
           accounts={runningAs(requirements)}
         />

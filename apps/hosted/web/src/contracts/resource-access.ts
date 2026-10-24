@@ -11,7 +11,7 @@ import type {
   SharedAudience,
   AccessRevision,
 } from "@executor-js/hosted-server/resource-access";
-import { acknowledge } from "@executor-js/ui/contracts/mutations";
+import { acknowledge, follows } from "@executor-js/ui/contracts/mutations";
 import { providerDisplayUrl } from "@executor-js/ui/contracts/dashboard";
 import { HostedClient } from "./api.ts";
 import { protectedQuery } from "./protected-query.ts";
@@ -30,7 +30,7 @@ class AccountKey extends Data.Class<{
   readonly organization: OrganizationReference;
   readonly account: AccountId;
 }> {}
-const directory = Atom.family((key: DirectoryKey) =>
+const directoryQuery = Atom.family((key: DirectoryKey) =>
   HostedClient.query(
     "resourceAccess",
     "directory",
@@ -38,7 +38,15 @@ const directory = Atom.family((key: DirectoryKey) =>
       params: { organization: key.organization },
       query: { view: key.view },
     }),
-  ).pipe(
+  ),
+);
+/** The directory endpoint. Loaders start this atom; the page reads the inventory derived from it. */
+export const resourceDirectoryQuery = (
+  organization: OrganizationReference,
+  view: "available" | "managed" = "available",
+) => directoryQuery(new DirectoryKey({ organization, view }));
+const directory = Atom.family((key: DirectoryKey) =>
+  directoryQuery(key).pipe(
     revalidated,
     (source) => pollingQuery(source, { active: whileLoaded(({ pendingApp }) => pendingApp) }),
     protectedQuery,
@@ -163,33 +171,36 @@ class ListKey extends Data.Class<{
   readonly group: string;
 }> {}
 const inventory = Atom.family((key: ListKey) =>
-  Atom.map(
+  follows(
+    Atom.map(
+      resourceDirectoryAtom(key.organization, key.view),
+      AsyncResult.map((data) => {
+        const apps = data.apps
+          .filter(
+            ({ access }) =>
+              key.group === "all" ||
+              (key.group === "private"
+                ? access.audience.kind === "private"
+                : access.audience.kind === "everyone" ||
+                  (access.audience.kind === "groups" &&
+                    access.audience.groups.some((id) => id === key.group))),
+          )
+          .map(({ app }) => app);
+        const links = data.apps
+          .filter(({ app }) => apps.some((item) => item.id === app.id))
+          .flatMap(({ app, linkedAccounts }) =>
+            linkedAccounts.map((account) => ({ app: app.id, account })),
+          );
+        const accounts = data.accounts.map(({ account, provider, health }) => ({
+          ...account,
+          providerName: provider.definition.name,
+          providerUrl: providerDisplayUrl(provider.definition),
+          ...(health === undefined ? {} : { health }),
+        }));
+        return { apps, accounts, links, pendingApp: key.group !== "private" && data.pendingApp };
+      }),
+    ),
     resourceDirectoryAtom(key.organization, key.view),
-    AsyncResult.map((data) => {
-      const apps = data.apps
-        .filter(
-          ({ access }) =>
-            key.group === "all" ||
-            (key.group === "private"
-              ? access.audience.kind === "private"
-              : access.audience.kind === "everyone" ||
-                (access.audience.kind === "groups" &&
-                  access.audience.groups.some((id) => id === key.group))),
-        )
-        .map(({ app }) => app);
-      const links = data.apps
-        .filter(({ app }) => apps.some((item) => item.id === app.id))
-        .flatMap(({ app, linkedAccounts }) =>
-          linkedAccounts.map((account) => ({ app: app.id, account })),
-        );
-      const accounts = data.accounts.map(({ account, provider, health }) => ({
-        ...account,
-        providerName: provider.definition.name,
-        providerUrl: providerDisplayUrl(provider.definition),
-        ...(health === undefined ? {} : { health }),
-      }));
-      return { apps, accounts, links, pendingApp: key.group !== "private" && data.pendingApp };
-    }),
   ),
 );
 /** A UI group filter narrows already-authorized rows; it grants no additional access. */
@@ -198,23 +209,3 @@ export const resourceInventoryAtom = (
   view: "available" | "managed" = "available",
   group = "all",
 ) => inventory(new ListKey({ organization, view, group }));
-
-/** Page-local filters share one result lifetime within a single organization. */
-export function createAppListAtoms(organization: OrganizationReference) {
-  const filters = Atom.make<{
-    readonly view: "available" | "managed";
-    readonly group: string;
-  }>({ view: "available", group: "all" });
-  const selected = Atom.readable(
-    (get) => {
-      const { view, group } = get(filters);
-      return get(resourceInventoryAtom(organization, view, group));
-    },
-    (refresh) => {
-      refresh(resourceDirectoryAtom(organization));
-      refresh(resourceDirectoryAtom(organization, "managed"));
-    },
-  );
-  // Retain cards while another filter loads, but clear them on access denial.
-  return { filters, query: protectedQuery(selected) };
-}

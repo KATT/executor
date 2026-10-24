@@ -24,6 +24,7 @@ import { undeclaredError } from "@executor-js/utils/connection-failure";
 import { ErrorNotice } from "./error-notice.tsx";
 import { OAuthClientOrigin, sharesClientId } from "./oauth-client-origin.tsx";
 import { useQuery } from "./context.tsx";
+import { useWaterfall } from "raf-effect-atom";
 
 /** Keep forms mounted through cached setup reads, refresh failures, and retries. */
 export function OAuthSetup<E extends UserFacingError>({
@@ -37,6 +38,9 @@ export function OAuthSetup<E extends UserFacingError>({
     readonly refresh: () => void;
   }) => ReactNode;
 }) {
+  // The form stays mounted through a refresh, so this read does not suspend. The waterfall is what
+  // starts the method the form picked.
+  useWaterfall(query);
   const { result, data, refresh } = useQuery(query);
   const failed = AsyncResult.isFailure(result);
   const loading = Option.isNone(data);

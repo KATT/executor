@@ -1,4 +1,6 @@
-import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { Loader } from "raf-effect-atom";
+import { useStartedQuery } from "@executor-js/ui/dashboard/context";
 import { Cause, Exit, Redacted } from "effect";
 import { AsyncResult } from "effect/reactivity";
 import { useState, type ReactNode } from "react";
@@ -66,26 +68,42 @@ export const describeClient = (userAgent: string | null | undefined): string => 
   return system === undefined ? browser : `${browser} on ${system}`;
 };
 
+/** Start the signed-in sessions before the security page renders. */
+export function loadSessions(atoms: Loader.Loader) {
+  return { sessions: atoms.prefetch(sessionsAtom) };
+}
+
+export type SecurityReads = ReturnType<typeof loadSessions>;
+
 /**
  * How this person signs in. Hosts add their own sign-in sections (passkeys, password); every
  * host shows the signed-in sessions.
  */
-export function SecurityPage({ children }: { readonly children?: ReactNode }) {
+export function SecurityPage({
+  children,
+  reads,
+}: {
+  readonly children?: ReactNode;
+  readonly reads: SecurityReads | undefined;
+}) {
   useDocumentTitle(productTitle(securityTitle));
+  if (reads === undefined) return null;
   return (
     <PageFrame>
       <PageHeader title={securityTitle} description={securityDescription} />
       <div className="flex flex-col gap-3">
         {children}
-        <Sessions />
+        <Sessions sessions={reads.sessions} />
       </div>
     </PageFrame>
   );
 }
 
-function Sessions() {
-  const sessions = useAtomValue(sessionsAtom);
-  const retry = useAtomRefresh(sessionsAtom);
+function Sessions({ sessions: handle }: { readonly sessions: SecurityReads["sessions"] }) {
+  const { result: sessions, refresh: retry } = useStartedQuery({
+    source: sessionsAtom,
+    handle,
+  });
   const revokeOthers = useAtomSet(revokeOtherSessionsAtom, { mode: "promiseExit" });
   const revoking = useAtomValue(revokeOtherSessionsAtom);
   const [error, setError] = useState<string>();

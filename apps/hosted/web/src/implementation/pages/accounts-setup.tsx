@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { useAtomMount, useAtomRefresh, useAtomValue } from "@effect/atom-react";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { Loader } from "raf-effect-atom";
+import { useDashboard, useStartedQuery } from "@executor-js/ui/dashboard/context";
 import { useLocation } from "@tanstack/react-router";
 import { Exit, Option, type Cause } from "effect";
 import { AsyncResult, type Atom } from "effect/reactivity";
@@ -8,6 +9,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import type { Account, AccountRequirement, App } from "@executor-js/sdk";
 import type { CatalogEntry } from "@executor-js/catalog/contracts";
 import { executorCatalogPackage } from "@executor-js/hosted-server/catalog";
+import type { OrganizationReference } from "@executor-js/hosted-server/organization";
 import { Button } from "@executor-js/ui/components/button";
 import { DialogDescription, DialogTitle } from "@executor-js/ui/components/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@executor-js/ui/components/popover";
@@ -17,6 +19,7 @@ import { ProviderIcon } from "@executor-js/ui/dashboard/common";
 import { installedCatalogApps, useCatalogInstall } from "@executor-js/ui/dashboard/catalog";
 import { useIncrementalList } from "@executor-js/ui/dashboard/incremental-list";
 import { parseAccountsSetupSearch, setupHandoff } from "../../contracts/navigation.ts";
+import { catalogAtom } from "../../contracts/api.ts";
 import { inventoryAtom } from "../../contracts/organization.ts";
 import type { HostedError } from "../../contracts/errors.ts";
 import { HostedFailure, useDashboardAtoms } from "../components/dashboard-bindings.tsx";
@@ -111,18 +114,70 @@ const searchRank = (item: SetupApp, term: string) => {
  * installs on its first connection and then runs the app's own connection flow. Every row keeps
  * one height and one button width, so connecting never moves the list.
  */
-export function AccountsSetupPage() {
+/** Start the inventory this step matches to the catalog. The catalog starts in the browser from the setup layout. */
+export function loadAccountsSetup(atoms: Loader.Loader, organization: OrganizationReference) {
+  return { inventory: atoms.prefetch(inventoryAtom(organization)) };
+}
+
+export type AccountsSetupReads = ReturnType<typeof loadAccountsSetup>;
+
+export function AccountsSetupPage({ reads }: { readonly reads: AccountsSetupReads | undefined }) {
+  if (reads === undefined) return null;
+  return (
+    <Suspense fallback={<AccountsSetupLoading />}>
+      <AccountsSetup reads={reads} />
+    </Suspense>
+  );
+}
+
+function AccountsSetupLoading() {
+  const handoff = setupHandoff(parseAccountsSetupSearch(useLocation().search));
+  const sequence = useSetupSequence();
+  return (
+    <SetupPage className="h-dvh">
+      <section
+        aria-labelledby="accounts-setup-title"
+        className="flex min-h-0 flex-col max-sm:flex-1"
+      >
+        <SetupTitle id="accounts-setup-title">Connect your accounts</SetupTitle>
+        <SetupLede>
+          Your assistant uses these through Executor. Connect the tools you work in now
+          <span className="max-sm:hidden"> — you can add more any time</span>.
+        </SetupLede>
+        <SetupCard className="flex min-h-60 flex-1 flex-col sm:h-[620px] sm:flex-initial">
+          <LoadingList />
+        </SetupCard>
+      </section>
+      <SetupActions>
+        <SetupNext done={false} label="Continue with 1 account">
+          {(content) => <SetupLink to={sequence.after("accounts", handoff)}>{content}</SetupLink>}
+        </SetupNext>
+      </SetupActions>
+    </SetupPage>
+  );
+}
+
+function AccountsSetup({ reads }: { readonly reads: AccountsSetupReads }) {
   const { organization } = useOrganizationRoute();
   // When the assistant connected first, its handoff rides in the URL to the first prompt.
   const handoff = setupHandoff(parseAccountsSetupSearch(useLocation().search));
   const sequence = useSetupSequence();
   useSetupViewed("setup_accounts");
-  const atoms = useDashboardAtoms();
-  useAtomMount(atoms.catalog);
-  const catalog = useAtomValue(atoms.catalog);
-  const retryCatalog = useAtomRefresh(atoms.catalog);
-  const inventory = useAtomValue(inventoryAtom(organization));
-  const retryInventory = useAtomRefresh(inventoryAtom(organization));
+  const dashboard = useDashboard();
+  // The setup layout starts the catalog in the browser. `useHandleValue` keeps a
+  // transport defect in this list, so Skip for now stays mounted.
+  const catalogQuery = useStartedQuery({
+    source: catalogAtom,
+    handle: dashboard.catalogHandle,
+  });
+  const catalog = catalogQuery.result;
+  const retryCatalog = catalogQuery.refresh;
+  const inventoryQuery = useStartedQuery({
+    source: inventoryAtom(organization),
+    handle: reads.inventory,
+  });
+  const inventory = inventoryQuery.result;
+  const retryInventory = inventoryQuery.refresh;
   const entries = Option.getOrUndefined(AsyncResult.value(catalog));
   const known = Option.getOrUndefined(AsyncResult.value(inventory));
   const apps = entries && known ? setupApps(entries, known) : undefined;

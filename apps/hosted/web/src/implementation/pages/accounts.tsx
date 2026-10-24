@@ -1,20 +1,47 @@
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useAtomRefresh } from "@effect/atom-react";
 import type { AccountId } from "@executor-js/sdk";
 import {
   HostedAccountActions,
   HostedAccountDialog,
   type AccountDialogKind,
 } from "./account-actions.tsx";
-import { Option } from "effect";
+import { Option, Schema } from "effect";
+import { Loader } from "raf-effect-atom";
+import { OrganizationReference } from "@executor-js/hosted-server/organization";
 import { AccountsPage as SharedPage } from "@executor-js/ui/dashboard/accounts";
+import { AccountRowsSkeleton } from "@executor-js/ui/dashboard/loading";
 import { EmptyState } from "@executor-js/ui/dashboard/empty-state";
 import { Button } from "@executor-js/ui/components/button";
 import { Link } from "@tanstack/react-router";
-import { useQuery } from "@executor-js/ui/dashboard/context";
+import { useClaimedResult, useStartedQuery } from "@executor-js/ui/dashboard/context";
 import { HostedFailure } from "../components/dashboard-bindings.tsx";
+import { startRead } from "../../contracts/guarded-read.ts";
+import { useArrivalCover } from "../components/arrival-refresh.ts";
 import { useOrganizationDetails, useOrganizationRoute } from "../components/organization.tsx";
 import { OAuthClientsDialog } from "./oauth-clients.tsx";
 import { resourceDirectoryAtom, resourceInventoryAtom } from "../../contracts/resource-access.ts";
+import {
+  AccessBoundary,
+  AvailabilityBoundary,
+  SessionBoundary,
+  useAccessBoundary,
+} from "../components/read-boundaries.tsx";
+
+const organizationFromSlug = (slug: string) =>
+  Schema.decodeUnknownSync(OrganizationReference)(slug);
+
+/** Start the account list and the directory that labels each account. */
+export async function loadAccounts(atoms: Loader.Loader, organization: OrganizationReference) {
+  const [inventory, directory] = await Promise.all([
+    startRead(atoms, resourceInventoryAtom(organization)),
+    startRead(atoms, resourceDirectoryAtom(organization)),
+  ]);
+  return { inventory, directory };
+}
+
+export type AccountsReads = Awaited<ReturnType<typeof loadAccounts>>;
+
 /**
  * Personal and shared credentials use one list. Administrators also manage the organization's
  * OAuth clients from here, since those clients only exist to connect accounts.
@@ -22,12 +49,55 @@ import { resourceDirectoryAtom, resourceInventoryAtom } from "../../contracts/re
 export function AccountsPage({
   highlight,
   oauthClients,
+  reads,
 }: {
   readonly highlight?: AccountId | undefined;
   readonly oauthClients: { readonly open: boolean; readonly onOpenChange: (open: boolean) => void };
+  readonly reads: AccountsReads | undefined;
 }) {
-  const { organization, slug: organizationSlug } = useOrganizationRoute();
-  const directory = useQuery(resourceDirectoryAtom(organization));
+  if (reads === undefined) return null;
+  return (
+    <SessionBoundary>
+      <AvailabilityBoundary>
+        <AccessBoundary>
+          <Suspense fallback={<AccountRowsSkeleton />}>
+            <Accounts highlight={highlight} oauthClients={oauthClients} reads={reads} />
+          </Suspense>
+        </AccessBoundary>
+      </AvailabilityBoundary>
+    </SessionBoundary>
+  );
+}
+
+function Accounts({
+  highlight,
+  oauthClients,
+  reads,
+}: {
+  readonly highlight?: AccountId | undefined;
+  readonly oauthClients: { readonly open: boolean; readonly onOpenChange: (open: boolean) => void };
+  readonly reads: AccountsReads;
+}) {
+  const { slug: organizationSlug } = useOrganizationRoute();
+  const organization = organizationFromSlug(organizationSlug);
+  const directoryState = useStartedQuery({
+    source: resourceDirectoryAtom(organization),
+    handle: reads.directory,
+  });
+  const directoryResult = useClaimedResult(
+    resourceDirectoryAtom(organization),
+    directoryState.result,
+    useAccessBoundary,
+  );
+  const directory = {
+    result: directoryResult,
+    data: directoryState.data,
+    refresh: directoryState.refresh,
+  };
+  // The first time this document opens the list from another page, read it for that arrival and
+  // cover what the previous page left behind. A later visit keeps the list it already showed.
+  const refreshDirectory = useAtomRefresh(resourceDirectoryAtom(organization));
+  const covering = useArrivalCover("accounts", directory.result.waiting, refreshDirectory);
   const [dialog, setDialog] = useState<{ account: AccountId; kind: AccountDialogKind }>();
   const role = useOrganizationDetails()?.role;
   const admin = role !== undefined && role !== "member";
@@ -40,6 +110,12 @@ export function AccountsPage({
     <>
       <SharedPage
         query={resourceInventoryAtom(organization)}
+        read={{
+          source: resourceInventoryAtom(organization),
+          handle: reads.inventory,
+          claim: useAccessBoundary,
+        }}
+        conceal={covering}
         Failure={HostedFailure}
         action={manageClients}
         empty={

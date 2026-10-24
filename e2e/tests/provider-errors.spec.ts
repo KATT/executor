@@ -388,8 +388,14 @@ export default defineApp({ user: { accounts: { service: provider.many() } } }, a
         .then(() => page.getByRole("button", { name: "Run tool", exact: true }).waitFor()),
     );
     const input = JSON.stringify({ accountId: affected, input: {} });
+    // The schema is ready when the runner opens, so the form is showing. The call
+    // payload is the JSON draft, the same control the form serializes to.
     yield* browser.use("Enter tool input", (page) =>
-      page.getByLabel("Input", { exact: true }).fill(input),
+      page
+        .getByRole("tablist", { name: "Input format", exact: true })
+        .getByRole("tab", { name: "JSON", exact: true })
+        .click()
+        .then(() => page.getByLabel("Input", { exact: true }).fill(input)),
     );
     yield* upstream.configure({ status: 401, phase: "call" });
     yield* browser.use("Run the failing tool", (page) =>

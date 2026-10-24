@@ -79,10 +79,16 @@ export const oauthSetupAtom = (key: {
   method: string;
 }) => oauthSetupQuery(new OAuthSetupKey(key));
 
+const appHttp = Atom.family(
+  (key: { readonly organization: OrganizationReference; readonly app: AppId }) =>
+    HostedClient.query("apps", "get", hydrated({ params: key })),
+);
 const appQuery = Atom.family(
   (key: { readonly organization: OrganizationReference; readonly app: AppId }) =>
-    HostedClient.query("apps", "get", hydrated({ params: key })).pipe(revalidated, protectedQuery),
+    appHttp(key).pipe(revalidated, protectedQuery),
 );
+/** Serializable app record. Loaders start this; the page reads `liveAppAtom`. */
+export const appRecordQuery = appHttp;
 const versionsQuery = Atom.family((key: AppKey) =>
   HostedClient.query("apps", "versions", hydrated({ params: key })).pipe(revalidated),
 );
@@ -120,7 +126,7 @@ class ToolKey extends Data.Class<{
  * shows the catalog loading rather than the previous one: the key does not name the linked
  * accounts, so a retained catalog may belong to accounts that are no longer linked.
  */
-const toolsQuery = Atom.family((key: ToolKey) =>
+const toolsHttp = Atom.family((key: ToolKey) =>
   HostedClient.query(
     "tools",
     "index",
@@ -128,8 +134,11 @@ const toolsQuery = Atom.family((key: ToolKey) =>
       params: key,
       query: { version: key.version },
     }),
-  ).pipe(revalidated, currentQuery),
+  ),
 );
+const toolsQuery = Atom.family((key: ToolKey) => toolsHttp(key).pipe(revalidated, currentQuery));
+/** Serializable tool index. Loaders start this; the page reads `toolsAtom`. */
+export const toolsRecordQuery = toolsHttp;
 /**
  * Pending credentials are fetched without reading saved secrets. A request whose app changed can
  * never complete, so a read reporting that drops the old form instead of showing it beside the error.
@@ -505,18 +514,30 @@ function connectionSaved(
   get.refresh(inventoryAtom(key.organization));
 }
 
-const toolCatalogs = Atom.family((key: ToolKey) =>
-  Atom.map(
-    toolsQuery(key),
-    AsyncResult.map((page): ToolCatalog => ({ tools: page.items, routers: page.routers })),
-  ),
-);
+const toolCatalogs = Atom.family((key: ToolKey) => {
+  const query = toolsQuery(key);
+  return Object.assign(
+    Atom.mapResult(query, (page): ToolCatalog => ({ tools: page.items, routers: page.routers })),
+    { initialValueTarget: query },
+  );
+});
 /** Shared browser view for the page's accounts, with the routers that group its tools. */
 export const toolCatalogAtom = (key: ConstructorParameters<typeof ToolKey>[0]) =>
   toolCatalogs(new ToolKey(key));
 class ToolDetailKey extends Data.Class<
   ConstructorParameters<typeof ToolKey>[0] & { readonly tool: ToolName }
 > {}
+type WithoutToolNotFound<E> = E extends { readonly _tag: "ToolNotFound" } ? never : E;
+const absentTool = <A, E extends { readonly _tag: string }>(
+  result: AsyncResult.AsyncResult<A, E>,
+): AsyncResult.AsyncResult<A | undefined, WithoutToolNotFound<E>> => {
+  if (AsyncResult.isFailure(result)) {
+    const error = Cause.findErrorOption(result.cause);
+    if (Option.isSome(error) && error.value._tag === "ToolNotFound")
+      return AsyncResult.success(undefined);
+  }
+  return result as AsyncResult.AsyncResult<A | undefined, WithoutToolNotFound<E>>;
+};
 const toolDetailQueries = Atom.family((key: ToolDetailKey) =>
   HostedClient.query(
     "tools",
@@ -527,24 +548,28 @@ const toolDetailQueries = Atom.family((key: ToolDetailKey) =>
     }),
   ).pipe(revalidated),
 );
-const toolDetails = Atom.family((key: ToolDetailKey) =>
-  HostedClient.runtime.atom((get) =>
-    get
-      .result(toolDetailQueries(key))
-      // A tool that left the catalog since the list was read is not a failure.
-      .pipe(Effect.catchTag("ToolNotFound", () => Effect.succeed(undefined))),
-  ),
-);
+const toolDetails = Atom.family((key: ToolDetailKey) => {
+  const query = toolDetailQueries(key);
+  // A tool that left the catalog is an empty schema, not a page failure.
+  const mapped = Atom.map(query, (result) => absentTool(result));
+  // The property keeps the serializable query for the loader. Typing it as the
+  // query would put ToolNotFound back on the atom the page reads.
+  return Object.assign(mapped, { initialValueTarget: query }) as typeof mapped;
+});
 /** One tool's schemas for the same catalog identity as the list. */
 export const toolDetailAtom = (key: ConstructorParameters<typeof ToolDetailKey>[0]) =>
   toolDetails(new ToolDetailKey(key));
 
 /** Connection search reads the whole schema-free index, so it includes every tool. */
-const connectionToolLists = Atom.family((key: ToolKey) =>
-  Atom.map(
-    toolsQuery(key),
-    AsyncResult.map((index) => index.items),
-  ),
-);
+const connectionToolLists = Atom.family((key: ToolKey) => {
+  const query = toolsQuery(key);
+  // `Atom.map` does not point at its source, so a loader would not follow this list.
+  return Object.assign(
+    Atom.mapResult(query, (index) => index.items),
+    {
+      initialValueTarget: query,
+    },
+  );
+});
 export const connectionToolListAtom = (key: ConstructorParameters<typeof ToolKey>[0]) =>
   connectionToolLists(new ToolKey(key));

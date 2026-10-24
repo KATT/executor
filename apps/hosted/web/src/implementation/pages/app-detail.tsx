@@ -1,4 +1,3 @@
-import { usePreload } from "@executor-js/ui/dashboard/context";
 import { AppResources } from "./app-resources.tsx";
 import { AppAccounts } from "./app-accounts.tsx";
 import { AppSkills } from "@executor-js/ui/dashboard/app-skills";
@@ -7,7 +6,12 @@ import {
   AppWorkflowPreview,
 } from "@executor-js/ui/dashboard/app-overview-entries";
 import { appBrowserBindings } from "../../contracts/app-browser.ts";
-import { appLinksAtom, userLinksAtom, type AppAccountLink } from "../../contracts/app-accounts.ts";
+import {
+  appLinksAtom,
+  requirementChoicesAtom,
+  userLinksAtom,
+  type AppAccountLink,
+} from "../../contracts/app-accounts.ts";
 import {
   missingRequirements,
   requirementAccounts,
@@ -22,16 +26,21 @@ import {
 } from "@executor-js/ui/contracts/dashboard";
 import { AppSchedules, AppSchedulesLoading } from "@executor-js/ui/dashboard/schedules";
 import { scheduleBindings } from "../../contracts/schedules.ts";
+import { webhookBindings, workflowBindings } from "../../contracts/resources.ts";
+import { appUiLocationAtom } from "../../contracts/app-ui.ts";
 import { sessionAtom } from "../../contracts/auth.ts";
+import { groupsAtom } from "../../contracts/groups.ts";
 import { AppDetailLoading, OverviewCardLoading } from "@executor-js/ui/dashboard/app-loading";
 import { Exit, Option, Schema } from "effect";
 import { AsyncResult } from "effect/reactivity";
+import { Loader } from "raf-effect-atom";
+import type { OrganizationReference } from "@executor-js/hosted-server/organization";
 import { HostedFailure, useDashboardAtoms } from "../components/dashboard-bindings.tsx";
 import { dashboardAtoms } from "../../contracts/dashboard-bindings.ts";
-import { useAtomSet, useAtomValue } from "@effect/atom-react";
-import { AppId, type App } from "@executor-js/sdk";
+import { useAtomSet } from "@effect/atom-react";
+import { AccountConnectionId, AppId, ToolName, VersionId, type App } from "@executor-js/sdk";
 import { Link, useBlocker, useNavigate } from "@tanstack/react-router";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowLeft02Icon } from "@hugeicons/core-free-icons";
 import { Button } from "@executor-js/ui/components/button";
@@ -57,34 +66,285 @@ import {
   AppOverviewSource,
 } from "@executor-js/ui/dashboard/app-overview";
 import { appManagement } from "../../contracts/app-management.ts";
-import { allResults, QueryView, QueryResult, useQuery } from "@executor-js/ui/dashboard/context";
 import {
+  allResults,
+  QueryView,
+  QueryResult,
+  useClaimedResult,
+  useStartedQuery,
+} from "@executor-js/ui/dashboard/context";
+import {
+  connectionAtom,
   toolsAtom,
   liveAppAtom,
+  sourceAtom,
+  toolCatalogAtom,
+  toolDetailAtom,
+  versionsAtom,
   acknowledgeApp,
   appError,
   removeAppAtom,
   renameAppAtom,
 } from "../../contracts/apps.ts";
-import { type OrganizationPageReads, useOrganizationRoute } from "../components/organization.tsx";
+import { startRead } from "../../contracts/guarded-read.ts";
+import { useOrganizationRoute } from "../components/organization.tsx";
+import {
+  AccessBoundary,
+  AvailabilityBoundary,
+  SessionBoundary,
+  useAccessBoundary,
+} from "../components/read-boundaries.tsx";
 import { AppTools } from "./app-tools.tsx";
 import { AppSource, AppVersions } from "./app-source.tsx";
 
-/** The organization's inventory and the app, its linked accounts and its access, keyed by the URL. */
-export const appDetailPageReads: OrganizationPageReads = (organization, params) =>
-  Option.match(Schema.decodeUnknownOption(AppId)(params.appId), {
-    onNone: () => [],
-    onSome: (app) => [
-      dashboardAtoms(organization).inventory,
-      liveAppAtom({ organization, app }),
-      appLinksAtom({ organization, app }),
-      userLinksAtom({ organization, app }),
-      appAccessAtom({ organization, app }),
-    ],
+const namedTool = (tool: string | undefined) =>
+  tool === undefined
+    ? undefined
+    : Option.getOrUndefined(Schema.decodeUnknownOption(ToolName)(tool));
+
+/** Start the app page's reads after this organization's access check succeeded. */
+export async function loadHostedApp(
+  atoms: Loader.Loader,
+  organization: OrganizationReference,
+  app: AppId,
+  search: {
+    readonly version?: VersionId | undefined;
+    readonly tool?: string | undefined;
+    readonly view?: AppView | undefined;
+    readonly connection?: AccountConnectionId | undefined;
+  },
+  slug: string,
+) {
+  const key = { organization, app };
+  // These are on the page's first render. The server waits so that render is the settled page,
+  // not a fallback the browser leaves in place. A browser navigation only starts them.
+  const [record, inventory, appLinks, userLinks, access, session, groups] = await Promise.all([
+    startRead(atoms, liveAppAtom(key)),
+    startRead(atoms, dashboardAtoms(organization).inventory),
+    startRead(atoms, appLinksAtom(key)),
+    startRead(atoms, userLinksAtom(key)),
+    startRead(atoms, appAccessAtom(key)),
+    startRead(atoms, sessionAtom),
+    startRead(atoms, groupsAtom(organization)),
+  ]);
+  const connection =
+    search.connection === undefined
+      ? undefined
+      : atoms.prefetch(connectionAtom({ organization, connection: search.connection }));
+  const shown = search.view ?? (search.tool === undefined ? "overview" : "tools");
+  const management = appManagement(organization);
+  const inspecting = shown === "source" || shown === "history";
+  // Members never receive source, history, versions, or the working tree. The permission read is
+  // independent of app metadata, so a held permission request still lets the frame paint.
+  const permissionRead = atoms.ensure(appAccessAtom(key)).catch((error: unknown) => {
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    return undefined;
   });
+  const permission =
+    typeof window === "undefined"
+      ? await permissionRead
+      : await Promise.race([
+          permissionRead,
+          new Promise<undefined>((resolve) => {
+            setTimeout(resolve, 2_000);
+          }),
+        ]);
+  const permissionResult = permission === undefined ? undefined : Loader.result(permission);
+  const canManage =
+    permissionResult !== undefined &&
+    AsyncResult.isSuccess(permissionResult) &&
+    permissionResult.value.canManage === true;
+  const versions =
+    shown === "versions" && canManage ? atoms.prefetch(versionsAtom(key)) : undefined;
+  const workspace =
+    inspecting && canManage
+      ? {
+          working: atoms.prefetch(management.source(app)),
+          history: atoms.prefetch(management.history(app)),
+        }
+      : { working: undefined, history: undefined };
+  // Publishing and the overview preview read authoring only for someone who can manage the app.
+  const authoring = canManage ? atoms.prefetch(management.authoring(app)) : undefined;
+  const tool = namedTool(search.tool);
+  const known = search.version;
+  const loadedApp = async () => {
+    // Transport and decode defects settle the atom, then reject ensure. The page
+    // renders that failure; rejecting the loader would replace the whole page.
+    const read = atoms.ensure(liveAppAtom(key)).catch((error: unknown) => {
+      if (error instanceof Error && error.name === "AbortError") throw error;
+      return undefined;
+    });
+    // A browser navigation paints the frame while this request is in flight. A value the page
+    // already has is ready before the next task and still selects the version. The server waits.
+    const loaded =
+      typeof window === "undefined"
+        ? await read
+        : await Promise.race([
+            read,
+            new Promise<undefined>((resolve) => {
+              setTimeout(resolve, 0);
+            }),
+          ]);
+    if (loaded === undefined) return undefined;
+    const result = Loader.result(loaded);
+    return AsyncResult.isSuccess(result) ? result.value : undefined;
+  };
+  const activeVersion = async () => {
+    const current = await loadedApp();
+    return current?.activeVersion == null ? undefined : current.activeVersion;
+  };
+  const openLocation = async () => {
+    const current = await loadedApp();
+    if (current?.activeVersion == null) return undefined;
+    return atoms.prefetchInBrowser(
+      appUiLocationAtom({
+        organization,
+        slug,
+        app: current.id,
+        appSlug: current.slug,
+        version: current.activeVersion,
+      }),
+    );
+  };
+  const started = (version: VersionId) => ({
+    version,
+    // Only the view on screen. Prefetching the catalog beside another read sends them as one
+    // batch, so a page that opens tools never requests the catalog on its own.
+    tools: shown === "tools" ? atoms.prefetch(toolCatalogAtom({ ...key, version })) : undefined,
+    source: inspecting ? atoms.prefetch(sourceAtom({ ...key, version })) : undefined,
+    detail:
+      shown === "tools" && tool !== undefined
+        ? atoms.prefetch(toolDetailAtom({ ...key, version, tool }))
+        : undefined,
+  });
+  const liveSource = (version: VersionId | undefined) =>
+    inspecting && version !== undefined
+      ? atoms.prefetch(sourceAtom({ ...key, version }))
+      : undefined;
+  // The accounts view lists every account the caller could link. Those reads have to be in the
+  // document, or the first paint shows only the accounts already linked.
+  const accountChoices =
+    shown === "accounts"
+      ? await (async () => {
+          const current = await loadedApp();
+          if (current === undefined) return undefined;
+          return Promise.all(
+            Object.entries(current.requirements.accounts).flatMap(([slot, requirement]) =>
+              requirement.scope === "app" && !canManage
+                ? []
+                : [
+                    startRead(
+                      atoms,
+                      requirementChoicesAtom({
+                        organization,
+                        app,
+                        scope: requirement.scope,
+                        requirement: slot,
+                      }),
+                    ),
+                  ],
+            ),
+          );
+        })()
+      : undefined;
+  const needsActive =
+    known === undefined ||
+    inspecting ||
+    shown === "overview" ||
+    shown === "skills" ||
+    shown === "workflows";
+  const active = needsActive ? await activeVersion() : undefined;
+  const location = await openLocation();
+  const browser =
+    active === undefined
+      ? undefined
+      : appBrowserBindings(organization, { id: app, activeVersion: active });
+  const flows = workflowBindings({ organization, app, version: active });
+  const hooks = webhookBindings({ organization, app });
+  const schedules = scheduleBindings({ organization, app });
+  const sections = {
+    skillBundle:
+      shown === "skills" && browser !== undefined ? atoms.prefetch(browser.bundle) : undefined,
+    skillWorkspace:
+      shown === "skills" && canManage ? atoms.prefetch(management.workspace(app)) : undefined,
+    skillList:
+      shown === "overview" && browser !== undefined ? atoms.prefetch(browser.skills) : undefined,
+    workflowList:
+      (shown === "overview" || shown === "workflows") && active !== undefined
+        ? atoms.prefetch(flows.workflows)
+        : undefined,
+    workflowRuns:
+      shown === "workflows" ? atoms.prefetch(flows.runs(undefined, undefined)) : undefined,
+    overviewTools:
+      shown === "overview" && active !== undefined
+        ? atoms.prefetch(toolsAtom({ ...key, version: active }))
+        : undefined,
+    scheduleSettings: shown === "schedules" ? atoms.prefetch(schedules.settings) : undefined,
+    scheduleDefinitions: shown === "schedules" ? atoms.prefetch(schedules.definitions) : undefined,
+    webhooks: shown === "webhooks" ? atoms.prefetch(hooks.query) : undefined,
+    webhookSources: shown === "webhooks" ? atoms.prefetch(hooks.sources) : undefined,
+  };
+  if (known !== undefined) {
+    return {
+      record,
+      inventory,
+      appLinks,
+      userLinks,
+      access,
+      session,
+      versions,
+      groups,
+      connection,
+      location,
+      accountChoices,
+      ...workspace,
+      authoring,
+      live: liveSource(active),
+      liveVersion: inspecting ? active : undefined,
+      ...sections,
+      ...started(known),
+    };
+  }
+  return {
+    record,
+    inventory,
+    appLinks,
+    userLinks,
+    access,
+    session,
+    versions,
+    groups,
+    connection,
+    location,
+    accountChoices,
+    ...workspace,
+    authoring,
+    live: liveSource(active),
+    liveVersion: inspecting ? active : undefined,
+    ...sections,
+    ...(active === undefined
+      ? { version: undefined, tools: undefined, source: undefined, detail: undefined }
+      : started(active)),
+  };
+}
+
+export type HostedAppReads = Awaited<ReturnType<typeof loadHostedApp>>;
 
 /** Views that read only the app. The others also read the inventory and the app's links. */
 const appWideViews: ReadonlySet<AppView> = new Set(["settings", "versions", "source", "history"]);
+/**
+ * Views of one deployment. Accounts, settings, schedules and webhooks keep the address they were
+ * opened with; writing the active version there changes links that name only the view.
+ */
+const versionedViews: ReadonlySet<AppView> = new Set([
+  "overview",
+  "tools",
+  "skills",
+  "workflows",
+  "source",
+  "history",
+  "versions",
+]);
 
 /**
  * Links with their sign-in state and checks by this app. Accounts the caller can use show the
@@ -109,12 +369,50 @@ export function AppDetailPage({
   appId,
   view,
   tool,
+  version,
+  reads,
   openApp,
 }: {
   readonly appId: AppId;
   readonly view?: AppView | undefined;
   readonly tool?: string | undefined;
-  readonly openApp?: (app: App) => ReactNode;
+  readonly version?: VersionId | undefined;
+  readonly reads: HostedAppReads | undefined;
+  readonly openApp?: ((app: App) => ReactNode) | undefined;
+}) {
+  if (reads === undefined) return null;
+  return (
+    <SessionBoundary>
+      <AvailabilityBoundary>
+        <AccessBoundary>
+          <AppDetail
+            appId={appId}
+            view={view}
+            tool={tool}
+            version={version}
+            reads={reads}
+            openApp={openApp}
+          />
+        </AccessBoundary>
+      </AvailabilityBoundary>
+    </SessionBoundary>
+  );
+}
+
+function AppDetail({
+  appId,
+  view,
+  tool,
+  version,
+  reads,
+  openApp,
+}: {
+  readonly appId: AppId;
+  readonly view?: AppView | undefined;
+  readonly tool?: string | undefined;
+  readonly version?: VersionId | undefined;
+  readonly reads: HostedAppReads;
+  readonly openApp?: ((app: App) => ReactNode) | undefined;
 }) {
   const { organization, role, slug: organizationSlug } = useOrganizationRoute();
   const navigate = useNavigate();
@@ -124,20 +422,96 @@ export function AppDetailPage({
     enableBeforeUnload: skillDirty,
   });
   const atoms = useDashboardAtoms();
-  usePreload(...appDetailPageReads(organization, { appId }));
-  const inventory = useQuery(atoms.inventory);
-  const query = useQuery(liveAppAtom({ organization, app: appId }));
+  const key = { organization, app: appId };
+  const inventoryState = useStartedQuery({
+    source: atoms.inventory,
+    handle: reads.inventory,
+  });
+  const inventoryResult = useClaimedResult(
+    atoms.inventory,
+    inventoryState.result,
+    useAccessBoundary,
+  );
+  const inventory = {
+    result: inventoryResult,
+    data: AsyncResult.value(inventoryResult),
+    refresh: inventoryState.refresh,
+  };
+  const queryState = useStartedQuery({
+    source: liveAppAtom(key),
+    handle: reads.record,
+  });
+  const queryResult = useClaimedResult(liveAppAtom(key), queryState.result, useAccessBoundary);
+  const query = {
+    result: queryResult,
+    data: AsyncResult.value(queryResult),
+    refresh: queryState.refresh,
+  };
   const app = Option.isSome(query.data)
     ? query.data.value
     : Option.isSome(inventory.data)
       ? inventory.data.value.apps.find((item) => item.id === appId)
       : undefined;
   const selectedView = view ?? (tool === undefined ? "overview" : "tools");
-  const appLinks = useQuery(appLinksAtom({ organization, app: appId }));
-  const userLinks = useQuery(userLinksAtom({ organization, app: appId }));
-  const session = useAtomValue(sessionAtom);
-  const userId = AsyncResult.isSuccess(session) ? session.value?.user.id : undefined;
-  const authority = useQuery(appAccessAtom({ organization, app: appId }));
+  const appLinksState = useStartedQuery({
+    source: appLinksAtom(key),
+    handle: reads.appLinks,
+  });
+  const appLinksResult = useClaimedResult(
+    appLinksAtom(key),
+    appLinksState.result,
+    useAccessBoundary,
+  );
+  const appLinks = {
+    result: appLinksResult,
+    data: AsyncResult.value(appLinksResult),
+    refresh: appLinksState.refresh,
+  };
+  // Use of the app is what lists the caller's links. Someone who can edit a private app but not
+  // use it is refused here; that refusal is the page's "not shared" explanation, not an
+  // organization-wide access failure.
+  const userLinks = useStartedQuery({
+    source: userLinksAtom(key),
+    handle: reads.userLinks,
+  });
+  const sessionState = useStartedQuery({
+    source: sessionAtom,
+    handle: reads.session,
+  });
+  const sessionResult = useClaimedResult(sessionAtom, sessionState.result, useAccessBoundary);
+  const session = {
+    result: sessionResult,
+    data: AsyncResult.value(sessionResult),
+    refresh: sessionState.refresh,
+  };
+  const userId = AsyncResult.isSuccess(session.result) ? session.result.value?.user.id : undefined;
+  const authorityState = useStartedQuery({
+    source: appAccessAtom(key),
+    handle: reads.access,
+  });
+  const authorityResult = useClaimedResult(
+    appAccessAtom(key),
+    authorityState.result,
+    useAccessBoundary,
+  );
+  const authority = {
+    result: authorityResult,
+    data: AsyncResult.value(authorityResult),
+    refresh: authorityState.refresh,
+  };
+  const activeVersion = app?.activeVersion;
+  useEffect(() => {
+    if (!versionedViews.has(selectedView) || version !== undefined || activeVersion == null) return;
+    void navigate({
+      to: "/org/$organizationSlug/apps/$appId",
+      params: { organizationSlug, appId },
+      search: (previous: { readonly version?: VersionId | undefined }) => ({
+        ...previous,
+        version: activeVersion,
+      }),
+      replace: true,
+    });
+  }, [activeVersion, appId, navigate, organizationSlug, selectedView, version]);
   const access = Option.getOrUndefined(authority.data);
   const canManage = access?.canManage === true,
     canUse = access?.canUse === true;
@@ -201,7 +575,19 @@ export function AppDetailPage({
           <>
             {canUse && openApp?.(app)}
             {canManage && (role === "owner" || role === "admin") ? (
-              <PublishApp app={app} atoms={appManagement(organization)} Failure={HostedFailure} />
+              <PublishApp
+                app={app}
+                atoms={appManagement(organization)}
+                Failure={HostedFailure}
+                {...(reads.authoring === undefined
+                  ? {}
+                  : {
+                      read: {
+                        source: appManagement(organization).authoring(app.id),
+                        handle: reads.authoring,
+                      },
+                    })}
+              />
             ) : (
               <Button
                 variant="outline"
@@ -278,7 +664,12 @@ export function AppDetailPage({
                   }
                 >
                   <section className="rounded-lg border p-5">
-                    <AppAccessSettings app={current.id} />
+                    <AppAccessSettings
+                      app={current.id}
+                      userId={userId}
+                      access={reads.access}
+                      groups={reads.groups}
+                    />
                   </section>
                 </AppSettings>
               );
@@ -292,9 +683,38 @@ export function AppDetailPage({
                   The app creator and organization admins can inspect app source.
                 </p>
               ) : selectedView === "versions" ? (
-                <AppVersions key={current.id} app={current} />
+                reads.versions === undefined ? (
+                  pending
+                ) : (
+                  <AppVersions
+                    key={current.id}
+                    app={current}
+                    version={version ?? reads.version}
+                    versions={reads.versions}
+                    source={reads.source}
+                    onVersionChange={(next) => {
+                      void navigate({
+                        to: "/org/$organizationSlug/apps/$appId",
+                        params: { organizationSlug, appId },
+                        search: { view: "versions", tool, version: next },
+                        replace: true,
+                      });
+                    }}
+                  />
+                )
+              ) : reads.working === undefined || reads.history === undefined ? (
+                pending
               ) : (
-                <AppSource key={current.id} app={current} view={selectedView} />
+                <AppSource
+                  key={current.id}
+                  app={current}
+                  view={selectedView}
+                  working={reads.working}
+                  history={reads.history}
+                  {...(reads.live === undefined || reads.liveVersion === undefined
+                    ? {}
+                    : { live: reads.live, liveVersion: reads.liveVersion })}
+                />
               );
             return (
               <p className="p-5 text-sm text-muted-foreground">
@@ -338,30 +758,105 @@ export function AppDetailPage({
                       (entry) => entry.requirement.scope === "app",
                     ),
                   );
-            if (selectedView === "skills")
+            if (selectedView === "skills") {
+              const browser = appBrowserBindings(organization, current);
+              const management = appManagement(organization);
               return gate(
                 <AppSkills
                   canEdit={canManage}
                   app={current}
-                  bindings={appBrowserBindings(organization, current)}
+                  bindings={browser}
                   Failure={HostedFailure}
                   editing={
                     canManage
                       ? {
-                          atoms: appManagement(organization),
+                          atoms: management,
                           onDirty: setSkillDirty,
                           onApp: (get, saved) => acknowledgeApp(get, organization, saved),
                         }
                       : undefined
                   }
+                  {...(canManage && reads.skillWorkspace !== undefined
+                    ? {
+                        workspaceRead: {
+                          source: management.workspace(current.id),
+                          handle: reads.skillWorkspace,
+                        },
+                      }
+                    : {})}
+                  {...(reads.skillBundle === undefined
+                    ? {}
+                    : { bundleRead: { source: browser.bundle, handle: reads.skillBundle } })}
                 />,
               );
-            if (selectedView === "tools")
-              return gate(<AppTools app={current} requirements={requirements} selected={tool} />);
-            if (selectedView === "workflows")
-              return gate(<AppResources app={current} view="workflows" />);
-            if (selectedView === "webhooks") return <AppResources app={current} view="webhooks" />;
+            }
+            if (selectedView === "tools") {
+              const selectedVersion = version ?? reads.version;
+              return gate(
+                reads.tools === undefined || selectedVersion === undefined ? (
+                  pending
+                ) : (
+                  <AppTools
+                    app={current}
+                    version={selectedVersion}
+                    tools={reads.tools}
+                    detail={reads.detail}
+                    requirements={requirements}
+                    selected={tool}
+                  />
+                ),
+              );
+            }
+            if (selectedView === "workflows") {
+              const flows = workflowBindings({
+                organization,
+                app: current.id,
+                version: current.activeVersion ?? undefined,
+              });
+              return gate(
+                <AppResources
+                  app={current}
+                  view="workflows"
+                  {...(reads.workflowList === undefined
+                    ? {}
+                    : {
+                        definitions: {
+                          source: flows.workflows,
+                          handle: reads.workflowList,
+                        },
+                      })}
+                  {...(reads.workflowRuns === undefined
+                    ? {}
+                    : {
+                        runs: {
+                          source: flows.runs(undefined, undefined),
+                          handle: reads.workflowRuns,
+                        },
+                      })}
+                />,
+              );
+            }
+            if (selectedView === "webhooks") {
+              const hooks = webhookBindings({ organization, app: current.id });
+              return (
+                <AppResources
+                  app={current}
+                  view="webhooks"
+                  {...(reads.webhooks === undefined
+                    ? {}
+                    : { webhooks: { source: hooks.query, handle: reads.webhooks } })}
+                  {...(reads.webhookSources === undefined
+                    ? {}
+                    : { webhookSources: { source: hooks.sources, handle: reads.webhookSources } })}
+                />
+              );
+            }
             if (selectedView === "schedules") {
+              const schedules = scheduleBindings(
+                { organization, app: current.id },
+                true,
+                canManage,
+              );
               return userId === undefined ? (
                 <AppSchedulesLoading />
               ) : (
@@ -369,8 +864,24 @@ export function AppDetailPage({
                   app={current}
                   canEdit={canManage}
                   actor={userId}
-                  bindings={scheduleBindings({ organization, app: current.id }, true, canManage)}
+                  bindings={schedules}
                   Failure={HostedFailure}
+                  {...(reads.scheduleSettings === undefined
+                    ? {}
+                    : {
+                        settingsRead: {
+                          source: schedules.settings,
+                          handle: reads.scheduleSettings,
+                        },
+                      })}
+                  {...(reads.scheduleDefinitions === undefined
+                    ? {}
+                    : {
+                        definitionsRead: {
+                          source: schedules.definitions,
+                          handle: reads.scheduleDefinitions,
+                        },
+                      })}
                 />
               );
             }
@@ -379,14 +890,19 @@ export function AppDetailPage({
                 Link an account in Accounts to load this preview.
               </p>
             );
-            if (selectedView === "overview")
+            if (selectedView === "overview") {
+              const browser = appBrowserBindings(organization, current);
+              const listedTools = toolsAtom({ organization, app: current.id, version });
               return (
                 <AppOverview
                   app={current}
                   entries={
                     <AppOverviewEntries
                       app={current}
-                      bindings={appBrowserBindings(organization, current)}
+                      bindings={browser}
+                      {...(reads.skillList === undefined
+                        ? {}
+                        : { skillsRead: { source: browser.skills, handle: reads.skillList } })}
                       workflows={
                         <AppWorkflowPreview
                           empty={previewEmpty}
@@ -396,11 +912,16 @@ export function AppDetailPage({
                               ? [
                                   {
                                     key: String(version),
-                                    query: appBrowserBindings(organization, current).workflows,
+                                    query: browser.workflows,
                                   },
                                 ]
                               : []
                           }
+                          {...(reads.workflowList === undefined
+                            ? {}
+                            : {
+                                read: { source: browser.workflows, handle: reads.workflowList },
+                              })}
                         />
                       }
                       Failure={HostedFailure}
@@ -421,11 +942,14 @@ export function AppDetailPage({
                           ? [
                               {
                                 key: String(version),
-                                query: toolsAtom({ organization, app: current.id, version }),
+                                query: listedTools,
                               },
                             ]
                           : []
                       }
+                      {...(reads.overviewTools === undefined
+                        ? {}
+                        : { read: { source: listedTools, handle: reads.overviewTools } })}
                     />
                   }
                   sourceDisabledReason={sourceReason}
@@ -433,6 +957,14 @@ export function AppDetailPage({
                     canManage ? (
                       <QueryView
                         query={appManagement(organization).authoring(current.id)}
+                        {...(reads.authoring === undefined
+                          ? {}
+                          : {
+                              read: {
+                                source: appManagement(organization).authoring(current.id),
+                                handle: reads.authoring,
+                              },
+                            })}
                         Failure={HostedFailure}
                         pending={<OverviewCardLoading label="Loading source preview" />}
                       >
@@ -444,6 +976,7 @@ export function AppDetailPage({
                   }
                 />
               );
+            }
             return (
               <div className="max-w-3xl space-y-4 p-5 max-[740px]:p-4">
                 <AppAccounts
@@ -451,6 +984,7 @@ export function AppDetailPage({
                   appLinks={linked.app}
                   userLinks={linked.user}
                   canManage={canManage}
+                  canUse={canUse}
                   accounts={inventory.accounts}
                   redirectUri={inventory.accountSetup.redirectUri}
                 />

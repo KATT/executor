@@ -116,7 +116,7 @@ export const makeWebhooks = (
   lifecycle?: ResourceLifecycle,
 ) => {
   const db = database(storage);
-  const next = crypto.randomUUIDv4.pipe(Effect.mapError(() => new StorageError()));
+  const next = crypto.randomUUIDv4().pipe(Effect.mapError(() => new StorageError()));
   const metadata = (row: typeof StoredWebhook.Type) =>
     Schema.decodeUnknownEffect(WebhookSubscription)(row).pipe(
       Effect.mapError(() => new StorageError()),

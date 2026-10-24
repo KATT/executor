@@ -1,9 +1,11 @@
 import { PageFrame, PageHeader } from "./page.tsx";
 import { Option } from "effect";
+import { AsyncResult } from "effect/reactivity";
 import { AppCardsSkeleton } from "./loading.tsx";
 import { Card } from "@executor-js/ui/components/card";
 import { useState, type ReactNode } from "react";
-import { QueryResult, useQuery, useDashboard } from "./context.tsx";
+import { ClaimResult, QueryResult, useQuery, useStartedQuery, useDashboard } from "./context.tsx";
+import type { StartedRead } from "../../contracts/started-read.ts";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { AlertCircleIcon, ArrowRight02Icon, Key01Icon } from "@hugeicons/core-free-icons";
 import type { Inventory, QueryProps } from "../../contracts/dashboard.ts";
@@ -17,23 +19,114 @@ import {
 import { AppIcon, Empty, SearchInput } from "./common.tsx";
 import { Button } from "../components/button.tsx";
 
-/** A card for each configured app and its linked accounts. */
-export function AppsPage<E>({
-  action,
-  connect,
-  filters,
-  empty,
-  pending,
-  query,
-  Failure,
-}: QueryProps<Inventory, E> & {
+type AppsPageProps<E> = QueryProps<Inventory, E> & {
   readonly action?: ReactNode;
   readonly connect: ReactNode;
   readonly filters?: ReactNode;
   readonly empty?: ReactNode;
   readonly pending?: ReactNode;
+  /** Present when the route loader started this inventory. */
+  readonly read?: StartedRead<Inventory, E> | undefined;
+  /** Hide a retained list while this page's own reread is the one on screen. */
+  readonly conceal?: boolean;
+};
+
+/** A card for each configured app and its linked accounts. */
+export function AppsPage<E>(props: AppsPageProps<E>) {
+  return props.read === undefined ? (
+    <AppsFromQuery {...props} />
+  ) : (
+    <AppsFromRead {...props} read={props.read} />
+  );
+}
+
+function AppsFromQuery<E>(props: AppsPageProps<E>) {
+  const state = useQuery(props.query);
+  return <AppsBody {...props} {...state} />;
+}
+
+function AppsFromRead<E>(props: AppsPageProps<E> & { readonly read: StartedRead<Inventory, E> }) {
+  const state = useStartedQuery(props.read);
+  return (
+    <ClaimResult source={props.read.source} result={state.result} claim={props.read.claim}>
+      {(result) => (
+        <AppsFromReadBody
+          {...props}
+          result={result}
+          data={AsyncResult.value(result)}
+          refresh={state.refresh}
+        />
+      )}
+    </ClaimResult>
+  );
+}
+
+function AppsFromReadBody<E>({
+  result,
+  data,
+  refresh,
+  ...props
+}: AppsPageProps<E> & {
+  readonly result: AsyncResult.AsyncResult<Inventory, E>;
+  readonly data: ReturnType<typeof useQuery<Inventory, E>>["data"];
+  readonly refresh: () => void;
 }) {
-  const { result, data, refresh } = useQuery(query);
+  // A new filter is another atom. Keep the list on screen until that atom has its own value, and
+  // keep it beside a failure that has nothing of its own to show. Compare the inventory, not the
+  // Option wrapper: that wrapper is a new object on every read. This state stays above the
+  // arrival cover: returning early would change how many hooks the list renders.
+  const incoming = Option.getOrUndefined(data);
+  const [retained, setRetained] = useState(incoming);
+  if (incoming !== undefined && retained !== incoming) setRetained(incoming);
+  if (props.conceal)
+    return (
+      <AppsBody
+        {...props}
+        result={AsyncResult.initial<Inventory, E>(false)}
+        data={Option.none()}
+        refresh={refresh}
+      />
+    );
+  const shown = incoming ?? retained;
+  if (shown === undefined || AsyncResult.isSuccess(result))
+    return <AppsBody {...props} result={result} data={data} refresh={refresh} />;
+  if (AsyncResult.isInitial(result))
+    return (
+      <AppsBody
+        {...props}
+        result={AsyncResult.success<Inventory, E>(shown, { waiting: true })}
+        data={Option.some(shown)}
+        refresh={refresh}
+      />
+    );
+  return (
+    <AppsBody
+      {...props}
+      result={AsyncResult.failure<Inventory, E>(result.cause, {
+        previousSuccess: Option.some(AsyncResult.success<Inventory, E>(shown)),
+        waiting: result.waiting,
+      })}
+      data={Option.some(shown)}
+      refresh={refresh}
+    />
+  );
+}
+
+function AppsBody<E>({
+  action,
+  connect,
+  filters,
+  empty,
+  pending,
+  Failure,
+  result,
+  data,
+  refresh,
+}: AppsPageProps<E> & {
+  readonly result: ReturnType<typeof useQuery<Inventory, E>>["result"];
+  readonly data: ReturnType<typeof useQuery<Inventory, E>>["data"];
+  readonly refresh: () => void;
+}) {
   const [search, setSearch] = useState("");
   return (
     <PageFrame>
@@ -136,6 +229,7 @@ function AppsList({
                 <AppLink
                   className="app-card flex min-h-[137px] flex-col min-w-0 p-[16px] border border-border rounded-[8px] bg-background [transition:border-color_120ms,_background-color_120ms] hover:border-input hover:bg-muted focus-visible:[outline:2px_solid_var(--ring)] focus-visible:outline-offset-[3px] max-[600px]:grid max-[600px]:min-h-0 max-[600px]:grid-cols-[auto_minmax(0,1fr)_auto] max-[600px]:items-center max-[600px]:gap-x-3 max-[600px]:gap-y-0.5 max-[600px]:px-3.5 max-[600px]:py-3"
                   app={app.id}
+                  version={app.activeVersion ?? undefined}
                   aria-label={`Open ${app.name}${needsSignIn ? ", needs sign-in" : unavailable ? ", account unavailable" : ""}`}
                 >
                   <div className="app-card-heading flex items-center justify-between gap-3 max-[600px]:contents">

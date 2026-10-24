@@ -34,7 +34,7 @@ export const makeAppAuthoring = (
     Effect.gen(function* () {
       yield* sourcePathsFit(input.files);
       const code = AppCodeId.make(
-        `code_${yield* crypto.randomUUIDv4.pipe(Effect.mapError(() => new StorageError()))}`,
+        `code_${yield* crypto.randomUUIDv4().pipe(Effect.mapError(() => new StorageError()))}`,
       );
       // A new app has no repository yet. Stored files of a copy are first copied into its own
       // store, which its initial files then name; anything else stored names nothing it owns.
@@ -45,7 +45,7 @@ export const makeAppAuthoring = (
       const id =
         reserved ??
         AppId.make(
-          `app_${yield* crypto.randomUUIDv4.pipe(Effect.mapError(() => new StorageError()))}`,
+          `app_${yield* crypto.randomUUIDv4().pipe(Effect.mapError(() => new StorageError()))}`,
         );
       yield* writeInitialSource(blobs, code, input.files);
       const app = {

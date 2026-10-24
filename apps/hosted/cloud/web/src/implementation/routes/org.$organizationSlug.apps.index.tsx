@@ -1,8 +1,26 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { AppsPage, appsPageReads } from "@executor-js/hosted-web/pages/apps";
+import { parseAppsSearch } from "@executor-js/hosted-web/contracts/navigation";
+import { AppsPage, loadApps } from "@executor-js/hosted-web/pages/apps";
+import { startAfterAccess } from "@executor-js/hosted-web/contracts/guarded-read";
 
-/** Hosted app inventory placeholder. */
 export const Route = createFileRoute("/org/$organizationSlug/apps/")({
-  component: AppsPage,
-  staticData: { organizationReads: appsPageReads },
+  validateSearch: parseAppsSearch,
+  loaderDeps: ({ search }) => ({
+    view: search.view ?? "available",
+    group: search.group ?? "all",
+  }),
+  loader: ({ context, params, deps }) =>
+    startAfterAccess(context.atoms, params.organizationSlug, (organization) =>
+      loadApps(context.atoms, organization, deps),
+    ),
+  // A filter change keeps the current list. The page skeleton is for a load that does not resolve.
+  pendingMs: 10_000,
+  component: AppsRoute,
 });
+
+function AppsRoute() {
+  const { view, group } = Route.useSearch();
+  return (
+    <AppsPage view={view ?? "available"} group={group ?? "all"} reads={Route.useLoaderData()} />
+  );
+}

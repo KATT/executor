@@ -3,10 +3,11 @@ import { AppVersionsLoading } from "@executor-js/ui/dashboard/app-loading";
 import { AppWorkspace } from "@executor-js/ui/dashboard/app-workspace";
 import { appManagement } from "../../contracts/app-management.ts";
 import { acknowledgeApp, toolsAtom } from "../../contracts/apps.ts";
-import { RegistryContext, useAtomMount, useAtomSet, useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtomSet } from "@effect/atom-react";
+import { useAtomResult } from "raf-effect-atom";
 import type { App, VersionId } from "@executor-js/sdk";
 import { AppVersions as SharedAppVersions } from "@executor-js/ui/dashboard/app-versions";
-import { QueryView, usePreload } from "@executor-js/ui/dashboard/context";
+import { QueryView } from "@executor-js/ui/dashboard/context";
 import { Button } from "@executor-js/ui/components/button";
 import {
   Dialog,
@@ -28,60 +29,82 @@ import {
 import type { HostedError } from "../../contracts/errors.ts";
 import { HostedFailure } from "../components/dashboard-bindings.tsx";
 import { useOrganizationRoute } from "../components/organization.tsx";
+import type { HostedAppReads } from "./app-detail.tsx";
 
 /** Hosts own reads and activation authority; source browsing shares the local presentation. */
-export function AppVersions({ app }: { readonly app: App }) {
+export function AppVersions({
+  app,
+  version,
+  versions,
+  source,
+  onVersionChange,
+}: {
+  readonly app: App;
+  readonly version: VersionId | undefined;
+  readonly versions: HostedAppReads["versions"];
+  readonly source: HostedAppReads["source"];
+  readonly onVersionChange: (version: VersionId | undefined) => void;
+}) {
   const { organization } = useOrganizationRoute();
-  const [selected, setSelected] = useState<VersionId>();
-  const version = selected ?? app.activeVersion;
-  if (version === null)
+  const shown = version ?? app.activeVersion;
+  if (versions === undefined) return <AppVersionsLoading />;
+  if (shown == null)
     return (
       <EmptyStatePanel title="No versions yet">
         Deploy from Source when you’re ready.
       </EmptyStatePanel>
     );
+  const listed = versionsAtom({ organization, app: app.id });
+  const current = sourceAtom({ organization, app: app.id, version: shown });
   return (
-    <>
-      <ReadSourceEarly app={app} version={version} />
-      <QueryView
-        query={versionsAtom({ organization, app: app.id })}
-        Failure={HostedFailure}
-        pending={<AppVersionsLoading />}
-      >
-        {(versions) => (
-          <SharedAppVersions
-            app={app}
-            versions={versions}
-            version={version}
-            onVersionChange={setSelected}
-            query={sourceAtom({ organization, app: app.id, version })}
-            file={(version, path) => sourceFileAtom({ organization, app: app.id, version, path })}
-            Failure={HostedFailure}
-            actions={
-              version !== app.activeVersion && (
-                <ActivateVersion key={version} app={app} version={version} />
-              )
-            }
-          />
-        )}
-      </QueryView>
-    </>
+    <QueryView
+      query={listed}
+      read={{ source: listed, handle: versions }}
+      Failure={HostedFailure}
+      pending={<AppVersionsLoading />}
+    >
+      {(items) => (
+        <SharedAppVersions
+          app={app}
+          versions={items}
+          version={shown}
+          onVersionChange={onVersionChange}
+          query={current}
+          {...(source === undefined ? {} : { read: { source: current, handle: source } })}
+          file={(version, path) => sourceFileAtom({ organization, app: app.id, version, path })}
+          Failure={HostedFailure}
+          actions={
+            shown !== app.activeVersion &&
+            source !== undefined && (
+              <ActivateVersion
+                key={shown}
+                app={app}
+                version={shown}
+                source={{ atom: current, handle: source }}
+              />
+            )
+          }
+        />
+      )}
+    </QueryView>
   );
 }
 
-/** The shown version is known from the app, so its source loads alongside the version list. */
-function ReadSourceEarly({ app, version }: { readonly app: App; readonly version: VersionId }) {
-  const { organization } = useOrganizationRoute();
-  const source = sourceAtom({ organization, app: app.id, version });
-  usePreload(versionsAtom({ organization, app: app.id }), source);
-  useAtomMount(source);
-  return null;
-}
-
-function ActivateVersion({ app, version }: { readonly app: App; readonly version: VersionId }) {
+function ActivateVersion({
+  app,
+  version,
+  source,
+}: {
+  readonly app: App;
+  readonly version: VersionId;
+  readonly source: {
+    readonly atom: ReturnType<typeof sourceAtom>;
+    readonly handle: NonNullable<HostedAppReads["source"]>;
+  };
+}) {
   const { organization } = useOrganizationRoute();
   const registry = useContext(RegistryContext);
-  const source = useAtomValue(sourceAtom({ organization, app: app.id, version }));
+  const loaded = useAtomResult(source.atom, source.handle);
   const activate = useAtomSet(activateAppAtom({ organization, app: app.id }), {
     mode: "promiseExit",
   });
@@ -97,7 +120,7 @@ function ActivateVersion({ app, version }: { readonly app: App; readonly version
       <Button
         size="sm"
         variant="outline"
-        disabled={!AsyncResult.isSuccess(source)}
+        disabled={!AsyncResult.isSuccess(loaded)}
         onClick={() => {
           setExpected(app.activeVersion);
           setError(undefined);
@@ -162,12 +185,22 @@ function ActivateVersion({ app, version }: { readonly app: App; readonly version
 export function AppSource({
   app,
   view,
+  working,
+  history,
+  live,
+  liveVersion,
 }: {
   readonly app: App;
   readonly view: "source" | "history";
+  readonly working: NonNullable<HostedAppReads["working"]>;
+  readonly history: NonNullable<HostedAppReads["history"]>;
+  readonly live?: NonNullable<HostedAppReads["live"]> | undefined;
+  readonly liveVersion?: VersionId | undefined;
 }) {
   const { organization } = useOrganizationRoute();
   const atoms = appManagement(organization);
+  const shown = atoms.source(app.id);
+  const commits = atoms.history(app.id);
   return (
     <AppWorkspace
       Failure={HostedFailure}
@@ -179,11 +212,16 @@ export function AppSource({
         get.refresh(toolsAtom({ organization, app: saved.id }));
       }}
       view={view}
-      live={
-        app.activeVersion === null
-          ? undefined
-          : sourceAtom({ organization, app: app.id, version: app.activeVersion })
-      }
+      sourceRead={{ source: shown, handle: working }}
+      historyRead={{ source: commits, handle: history }}
+      {...(live === undefined || liveVersion === undefined
+        ? {}
+        : {
+            liveRead: {
+              source: sourceAtom({ organization, app: app.id, version: liveVersion }),
+              handle: live,
+            },
+          })}
     />
   );
 }

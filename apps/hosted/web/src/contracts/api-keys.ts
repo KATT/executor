@@ -4,6 +4,7 @@ import { observeBrowserUsage } from "./product-analytics.ts";
 import { Effect, Schema } from "effect";
 import { HttpClient, HttpClientRequest } from "effect/http";
 import { AsyncResult, Atom } from "effect/reactivity";
+import { follows } from "@executor-js/ui/contracts/mutations";
 import {
   ApiKeyPage,
   CreatedApiKey,
@@ -76,10 +77,11 @@ const apiKeyPageAtom = Atom.family((offset: number) =>
     hydratedResult({ key: `hosted:api-keys:${offset}`, success: ApiKeyPage, error: ApiKeyFailed }),
   ),
 );
-export const apiKeysAtom = Atom.family((offset: number) =>
-  Atom.readable(
+export const apiKeysAtom = Atom.family((offset: number) => {
+  const query = apiKeyPageAtom(offset);
+  const view = Atom.readable(
     (get) =>
-      AsyncResult.map(get(apiKeyPageAtom(offset)), (page) => ({
+      AsyncResult.map(get(query), (page) => ({
         ...page,
         apiKeys: page.apiKeys.map((key) => ({
           ...key,
@@ -90,9 +92,11 @@ export const apiKeysAtom = Atom.family((offset: number) =>
               : ("Active" as const),
         })),
       })),
-    (refresh) => refresh(apiKeyPageAtom(offset)),
-  ).pipe(revalidated),
-);
+    (refresh) => refresh(query),
+  );
+  // The status labels derive from the serializable page the loader starts.
+  return follows(view, query).pipe(revalidated);
+});
 /** Creation returns a redacted token; the page keeps it only in the one-time copy dialog. */
 export const createApiKeyAtom = BrowserAtoms.fn((input: typeof CreateApiKey.Type) =>
   request("create", input, CreatedApiKey),

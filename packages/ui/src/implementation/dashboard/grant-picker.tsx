@@ -1,6 +1,7 @@
 import { EmptyState } from "./empty-state.tsx";
-import { useId, useState, type ReactNode } from "react";
-import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
+import { Suspense, useContext, useId, useState, type ReactNode } from "react";
+import { RegistryContext, useAtomRefresh } from "@effect/atom-react";
+import { Loader, useAtomResult, useWaterfall } from "raf-effect-atom";
 import type { AppId, Tool } from "@executor-js/sdk";
 import type { GrantPolicy } from "@executor-js/mcp-auth/grants";
 import { AsyncResult, type Atom } from "effect/reactivity";
@@ -38,6 +39,7 @@ export function GrantPicker<E>({
   emptyAction?: ReactNode;
 }) {
   const approvalsId = useId();
+  const registry = useContext(RegistryContext);
   return (
     <div className="grant-picker flex flex-col gap-4">
       <div className="grant-section-heading [&_h2]:text-[14px] [&_h2]:font-semibold [&_h2]:[margin:0_0_4px] [&_p]:text-muted-foreground [&_p]:text-[12px] [&_p]:leading-[1.6] [&_p]:m-0">
@@ -127,8 +129,10 @@ export function GrantPicker<E>({
                             if (value === "none") change(undefined);
                             else if (value === "all")
                               change({ app: app.id, tools: { kind: "all" } });
-                            else if (value === "selected")
+                            else if (value === "selected") {
+                              Loader.make(registry).prefetch(tools(app.id));
                               change({ app: app.id, tools: { kind: "selected", names: [] } });
+                            }
                           }}
                         >
                           <SelectTrigger
@@ -207,8 +211,44 @@ function ToolSelection<E>({
   onChange: (names: readonly Tool["name"][]) => void;
   disabled: boolean;
 }) {
+  return (
+    <Suspense
+      fallback={
+        <div
+          className="grant-empty py-[24px] px-[16px] text-muted-foreground text-center text-[13px] leading-[1.6]"
+          role="status"
+        >
+          Loading tools…
+        </div>
+      }
+    >
+      <ToolSelectionRead
+        appName={appName}
+        tools={tools}
+        names={names}
+        onChange={onChange}
+        disabled={disabled}
+      />
+    </Suspense>
+  );
+}
+
+function ToolSelectionRead<E>({
+  appName,
+  tools,
+  names,
+  onChange,
+  disabled,
+}: {
+  appName: string;
+  tools: Atom.Atom<AsyncResult.AsyncResult<readonly Tool[], E>>;
+  names: readonly Tool["name"][];
+  onChange: (names: readonly Tool["name"][]) => void;
+  disabled: boolean;
+}) {
   const groupId = useId();
-  const state = useAtomValue(tools);
+  const handle = useWaterfall(tools);
+  const state = useAtomResult(tools, handle);
   const refresh = useAtomRefresh(tools);
   const [search, setSearch] = useState("");
   const [shown, setShown] = useState(60);
@@ -228,15 +268,7 @@ function ToolSelection<E>({
         Check the app’s connected accounts.
       </EmptyState>
     );
-  if (!AsyncResult.isSuccess(state))
-    return (
-      <div
-        className="grant-empty py-[24px] px-[16px] text-muted-foreground text-center text-[13px] leading-[1.6] [&_strong]:text-foreground [&_strong]:[font-weight:550] [&_p]:[margin:6px_0_12px]"
-        role="status"
-      >
-        Loading tools…
-      </div>
-    );
+  if (!AsyncResult.isSuccess(state)) return null;
   const selected = new Set(names);
   const terms = search.toLowerCase().trim().split(/\s+/).filter(Boolean);
   const filtered = state.value.filter((tool) =>

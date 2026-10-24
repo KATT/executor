@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { Exit, Schema, type Cause } from "effect";
 import { AsyncResult } from "effect/reactivity";
@@ -9,7 +9,7 @@ import {
   type PublicationReadiness,
   sourceText,
 } from "@executor-js/sdk";
-import type { AppSourceDisplay } from "@executor-js/app-management/contracts";
+import type { AppAuthoringMetadata, AppSourceDisplay } from "@executor-js/app-management/contracts";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Alert02Icon,
@@ -19,12 +19,13 @@ import {
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import type { AppManagementProps } from "../../contracts/app-management.ts";
+import type { StartedRead } from "../../contracts/started-read.ts";
 import { Button } from "../components/button.tsx";
 import { Skeleton } from "../components/skeleton.tsx";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../components/dialog.tsx";
 import { CopyButton } from "./code.tsx";
 import { AppIcon } from "./common.tsx";
-import { QueryView, useQuery } from "./context.tsx";
+import { QueryView, useWaterfallQuery } from "./context.tsx";
 import { cn } from "../lib/utils.ts";
 
 type PublishableSource = Omit<typeof AppSourceDisplay.Type, "publication"> & {
@@ -225,7 +226,51 @@ function RenameAndContinue<E>({
   readonly onClose: () => void;
   readonly onRenamed: (commit: string) => void;
 }) {
-  const { result: workspace, refresh } = useQuery(atoms.workspace(app.id));
+  return (
+    <Suspense
+      fallback={
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t bg-muted/10 px-7 py-4 max-[740px]:px-5">
+          <div className="mr-auto">
+            <CopyPrompt prompt={prompt} />
+          </div>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button className="min-w-32" loading disabled>
+            Rename and continue
+          </Button>
+        </div>
+      }
+    >
+      <RenameAndContinueRead
+        app={app}
+        suggestedName={suggestedName}
+        atoms={atoms}
+        Failure={Failure}
+        onClose={onClose}
+        onRenamed={onRenamed}
+        prompt={prompt}
+      />
+    </Suspense>
+  );
+}
+
+function RenameAndContinueRead<E>({
+  app,
+  suggestedName,
+  atoms,
+  Failure,
+  onClose,
+  onRenamed,
+  prompt,
+}: AppManagementProps<E> & {
+  readonly app: App;
+  readonly suggestedName: string;
+  readonly prompt: string;
+  readonly onClose: () => void;
+  readonly onRenamed: (commit: string) => void;
+}) {
+  const { result: workspace, refresh } = useWaterfallQuery(atoms.workspace(app.id));
   const commit = useAtomSet(atoms.commitFile(app.id), { mode: "promiseExit" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<Cause.Cause<E>>();
@@ -285,10 +330,16 @@ export function PublishApp<E>({
   app,
   atoms,
   Failure,
-}: AppManagementProps<E> & { readonly app: App }) {
+  read,
+}: AppManagementProps<E> & {
+  readonly app: App;
+  /** The route loader starts this read; the dialog's later source reads stay inside it. */
+  readonly read?: StartedRead<typeof AppAuthoringMetadata.Type, E> | undefined;
+}) {
   return (
     <QueryView
       query={atoms.authoring(app.id)}
+      {...(read === undefined ? {} : { read })}
       Failure={Failure}
       pending={
         <Skeleton className="h-9 w-26 max-[740px]:h-11" aria-label="Loading publishing access" />

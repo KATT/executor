@@ -1,11 +1,20 @@
 import { LocalTime, shortMoment } from "../components/local-time.tsx";
 import { EmptyState, EmptyStatePanel } from "./empty-state.tsx";
-import { useState, type ReactNode, type ComponentType } from "react";
-import type { App, HostedWorkflow, WorkflowRun, WorkflowRunId } from "@executor-js/sdk";
+import { Suspense, useContext, useState, type ReactNode, type ComponentType } from "react";
+import { RegistryContext } from "@effect/atom-react";
+import { Loader } from "raf-effect-atom";
+import type {
+  App,
+  HostedWorkflow,
+  WorkflowRun,
+  WorkflowRunId,
+  WorkflowRunPage,
+} from "@executor-js/sdk";
 import { Option } from "effect";
 import type { WorkflowBindings } from "../../contracts/app-browser.ts";
 import type { FailureProps } from "../../contracts/dashboard.ts";
-import { QueryView, QueryResult, useQuery } from "./context.tsx";
+import { QueryView, QueryResult, useStartedQuery, useWaterfallQuery } from "./context.tsx";
+import type { StartedRead } from "../../contracts/started-read.ts";
 import { WorkflowNamesLoading, WorkflowRunsLoading } from "./app-browser-loading.tsx";
 import { Button } from "../components/button.tsx";
 
@@ -38,10 +47,15 @@ export function AppWorkflows<E>({
   Failure,
   start,
   runAction,
+  definitionsRead,
+  runsRead,
 }: WorkflowActions & {
   readonly app: App;
   readonly bindings: WorkflowBindings<E>;
   readonly Failure: ComponentType<FailureProps<E>>;
+  /** Definitions and the first run page, when the route loader started them. */
+  readonly definitionsRead?: StartedRead<readonly HostedWorkflow[], E> | undefined;
+  readonly runsRead?: StartedRead<WorkflowRunPage, E> | undefined;
 }) {
   if (app.activeVersion === null)
     return (
@@ -51,8 +65,44 @@ export function AppWorkflows<E>({
         </EmptyStatePanel>
       </section>
     );
-  return (
+  return definitionsRead === undefined ? (
     <WorkflowBrowser bindings={bindings} Failure={Failure} start={start} runAction={runAction} />
+  ) : (
+    <Suspense fallback={<WorkflowNamesLoading />}>
+      <StartedWorkflowBrowser
+        bindings={bindings}
+        Failure={Failure}
+        start={start}
+        runAction={runAction}
+        definitionsRead={definitionsRead}
+        {...(runsRead === undefined ? {} : { runsRead })}
+      />
+    </Suspense>
+  );
+}
+function StartedWorkflowBrowser<E>({
+  bindings,
+  Failure,
+  start,
+  runAction,
+  definitionsRead,
+  runsRead,
+}: WorkflowActions & {
+  readonly bindings: WorkflowBindings<E>;
+  readonly Failure: ComponentType<FailureProps<E>>;
+  readonly definitionsRead: StartedRead<readonly HostedWorkflow[], E>;
+  readonly runsRead?: StartedRead<WorkflowRunPage, E> | undefined;
+}) {
+  const definitions = useStartedQuery(definitionsRead);
+  return (
+    <WorkflowColumns
+      bindings={bindings}
+      Failure={Failure}
+      start={start}
+      runAction={runAction}
+      definitions={definitions}
+      {...(runsRead === undefined ? {} : { runsRead })}
+    />
   );
 }
 function WorkflowBrowser<E>({
@@ -64,8 +114,52 @@ function WorkflowBrowser<E>({
   readonly bindings: WorkflowBindings<E>;
   readonly Failure: ComponentType<FailureProps<E>>;
 }) {
+  return (
+    <Suspense fallback={<WorkflowNamesLoading />}>
+      <WorkflowBrowserLoaded
+        bindings={bindings}
+        Failure={Failure}
+        start={start}
+        runAction={runAction}
+      />
+    </Suspense>
+  );
+}
+function WorkflowBrowserLoaded<E>({
+  bindings,
+  Failure,
+  start,
+  runAction,
+}: WorkflowActions & {
+  readonly bindings: WorkflowBindings<E>;
+  readonly Failure: ComponentType<FailureProps<E>>;
+}) {
+  const definitions = useWaterfallQuery(bindings.workflows);
+  return (
+    <WorkflowColumns
+      bindings={bindings}
+      Failure={Failure}
+      start={start}
+      runAction={runAction}
+      definitions={definitions}
+    />
+  );
+}
+function WorkflowColumns<E>({
+  bindings,
+  Failure,
+  start,
+  runAction,
+  definitions,
+  runsRead,
+}: WorkflowActions & {
+  readonly bindings: WorkflowBindings<E>;
+  readonly Failure: ComponentType<FailureProps<E>>;
+  readonly definitions: ReturnType<typeof useStartedQuery<readonly HostedWorkflow[], E>>;
+  /** The first page of every workflow. Later pages stay with the cursor the member picks. */
+  readonly runsRead?: StartedRead<WorkflowRunPage, E> | undefined;
+}) {
   const [workflow, setWorkflow] = useState<string>();
-  const definitions = useQuery(bindings.workflows);
   const workflows = Option.isSome(definitions.data) ? definitions.data.value : [];
   const selected = workflows.find((item) => item.name === workflow);
   return (
@@ -130,6 +224,7 @@ function WorkflowBrowser<E>({
             workflows={workflows}
             bindings={bindings}
             Failure={Failure}
+            {...(workflow === undefined && runsRead !== undefined ? { runsRead } : {})}
           />
         </section>
       </div>
@@ -143,12 +238,15 @@ function WorkflowRuns<E>({
   Failure,
   start,
   runAction,
+  runsRead,
 }: WorkflowActions & {
   readonly workflow: string | undefined;
   readonly workflows: readonly HostedWorkflow[];
   readonly bindings: WorkflowBindings<E>;
   readonly Failure: ComponentType<FailureProps<E>>;
+  readonly runsRead?: StartedRead<WorkflowRunPage, E> | undefined;
 }) {
+  const registry = useContext(RegistryContext);
   const [pages, setPages] = useState<readonly (WorkflowRunId | undefined)[]>([undefined]);
   const cursor = pages[pages.length - 1];
   const selected = workflows.find((item) => item.name === workflow);
@@ -157,6 +255,7 @@ function WorkflowRuns<E>({
       {selected && start?.(selected, () => setPages([undefined]))}
       <QueryView
         query={bindings.runs(workflow, cursor)}
+        {...(cursor === undefined && runsRead !== undefined ? { read: runsRead } : {})}
         Failure={Failure}
         pending={<WorkflowRunsLoading />}
       >
@@ -184,7 +283,9 @@ function WorkflowRuns<E>({
                   size="sm"
                   disabled={page.next === undefined}
                   onClick={() => {
-                    if (page.next !== undefined) setPages([...pages, page.next]);
+                    if (page.next === undefined) return;
+                    Loader.make(registry).prefetch(bindings.runs(workflow, page.next));
+                    setPages([...pages, page.next]);
                   }}
                 >
                   Older runs

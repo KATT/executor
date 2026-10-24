@@ -21,6 +21,19 @@ export const dashboardViteConfig = ({
         },
       },
     }),
+    build: {
+      rolldownOptions: {
+        output: {
+          // Each route file is its own startup chunk, and the lazy component chunk uses the same
+          // route name. A navigation hold on that name would also hold the document's script.
+          // Startup chunks get a different name; the lazy component keeps the route name.
+          chunkFileNames: (chunk: { readonly name: string; readonly isDynamicEntry: boolean }) =>
+            !chunk.isDynamicEntry && chunk.name.startsWith("org._")
+              ? "assets/startup-[name]-[hash].js"
+              : "assets/[name]-[hash].js",
+        },
+      },
+    },
     server: {
       host: "127.0.0.1",
       port: process.env.PORT === undefined ? port : Number(process.env.PORT),

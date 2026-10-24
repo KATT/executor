@@ -67,7 +67,7 @@ export const lockConnection = (
   crypto: Crypto.Crypto,
 ) =>
   Effect.gen(function* () {
-    const claim = yield* crypto.randomUUIDv4.pipe(Effect.mapError(() => new StorageError()));
+    const claim = yield* crypto.randomUUIDv4().pipe(Effect.mapError(() => new StorageError()));
     while (true) {
       const row = yield* readConnection(db, input);
       if (row.state.status !== "pending") return row;

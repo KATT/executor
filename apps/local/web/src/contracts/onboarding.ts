@@ -1,5 +1,4 @@
 /** Typed product calls for catalog import and reusable account setup. */
-import { browserOnly } from "@executor-js/ui/contracts/http";
 import type { AppId } from "@executor-js/sdk";
 import { DashboardClient, appAtom, overviewAtom, toolsAtom } from "./api.ts";
 import { Effect, Option } from "effect";
@@ -10,10 +9,10 @@ import { linkedAccountIds } from "@executor-js/ui/contracts/app-accounts";
 
 /** Catalog metadata is loaded independently of installed apps. */
 /**
- * The full catalog is large and only decorates icons and the add-app page, so the browser loads
- * it after the page is interactive instead of the server embedding it in every document.
+ * The full catalog is large and only decorates icons and the add-app page. The dashboard loader
+ * starts it in the browser, so the server renders icon skeletons instead of embedding it.
  */
-export const catalogAtom = browserOnly(DashboardClient.query("dashboard", "catalog", {}));
+export const catalogAtom = DashboardClient.query("dashboard", "catalog", {});
 /** Generate ordinary app source from a user-supplied endpoint or API definition. */
 export const importCustomAppAtom = DashboardClient.mutation("dashboard", "importCustomApp");
 /** Delete one configured copy without deleting its reusable accounts or other apps. */

@@ -1,3 +1,4 @@
+import { hydratedResult } from "@executor-js/ui/contracts/http";
 import { revalidated } from "@executor-js/ui/contracts/refresh";
 import { signInCallback } from "./navigation.ts";
 import { BrowserSession } from "@executor-js/hosted-server/browser/contracts";
@@ -126,7 +127,16 @@ const sessionQuery = Atom.readable(
     refresh(entrySession);
     refresh(liveSessionQuery);
   },
-).pipe(revalidated);
+).pipe(
+  revalidated,
+  // The readable has no serialization key of its own. Mark the view after `revalidated`, which
+  // copies the atom and drops an earlier key, so a loader can start this read.
+  hydratedResult({
+    key: "hosted:session-view",
+    success: BrowserSession,
+    error: AuthFailed,
+  }),
+);
 /** The server-verified session, revalidated by the browser; APIs enforce authorization. */
 export const sessionAtom = acknowledgedQuery(sessionQuery);
 /** Server rendering starts from the session it verified for this request. */

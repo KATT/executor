@@ -1,5 +1,4 @@
 import { revalidated } from "@executor-js/ui/contracts/refresh";
-import { browserOnly } from "@executor-js/ui/contracts/http";
 import { organizationHttpClient } from "./organization-reference.ts";
 /** Host-specific pages opt into the shared private-app browser contract. */
 import {
@@ -41,17 +40,17 @@ class AppUiKey extends Data.Class<{
   readonly version: VersionId;
 }> {}
 const location = Atom.family((key: AppUiKey) =>
-  // The open-app control polls version status; it loads after hydration.
-  browserOnly(
-    AppUiClient.runtime.atom(
+  // The open-app control polls version status. The app loader starts it in the browser.
+  AppUiClient.runtime
+    .atom(
       Stream.fromEffectSchedule(
         Effect.flatMap(AppUiClient, (client) =>
           client.appUi.location({ params: { organization: key.organization, app: key.app } }),
         ),
         Schedule.spaced("3 seconds"),
       ).pipe(Stream.takeUntil((location) => location.status !== "pending")),
-    ),
-  ).pipe(revalidated),
+    )
+    .pipe(revalidated),
 );
 /** A stable, non-secret app link; opening it initiates authentication when needed. */
 export const appUiLocationAtom = (key: ConstructorParameters<typeof AppUiKey>[0]) =>

@@ -43,7 +43,7 @@ const bundle = Atom.family((key: AppKey) =>
 /** Product-owned query bindings share stable identities between overview and detail sections. */
 export function appBrowserBindings(
   organization: OrganizationReference,
-  app: App,
+  app: Pick<App, "id" | "activeVersion">,
 ): SkillBindings<HostedError> & WorkflowBindings<HostedError> {
   const key = new AppKey({ organization, app: app.id, version: app.activeVersion });
   return {

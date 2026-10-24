@@ -1,9 +1,7 @@
 import { use, useContext, useState } from "react";
 import { RegistryContext, useAtomSet, useAtomMount } from "@effect/atom-react";
 import { AtomRegistry } from "effect/reactivity";
-import { Effect, Option } from "effect";
-import { useQuery } from "@executor-js/ui/dashboard/context";
-import { appAccessAtom } from "../../contracts/resource-access.ts";
+import { Effect } from "effect";
 import type { Provider, AccountRequirement, AccountScope, App } from "@executor-js/sdk";
 import {
   AppAccounts as SharedAccounts,
@@ -53,6 +51,7 @@ export function AppAccounts({
   appLinks,
   userLinks,
   canManage,
+  canUse,
   accounts,
   redirectUri,
 }: {
@@ -63,13 +62,13 @@ export function AppAccounts({
   readonly userLinks: readonly RequirementLink<AccountSummary>[];
   /** Whether the caller can edit the app, and so change its app links. */
   readonly canManage: boolean;
+  /** Whether the caller can use the app. The app page already started this read. */
+  readonly canUse: boolean;
   /** Every account the caller can use in this organization. */
   readonly accounts: readonly AccountSummary[];
   readonly redirectUri: string;
 }) {
   const { organization } = useOrganizationRoute();
-  const { data } = useQuery(appAccessAtom({ organization, app: app.id }));
-  const canUse = Option.isSome(data) && data.value.canUse;
   const deployed = app.activeVersion !== null;
   const registry = useContext(RegistryContext);
   const revalidate = (account: AccountSummary["id"]) => {

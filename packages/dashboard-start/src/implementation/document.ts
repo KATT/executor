@@ -29,6 +29,21 @@ const documentHeaders = {
   "x-content-type-options": "nosniff",
 } as const;
 
+/**
+ * Where a signed-out document request should go. The address is the request's own path and
+ * query, so a search rewrite cannot replace it. Public pages render without a session. The
+ * web router calls this before it canonicalizes search.
+ */
+export const signInLocation = (
+  document: { readonly session: unknown; readonly path: string },
+  pathname: string,
+  publicPaths: ReadonlyArray<string>,
+): string | undefined => {
+  if (document.session !== null || publicPaths.includes(pathname.replace(/(.)\/$/, "$1")))
+    return undefined;
+  return `/login?redirect=${encodeURIComponent(document.path)}`;
+};
+
 const unavailable = HttpServerResponse.html(
   '<!doctype html><title>Unable to open Executor</title><main><h1>Unable to open Executor</h1><p>Please try again.</p><a href="">Try again</a></main>',
 ).pipe(HttpServerResponse.setStatus(503), HttpServerResponse.setHeaders(documentHeaders));
@@ -53,6 +68,7 @@ export const dashboardDocument = <Context, E, R, E2, R2>(options: {
     const context = yield* options
       .context(api.document)
       .pipe(Effect.mapError(() => new DashboardUnavailable()));
+    const documentContext = { ...context, ...api.document };
     // The render outlives this call: Start returns once headers are ready and keeps streaming.
     // A signal tied to this promise would abort it then, so the render stops only when the
     // response body is cancelled, as when the browser disconnects.
@@ -64,7 +80,7 @@ export const dashboardDocument = <Context, E, R, E2, R2>(options: {
               method: request.method,
               headers: new Headers(request.headers),
             }),
-            { context: { ...context, ...api.document } },
+            { context: documentContext },
           ),
         ),
       catch: () => new DashboardUnavailable(),

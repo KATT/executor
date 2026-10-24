@@ -8,12 +8,15 @@ import { UIObservation } from "./ui-observation.tsx";
 
 /** One router and atom registry per document request on the server, and one per page in the browser. */
 export const getRouter = () => {
-  const { connect, Wrap: Registry } = dashboardRegistry(
-    import.meta.env.SSR ? cloudServerValues(serverDocument()) : [],
-  );
+  const {
+    atoms,
+    connect,
+    Wrap: Registry,
+  } = dashboardRegistry(import.meta.env.SSR ? cloudServerValues(serverDocument()) : []);
   return connect(
     createRouter({
       routeTree,
+      context: { atoms },
       defaultPreload: "intent",
       defaultPendingComponent: CloudPagePending,
       defaultPendingMs: 100,

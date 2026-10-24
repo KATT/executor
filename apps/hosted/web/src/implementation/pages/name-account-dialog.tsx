@@ -2,8 +2,9 @@ import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { useEffect, useState } from "react";
 import { Exit } from "effect";
 import type { Account, AccountId } from "@executor-js/sdk";
+import { Suspense } from "react";
 import { DetailSkeleton } from "@executor-js/ui/dashboard/loading";
-import { QueryResult, useQuery } from "@executor-js/ui/dashboard/context";
+import { QueryResult, useWaterfallQuery } from "@executor-js/ui/dashboard/context";
 import {
   NameAccountForm,
   NameAccountHeader,
@@ -63,8 +64,35 @@ function LoadedNameAccount({
   readonly onPendingChange: (pending: boolean) => void;
   readonly onDone: () => void;
 }) {
+  return (
+    <Suspense
+      fallback={
+        <>
+          <NameAccountHeader />
+          <DetailSkeleton label="Loading account" />
+        </>
+      }
+    >
+      <LoadedNameAccountRead
+        accountId={accountId}
+        onPendingChange={onPendingChange}
+        onDone={onDone}
+      />
+    </Suspense>
+  );
+}
+
+function LoadedNameAccountRead({
+  accountId,
+  onPendingChange,
+  onDone,
+}: {
+  readonly accountId: AccountId;
+  readonly onPendingChange: (pending: boolean) => void;
+  readonly onDone: () => void;
+}) {
   const { organization } = useOrganizationRoute();
-  const query = useQuery(accountAtom({ organization, account: accountId }));
+  const query = useWaterfallQuery(accountAtom({ organization, account: accountId }));
   return (
     <QueryResult
       result={query.result}

@@ -1,8 +1,10 @@
-import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
+import { useAtomRefresh } from "@effect/atom-react";
 import type { App } from "@executor-js/sdk";
 import { Button } from "@executor-js/ui/components/button";
+import { AfterMount } from "@executor-js/ui/dashboard/common";
 import { AsyncResult } from "effect/reactivity";
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
+import { useAtomResult, type Handle } from "raf-effect-atom";
 import {
   appSignInFailureMessage,
   appUiError,
@@ -42,29 +44,42 @@ export function AppSignInPage({
  * Optional action slot: products with app hosting render a normal link. The app runs with the
  * accounts the caller linked to it.
  */
-export function OpenAppAction({ app }: { readonly app: App }) {
-  return app.activeVersion === null ? null : (
-    <DeployedOpenAppAction app={app} version={app.activeVersion} />
+export function OpenAppAction({
+  app,
+  location,
+}: {
+  readonly app: App;
+  readonly location: Handle<ReturnType<typeof appUiLocationAtom>> | undefined;
+}) {
+  // The location starts in the browser. Reading it during the server render aborts the document.
+  return app.activeVersion === null || location === undefined ? null : (
+    <AfterMount fallback={null}>
+      <Suspense fallback={null}>
+        <DeployedOpenAppAction app={app} version={app.activeVersion} location={location} />
+      </Suspense>
+    </AfterMount>
   );
 }
 
 function DeployedOpenAppAction({
   app,
   version,
+  location,
 }: {
   readonly app: App;
   readonly version: NonNullable<App["activeVersion"]>;
+  readonly location: Handle<ReturnType<typeof appUiLocationAtom>>;
 }) {
   const { organization, slug } = useOrganizationRoute();
-  const location = appUiLocationAtom({
+  const source = appUiLocationAtom({
     organization,
     slug,
     app: app.id,
     appSlug: app.slug,
     version,
   });
-  const result = useAtomValue(location);
-  const refresh = useAtomRefresh(location);
+  const result = useAtomResult(source, location);
+  const refresh = useAtomRefresh(source);
   if (AsyncResult.isFailure(result))
     return (
       <div className="flex items-center gap-2">

@@ -1,8 +1,8 @@
-import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
 import { HostedEntry } from "@executor-js/hosted-web/entry";
 import { Button } from "@executor-js/ui/components/button";
 import { CopyButton } from "@executor-js/ui/dashboard/code";
-import { catalogIconsAtom } from "@executor-js/ui/contracts/icons";
+import { catalogIconsFrom } from "@executor-js/ui/contracts/icons";
 import { ProviderIcon } from "@executor-js/ui/dashboard/common";
 import { Skeleton } from "@executor-js/ui/components/skeleton";
 import {
@@ -34,7 +34,8 @@ import {
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { Exit } from "effect";
 import { AsyncResult } from "effect/reactivity";
-import { useId, useState } from "react";
+import { createContext, Suspense, useContext, useId, useState } from "react";
+import { Loader, useAtomResult, type Handle } from "raf-effect-atom";
 import type {
   V1ImportChoices,
   V1ImportItem,
@@ -192,11 +193,22 @@ const ineligible = {
   no_verified_email: "Verify your email address first.",
 } as const;
 
+/** `useAtomResult` reads this handle; a dashboard supplies the same atom with its error erased. */
+type CatalogHandle = Parameters<typeof useAtomResult<typeof catalogAtom>>[1];
+
+const ImportCatalog = createContext<CatalogHandle | undefined>(undefined);
+
 /** Move a single-member Executor v1 workspace into Executor v2. */
-export function V1ImportPage() {
+export function V1ImportPage({
+  choices,
+  catalog,
+}: {
+  readonly choices: Handle<typeof v1ImportChoicesAtom>;
+  readonly catalog: CatalogHandle;
+}) {
   return (
     <HostedEntry wide title={v1ImportTitle} description={v1ImportDescription}>
-      <V1ImportContent />
+      <V1ImportContent choices={choices} catalog={catalog} />
     </HostedEntry>
   );
 }
@@ -207,23 +219,45 @@ export const v1ImportDescription =
 
 /** The workspaces and their previews, for the page and the dashboard's dialog. `into` is the
  * organization to import into when the person owns it; otherwise a new one is the default. */
-export function V1ImportContent({ into }: { readonly into?: string | undefined }) {
-  const choices = useAtomValue(v1ImportChoicesAtom);
+export function V1ImportContent({
+  into,
+  choices,
+  catalog,
+}: {
+  readonly into?: string | undefined;
+  readonly choices: Handle<typeof v1ImportChoicesAtom>;
+  readonly catalog: CatalogHandle;
+}) {
+  return (
+    <ImportCatalog value={catalog}>
+      <Suspense fallback={<PreviewSkeleton label="Reading your v1 workspaces" heading />}>
+        <ImportChoices into={into} choices={choices} />
+      </Suspense>
+    </ImportCatalog>
+  );
+}
+
+function ImportChoices({
+  into,
+  choices,
+}: {
+  readonly into: string | undefined;
+  readonly choices: Handle<typeof v1ImportChoicesAtom>;
+}) {
+  const result = useAtomResult(v1ImportChoicesAtom, choices);
   const refresh = useAtomRefresh(v1ImportChoicesAtom);
   return (
     <TooltipProvider>
-      {AsyncResult.builder(choices)
-        .onInitial(() => <PreviewSkeleton label="Reading your v1 workspaces" heading />)
-        .onFailure(() => (
-          <div className="flex flex-col items-start gap-3">
-            <p role="alert" className="text-sm">
-              Executor v1 could not be reached. Try again.
-            </p>
-            <Button onClick={refresh}>Try again</Button>
-          </div>
-        ))
-        .onSuccess((value) => <Workspaces choices={value} into={into} />)
-        .exhaustive()}
+      {AsyncResult.isFailure(result) ? (
+        <div className="flex flex-col items-start gap-3">
+          <p role="alert" className="text-sm">
+            Executor v1 could not be reached. Try again.
+          </p>
+          <Button onClick={refresh}>Try again</Button>
+        </div>
+      ) : (
+        <Workspaces choices={result.value} into={into} />
+      )}
     </TooltipProvider>
   );
 }
@@ -266,7 +300,27 @@ function Preview({
   readonly owned: V1ImportChoices["owned"];
   readonly into: string | undefined;
 }) {
-  const preview = useAtomValue(v1ImportPreviewAtom(id));
+  const registry = useContext(RegistryContext);
+  const previewHandle = Loader.make(registry).prefetchInBrowser(v1ImportPreviewAtom, id);
+  return (
+    <Suspense fallback={<PreviewSkeleton label="Reading the workspace" />}>
+      <PreviewBody id={id} owned={owned} into={into} preview={previewHandle} />
+    </Suspense>
+  );
+}
+
+function PreviewBody({
+  id,
+  owned,
+  into,
+  preview: previewHandle,
+}: {
+  readonly id: V1OrganizationId;
+  readonly owned: V1ImportChoices["owned"];
+  readonly into: string | undefined;
+  readonly preview: Handle<typeof v1ImportPreviewAtom>;
+}) {
+  const preview = useAtomResult(v1ImportPreviewAtom, previewHandle);
   const refreshPreview = useAtomRefresh(v1ImportPreviewAtom(id));
   const progress = useAtomValue(v1ImportProgressAtom(id));
   const run = useAtomSet(runV1ImportAtom(id), { mode: "promiseExit" });
@@ -275,131 +329,126 @@ function Preview({
     owned.some((organization) => organization.id === into) && into !== undefined ? into : "new",
   );
   const [error, setError] = useState<string | null>(null);
-  return AsyncResult.builder(preview)
-    .onInitial(() => <PreviewSkeleton label="Reading the workspace" />)
-    .onFailure(() => (
+  if (AsyncResult.isFailure(preview))
+    return (
       <p role="alert" className="mt-3 text-sm">
         This workspace could not be read. Try again later.
       </p>
-    ))
-    .onSuccess((value) => {
-      const result = (item: V1ImportItem): V1ItemResult | null =>
-        progress.get(itemKey(item)) ?? item.result;
-      const failures = value.items.flatMap((item) => {
-        const current = result(item);
-        return current?.status === "failed" ? [{ item, reason: current.reason }] : [];
-      });
-      const failed = failures.length;
-      const skipped = value.items.filter((item) => result(item)?.status === "skipped").length;
-      const imported = value.items.filter((item) => result(item)?.status === "imported").length;
-      const done = value.items.filter((item) => result(item) !== null).length;
-      const started = value.target !== null;
-      const finished = started && done === value.items.length && !running;
-      const start = async () => {
-        setError(null);
-        const existing = owned.find((candidate) => candidate.id === target);
-        const chosen: V1ImportStart["target"] =
-          existing === undefined
-            ? { kind: "new" }
-            : { kind: "existing", organization: existing.id };
-        const exit = await run(chosen);
-        if (Exit.isFailure(exit)) {
-          setError("The import stopped. Continue the import to finish it.");
-          // The import map has what was done, so the preview offers to continue from there.
-          refreshPreview();
-        }
-      };
-      return (
-        <div className="mt-4 flex flex-col gap-5">
-          <ul className="flex flex-col divide-y border-y" aria-label="Items">
-            {groups.map((group) => {
-              const items = value.items.filter((item) => item.kind === group.kind);
-              if (items.length === 0) return <EmptyGroup key={group.kind} group={group} />;
-              return <Group key={group.kind} group={group} items={items} result={result} />;
-            })}
-          </ul>
-          {running && (
-            <p className="text-sm text-muted-foreground" role="status">
-              Importing {done} of {value.items.length}…
-            </p>
-          )}
-          {finished && (
-            <p className="text-sm" role="status">
-              {failed === 0 && skipped === 0
-                ? "Everything was imported."
-                : `${imported} imported, ${skipped} with nothing to import, ${failed} not imported.`}
-            </p>
-          )}
-          {error !== null && (
-            <p role="alert" className="text-sm">
-              {error}
-            </p>
-          )}
-          {/* A finished import is not run again: the next step is the organization it filled.
+    );
+  const value = preview.value;
+  const result = (item: V1ImportItem): V1ItemResult | null =>
+    progress.get(itemKey(item)) ?? item.result;
+  const failures = value.items.flatMap((item) => {
+    const current = result(item);
+    return current?.status === "failed" ? [{ item, reason: current.reason }] : [];
+  });
+  const failed = failures.length;
+  const skipped = value.items.filter((item) => result(item)?.status === "skipped").length;
+  const imported = value.items.filter((item) => result(item)?.status === "imported").length;
+  const done = value.items.filter((item) => result(item) !== null).length;
+  const started = value.target !== null;
+  const finished = started && done === value.items.length && !running;
+  const start = async () => {
+    setError(null);
+    const existing = owned.find((candidate) => candidate.id === target);
+    const chosen: V1ImportStart["target"] =
+      existing === undefined ? { kind: "new" } : { kind: "existing", organization: existing.id };
+    const exit = await run(chosen);
+    if (Exit.isFailure(exit)) {
+      setError("The import stopped. Continue the import to finish it.");
+      // The import map has what was done, so the preview offers to continue from there.
+      refreshPreview();
+    }
+  };
+  return (
+    <div className="mt-4 flex flex-col gap-5">
+      <ul className="flex flex-col divide-y border-y" aria-label="Items">
+        {groups.map((group) => {
+          const items = value.items.filter((item) => item.kind === group.kind);
+          if (items.length === 0) return <EmptyGroup key={group.kind} group={group} />;
+          return <Group key={group.kind} group={group} items={items} result={result} />;
+        })}
+      </ul>
+      {running && (
+        <p className="text-sm text-muted-foreground" role="status">
+          Importing {done} of {value.items.length}…
+        </p>
+      )}
+      {finished && (
+        <p className="text-sm" role="status">
+          {failed === 0 && skipped === 0
+            ? "Everything was imported."
+            : `${imported} imported, ${skipped} with nothing to import, ${failed} not imported.`}
+        </p>
+      )}
+      {error !== null && (
+        <p role="alert" className="text-sm">
+          {error}
+        </p>
+      )}
+      {/* A finished import is not run again: the next step is the organization it filled.
               The person's agent fixes what failed from a copied prompt; support helps with
               anything else that did not come over. An interrupted import continues from the
               import map. */}
-          {finished && value.target !== null ? (
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              {failed > 0 ? (
-                <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-                  <CopyButton
-                    code={fixPrompt(value, value.target, failures)}
-                    label="Copy fix prompt"
-                    text="Copy fix prompt"
-                    variant="outline"
-                    size="default"
-                    inline
-                  />
-                  <span className="text-xs text-muted-foreground">
-                    Paste into your agent to fix what failed.
-                  </span>
-                </div>
-              ) : (
-                <CloudSupport
-                  trigger={
-                    <button
-                      type="button"
-                      className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-                    >
-                      Something missing? Contact support
-                    </button>
-                  }
-                />
-              )}
-              <Button asChild className="ml-auto">
-                <a href={`/org/${value.target.slug}/apps`}>Open {value.target.name} →</a>
-              </Button>
+      {finished && value.target !== null ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {failed > 0 ? (
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+              <CopyButton
+                code={fixPrompt(value, value.target, failures)}
+                label="Copy fix prompt"
+                text="Copy fix prompt"
+                variant="outline"
+                size="default"
+                inline
+              />
+              <span className="text-xs text-muted-foreground">
+                Paste into your agent to fix what failed.
+              </span>
             </div>
           ) : (
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              {!started && (
-                <label className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
-                  Import into
-                  <Select value={target} onValueChange={setTarget} disabled={running}>
-                    <SelectTrigger className="w-[220px] text-foreground">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="new">A new organization</SelectItem>
-                      {owned.map((organization) => (
-                        <SelectItem key={organization.id} value={organization.id}>
-                          {organization.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </label>
-              )}
-              <Button className="ml-auto" onClick={start} disabled={running}>
-                {started ? "Continue import" : "Import"}
-              </Button>
-            </div>
+            <CloudSupport
+              trigger={
+                <button
+                  type="button"
+                  className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                >
+                  Something missing? Contact support
+                </button>
+              }
+            />
           )}
+          <Button asChild className="ml-auto">
+            <a href={`/org/${value.target.slug}/apps`}>Open {value.target.name} →</a>
+          </Button>
         </div>
-      );
-    })
-    .exhaustive();
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {!started && (
+            <label className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+              Import into
+              <Select value={target} onValueChange={setTarget} disabled={running}>
+                <SelectTrigger className="w-[220px] text-foreground">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="new">A new organization</SelectItem>
+                  {owned.map((organization) => (
+                    <SelectItem key={organization.id} value={organization.id}>
+                      {organization.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </label>
+          )}
+          <Button className="ml-auto" onClick={start} disabled={running}>
+            {started ? "Continue import" : "Import"}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** A kind the workspace has none of, so people see it was checked rather than missed. */
@@ -529,9 +578,6 @@ function Group({
   );
 }
 
-/** Catalog apps' icons by name, for integrations that match an official app. */
-const catalogIcons = catalogIconsAtom(catalogAtom);
-
 /** An integration's logo from the host it calls; toolkits and artifacts show what they become. */
 function ItemIcon({
   item,
@@ -540,13 +586,25 @@ function ItemIcon({
   readonly item: V1ImportItem;
   readonly fallback: IconSvgElement;
 }) {
-  const icons = useAtomValue(catalogIcons);
+  const catalog = useContext(ImportCatalog);
   if (item.kind === "toolkit" || item.kind === "artifact")
     return (
       <span className="inline-flex size-8.5 shrink-0 items-center justify-center rounded-[7px] border bg-background">
         <HugeiconsIcon icon={fallback} className="size-4" />
       </span>
     );
+  if (catalog === undefined) return null;
+  return <CatalogItemIcon item={item} catalog={catalog} />;
+}
+
+function CatalogItemIcon({
+  item,
+  catalog,
+}: {
+  readonly item: V1ImportItem;
+  readonly catalog: CatalogHandle;
+}) {
+  const icons = catalogIconsFrom(useAtomResult(catalogAtom, catalog));
   const name = item.kind === "connection" ? (item.context ?? item.label) : item.label;
   return (
     <ProviderIcon

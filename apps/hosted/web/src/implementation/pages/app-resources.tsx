@@ -1,6 +1,14 @@
 import { WorkflowStart, WorkflowTerminate } from "@executor-js/ui/dashboard/workflow-actions";
 /** Thin product bindings for workflow and webhook views. */
-import type { App } from "@executor-js/sdk";
+import type {
+  App,
+  HostedWorkflow,
+  WebhookSourceSummary,
+  WebhookSubscription,
+  WorkflowRunPage,
+} from "@executor-js/sdk";
+import type { StartedRead } from "@executor-js/ui/contracts/started-read";
+import type { HostedError } from "../../contracts/errors.ts";
 import { AppWorkflows } from "@executor-js/ui/dashboard/app-workflows";
 import { AppWebhooks, WebhookSourceConfigurations } from "@executor-js/ui/dashboard/webhooks";
 import { Button } from "@executor-js/ui/components/button";
@@ -11,9 +19,17 @@ import { useOrganizationRoute } from "../components/organization.tsx";
 export function AppResources({
   app,
   view,
+  definitions,
+  runs,
+  webhooks,
+  webhookSources,
 }: {
   readonly app: App;
   readonly view: "workflows" | "webhooks";
+  readonly definitions?: StartedRead<readonly HostedWorkflow[], HostedError> | undefined;
+  readonly runs?: StartedRead<WorkflowRunPage, HostedError> | undefined;
+  readonly webhooks?: StartedRead<readonly WebhookSubscription[], HostedError> | undefined;
+  readonly webhookSources?: StartedRead<readonly WebhookSourceSummary[], HostedError> | undefined;
 }) {
   const { organization, slug } = useOrganizationRoute();
   if (view === "workflows") {
@@ -46,6 +62,8 @@ export function AppResources({
           />
         )}
         Failure={HostedFailure}
+        {...(definitions === undefined ? {} : { definitionsRead: definitions })}
+        {...(runs === undefined ? {} : { runsRead: runs })}
       />
     );
   }
@@ -53,6 +71,7 @@ export function AppResources({
   return (
     <AppWebhooks
       query={hooks.query}
+      {...(webhooks === undefined ? {} : { read: webhooks })}
       retry={hooks.retry}
       Failure={HostedFailure}
       setupLink={(hook) => (
@@ -65,6 +84,7 @@ export function AppResources({
     >
       <WebhookSourceConfigurations
         query={hooks.sources}
+        {...(webhookSources === undefined ? {} : { read: webhookSources })}
         configure={hooks.configure}
         Failure={HostedFailure}
       />

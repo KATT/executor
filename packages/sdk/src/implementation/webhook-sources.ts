@@ -137,7 +137,7 @@ export const makeWebhookSources = (
     automatic = false,
   ) =>
     Effect.gen(function* () {
-      const token = yield* crypto.randomUUIDv4.pipe(Effect.mapError(() => new StorageError()));
+      const token = yield* crypto.randomUUIDv4().pipe(Effect.mapError(() => new StorageError()));
       return yield* Effect.acquireUseRelease(
         transaction(db, (tx) =>
           Effect.gen(function* () {
@@ -447,7 +447,7 @@ export const makeWebhookSources = (
             retries: 0,
           };
           if (existing === undefined) {
-            const id = `src_${yield* crypto.randomUUIDv4.pipe(Effect.mapError(() => new StorageError()))}`;
+            const id = `src_${yield* crypto.randomUUIDv4().pipe(Effect.mapError(() => new StorageError()))}`;
             const createdAt = new Date(yield* now);
             yield* query(() =>
               tx.create("webhookSources", {

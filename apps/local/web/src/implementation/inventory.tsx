@@ -1,21 +1,51 @@
 import { Skeleton } from "@executor-js/ui/components/skeleton";
-import { useAtomValue } from "@effect/atom-react";
 import type { DashboardOverview } from "@executor-js/local-server/contracts";
-import { Link, Outlet, useMatches, useLocation } from "@tanstack/react-router";
+import { Link, Outlet, useMatches, useLocation, useLoaderData } from "@tanstack/react-router";
+import { useAtomResult } from "raf-effect-atom";
 import { Option } from "effect";
 import { AsyncResult } from "effect/reactivity";
-import { createContext, useContext } from "react";
+import { Suspense, createContext, useContext } from "react";
 import { overviewAtom } from "../contracts/api.ts";
 import { InventoryPageSkeleton } from "@executor-js/ui/dashboard/loading";
 import { AppDetailPending } from "@executor-js/ui/dashboard/app-loading";
 import { parseAppSearch } from "../contracts/navigation.ts";
+import {
+  DataBoundary,
+  ForbiddenBoundary,
+  LiveBoundary,
+  MissingBoundary,
+  SessionBoundary,
+  StorageBoundary,
+  useMissingBoundary,
+} from "./components/read-boundaries.tsx";
 
 const OverviewContext = createContext<DashboardOverview | undefined>(undefined);
 
 /** Mount inventory consumers only after authenticated overview data is available. */
 export function InventoryLayout() {
+  return (
+    <SessionBoundary>
+      <ForbiddenBoundary>
+        <StorageBoundary>
+          <DataBoundary>
+            <LiveBoundary>
+              <MissingBoundary>
+                <Suspense fallback={<InventoryPageSkeleton kind="apps" />}>
+                  <InventoryReads />
+                </Suspense>
+              </MissingBoundary>
+            </LiveBoundary>
+          </DataBoundary>
+        </StorageBoundary>
+      </ForbiddenBoundary>
+    </SessionBoundary>
+  );
+}
+
+function InventoryReads() {
   const location = useLocation();
-  const result = useAtomValue(overviewAtom);
+  const { overview } = useLoaderData({ from: "/_dashboard/_inventory" });
+  const result = useMissingBoundary(useAtomResult(overviewAtom, overview));
   const data = AsyncResult.value(result);
   const section = useMatches({ select: (matches) => matches.at(-1)?.staticData.section });
   if (Option.isSome(data))
@@ -24,7 +54,6 @@ export function InventoryLayout() {
         <Outlet />
       </OverviewContext>
     );
-  if (AsyncResult.isFailure(result)) return null;
   if (/^\/apps\/app_[^/]+\/?$/.test(location.pathname)) {
     const search = parseAppSearch(location.search);
     return (

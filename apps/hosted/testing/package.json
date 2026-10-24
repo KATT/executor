@@ -6,15 +6,15 @@
     "./cloud": "./cloud.ts"
   },
   "dependencies": {
-    "@effect/platform-bun": "4.0.1",
-    "@effect/platform-node": "4.0.1",
-    "@effect/sql-pg": "4.0.1",
+    "@effect/platform-bun": "4.0.6",
+    "@effect/platform-node": "4.0.6",
+    "@effect/sql-pg": "4.0.6",
     "@executor-js/dashboard-start": "workspace:*",
     "@executor-js/devtools": "workspace:*",
     "@executor-js/hosted-server": "workspace:*",
     "@executor-js/telemetry": "workspace:*",
     "better-auth": "1.7.5",
-    "effect": "4.0.1",
+    "effect": "4.0.6",
     "pg": "8.16.3",
     "samlify": "2.13.1"
   },

@@ -45,7 +45,7 @@ export function makeToolApprovals(
   crypto: Crypto.Crypto,
   inTransaction: Effect.Effect<boolean>,
 ) {
-  const next = crypto.randomUUIDv4.pipe(Effect.mapError(() => new StorageError()));
+  const next = crypto.randomUUIDv4().pipe(Effect.mapError(() => new StorageError()));
   const read = (requestId: ApprovalRequestId, owner?: OwnerId) =>
     Effect.gen(function* () {
       const row = yield* query(() =>

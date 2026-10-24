@@ -4,14 +4,15 @@ import {
   useMemo,
   useState,
   type ComponentType,
+  type MouseEvent,
   type ReactNode,
 } from "react";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { Exit } from "effect";
 import { AsyncResult } from "effect/reactivity";
-import type { AccountId, App, AppId, ToolName } from "@executor-js/sdk";
+import type { AccountId, App, AppId, ToolName, VersionId } from "@executor-js/sdk";
 import { ConnectionId, type ConnectionView } from "@executor-js/mcp-auth/connections";
-import type { AccountSummary, FailureProps, Inventory, Query } from "../../contracts/dashboard.ts";
+import type { AccountSummary, FailureProps, Inventory } from "../../contracts/dashboard.ts";
 import {
   type ConnectionApp,
   type ConnectionDraft,
@@ -45,7 +46,9 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "../components/popover.tsx";
 import { Skeleton } from "../components/skeleton.tsx";
 import { PageFrame, PageHeader } from "./page.tsx";
-import { QueryView } from "./context.tsx";
+import { StartedQueryView } from "./context.tsx";
+import type { StartedRead } from "../../contracts/started-read.ts";
+import { useAtomResult } from "raf-effect-atom";
 import { AppIcon } from "./common.tsx";
 import {
   appChoices,
@@ -67,10 +70,36 @@ export interface ConnectionToolPickerProps {
   readonly onChange: (names: readonly ToolName[]) => void;
 }
 
-type View =
+/** Which scoped-connection page is open. Each kind is its own URL. */
+export type ScopedConnectionScreen =
   | { readonly kind: "list" }
+  | { readonly kind: "new" }
   | { readonly kind: "detail"; readonly connection: ConnectionId }
-  | { readonly kind: "editor"; readonly draft: ConnectionDraft; readonly existing: boolean };
+  | { readonly kind: "edit"; readonly connection: ConnectionId };
+
+/** Anchor props a host link forwards, including what a composed button passes through. */
+export interface ScopedConnectionLinkProps {
+  readonly className?: string | undefined;
+  readonly children?: ReactNode;
+  readonly onClick?: ((event: MouseEvent<HTMLAnchorElement>) => void) | undefined;
+  readonly title?: string | undefined;
+  readonly "aria-label"?: string | undefined;
+  readonly "aria-current"?: "page" | undefined;
+  readonly "aria-disabled"?: boolean | "true" | "false" | undefined;
+}
+
+/** A link to one saved connection. */
+export interface ScopedConnectionTargetLinkProps extends ScopedConnectionLinkProps {
+  readonly connection: ConnectionId;
+}
+
+/** Real addresses for the list, a new connection, and one connection's detail and editor. */
+export interface ScopedConnectionLinks {
+  readonly ListLink: ComponentType<ScopedConnectionLinkProps>;
+  readonly CreateLink: ComponentType<ScopedConnectionLinkProps>;
+  readonly DetailLink: ComponentType<ScopedConnectionTargetLinkProps>;
+  readonly EditLink: ComponentType<ScopedConnectionTargetLinkProps>;
+}
 
 const plural = (count: number, one: string, many = `${one}s`) =>
   `${count.toLocaleString("en-US")} ${count === 1 ? one : many}`;
@@ -117,6 +146,10 @@ const newDraft = (): ConnectionDraft => ({
  * connections each issue their own MCP URL, and edits apply to connected agents immediately.
  */
 export function ScopedConnectionsPage<E, EL extends E, ES extends E, ER extends E>({
+  screen,
+  links,
+  onSaved,
+  onRevoked,
   query,
   connections,
   save,
@@ -126,8 +159,16 @@ export function ScopedConnectionsPage<E, EL extends E, ES extends E, ER extends 
   agents,
   docs = publicDocsBaseUrl,
   renderTools,
+  toolsApp,
+  onToolsApp,
 }: ScopedConnectionBindings<EL, ES, ER> & {
-  readonly query: Query<Inventory, E>;
+  readonly screen: ScopedConnectionScreen;
+  readonly links: ScopedConnectionLinks;
+  /** Opens the saved connection's page. */
+  readonly onSaved: (connection: ConnectionView) => void;
+  /** Opens the list after a connection is revoked. */
+  readonly onRevoked: () => void;
+  readonly query: StartedRead<Inventory, E>;
   /** Renders every failure: inventory, connection reads, saves and revocation. */
   readonly Failure: ComponentType<FailureProps<E>>;
   readonly installation: ReactNode;
@@ -136,28 +177,44 @@ export function ScopedConnectionsPage<E, EL extends E, ES extends E, ER extends 
   /** Documentation the setup prompt points agents to. */
   readonly docs?: string;
   readonly renderTools: (props: ConnectionToolPickerProps) => ReactNode;
+  /** The app whose tool list is open, from the URL. */
+  readonly toolsApp?: AppId | undefined;
+  /** Writes the open tool list into the URL, including that app's active version. */
+  readonly onToolsApp: (
+    next: { readonly id: AppId; readonly version: VersionId | null } | undefined,
+  ) => void;
 }) {
-  const [view, setView] = useState<View>({ kind: "list" });
   const [revoking, setRevoking] = useState<ConnectionView>();
   const submitRevoke = useAtomSet(revoke, { mode: "promiseExit" });
   const revokeState = useAtomValue(revoke);
-  const back = () => setView({ kind: "list" });
-  const create = () => setView({ kind: "editor", draft: newDraft(), existing: false });
+  const { ListLink, CreateLink, DetailLink, EditLink } = links;
+  const editor = (existing: boolean) => (inventory: Inventory, initial: ConnectionDraft) => (
+    <ConnectionEditor
+      key={initial.id}
+      initial={initial}
+      existing={existing}
+      inventory={inventory}
+      renderTools={renderTools}
+      toolsApp={toolsApp}
+      onToolsApp={onToolsApp}
+      save={save}
+      Failure={Failure}
+      links={links}
+      onSaved={onSaved}
+    />
+  );
   return (
     <PageFrame>
       <div className="max-w-260">
-        {view.kind !== "list" && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="mb-5 -ml-2 text-muted-foreground"
-            onClick={back}
-          >
-            <HugeiconsIcon icon={ArrowLeft02Icon} size={15} />
-            Connections
+        {screen.kind !== "list" && (
+          <Button asChild variant="ghost" size="sm" className="mb-5 -ml-2 text-muted-foreground">
+            <ListLink>
+              <HugeiconsIcon icon={ArrowLeft02Icon} size={15} />
+              Connections
+            </ListLink>
           </Button>
         )}
-        {view.kind === "list" && (
+        {screen.kind === "list" && (
           <div className="max-w-190">
             <PageHeader
               title="Connect your agent"
@@ -175,8 +232,10 @@ export function ScopedConnectionsPage<E, EL extends E, ES extends E, ER extends 
               </div>
               {installation}
             </section>
-            <QueryView<readonly ConnectionView[], E>
-              query={connections}
+            <StartedQueryView<readonly ConnectionView[], E>
+              source={connections.source}
+              handle={connections.handle}
+              claim={connections.claim}
               Failure={Failure}
               pending={<ConnectionListSkeleton />}
             >
@@ -184,13 +243,9 @@ export function ScopedConnectionsPage<E, EL extends E, ES extends E, ER extends 
                 items.length === 0 ? (
                   <p className="mt-8 text-[13px] text-muted-foreground">
                     Want an agent limited to a few apps or tools?{" "}
-                    <button
-                      type="button"
-                      onClick={create}
-                      className="text-foreground underline decoration-muted-foreground/50 underline-offset-4 hover:decoration-foreground"
-                    >
+                    <CreateLink className="text-foreground underline decoration-muted-foreground/50 underline-offset-4 hover:decoration-foreground">
                       Create a scoped connection
-                    </button>
+                    </CreateLink>
                   </p>
                 ) : (
                   <section aria-label="Scoped connections" className="mt-10">
@@ -198,55 +253,46 @@ export function ScopedConnectionsPage<E, EL extends E, ES extends E, ER extends 
                       <h2 className="text-xs font-medium text-muted-foreground">
                         Scoped connections
                       </h2>
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        className="text-muted-foreground"
-                        onClick={create}
-                      >
-                        <HugeiconsIcon icon={Add01Icon} size={13} />
-                        New scoped connection
+                      <Button asChild variant="ghost" size="xs" className="text-muted-foreground">
+                        <CreateLink>
+                          <HugeiconsIcon icon={Add01Icon} size={13} />
+                          New scoped connection
+                        </CreateLink>
                       </Button>
                     </div>
-                    <ConnectionList
-                      items={items}
-                      query={query}
-                      onOpen={(connection) => setView({ kind: "detail", connection })}
-                    />
+                    <ConnectionList items={items} query={query} DetailLink={DetailLink} />
                   </section>
                 )
               }
-            </QueryView>
+            </StartedQueryView>
             {agents}
           </div>
         )}
-        {view.kind === "editor" && (
+        {screen.kind === "new" && (
           <>
             <PageHeader
-              title={view.existing ? "Edit connection" : "New connection"}
+              title="New connection"
               description="Turn on the apps this agent needs. Everything else stays off. Approval rules come from each app’s code."
             />
-            <QueryView query={query} Failure={Failure}>
-              {(inventory) => (
-                <ConnectionEditor
-                  key={view.draft.id}
-                  initial={view.draft}
-                  existing={view.existing}
-                  inventory={inventory}
-                  renderTools={renderTools}
-                  save={save}
-                  Failure={Failure}
-                  onCancel={back}
-                  onSaved={(saved) => setView({ kind: "detail", connection: saved.id })}
-                />
-              )}
-            </QueryView>
+            <StartedQueryView
+              source={query.source}
+              handle={query.handle}
+              claim={query.claim}
+              Failure={Failure}
+            >
+              {(inventory) => <NewConnection inventory={inventory} render={editor(false)} />}
+            </StartedQueryView>
           </>
         )}
-        {view.kind === "detail" && (
-          <QueryView<readonly ConnectionView[], E> query={connections} Failure={Failure}>
+        {(screen.kind === "detail" || screen.kind === "edit") && (
+          <StartedQueryView<readonly ConnectionView[], E>
+            source={connections.source}
+            handle={connections.handle}
+            claim={connections.claim}
+            Failure={Failure}
+          >
             {(items) => {
-              const connection = items.find((item) => item.id === view.connection);
+              const connection = items.find((item) => item.id === screen.connection);
               if (connection === undefined)
                 return (
                   <PageHeader
@@ -254,46 +300,50 @@ export function ScopedConnectionsPage<E, EL extends E, ES extends E, ER extends 
                     description="This connection was revoked or no longer exists."
                   />
                 );
+              if (screen.kind === "edit")
+                return (
+                  <>
+                    <PageHeader
+                      title="Edit connection"
+                      description="Turn on the apps this agent needs. Everything else stays off. Approval rules come from each app’s code."
+                    />
+                    <StartedQueryView
+                      source={query.source}
+                      handle={query.handle}
+                      claim={query.claim}
+                      Failure={Failure}
+                    >
+                      {(inventory) => (
+                        <EditConnection
+                          key={connection.id}
+                          connection={connection}
+                          inventory={inventory}
+                          render={editor(true)}
+                        />
+                      )}
+                    </StartedQueryView>
+                  </>
+                );
               return (
-                <QueryView query={query} Failure={Failure}>
-                  {(inventory) => {
-                    const draft = connectionDraft(connection, inventoryChoices(inventory));
-                    return (
-                      <>
-                        <PageHeader
-                          title={connection.name}
-                          description={`${plural(connection.policy.apps.length, "app")}. Every other app is excluded. Approval rules come from each app’s code.`}
-                        >
-                          <Button
-                            variant="outline"
-                            onClick={() => setView({ kind: "editor", draft, existing: true })}
-                          >
-                            Edit access
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            className="text-destructive"
-                            onClick={() => setRevoking(connection)}
-                          >
-                            Revoke
-                          </Button>
-                        </PageHeader>
-                        <ConnectionAccessList apps={draft.apps} inventory={inventory} />
-                        <section className="mt-8 max-w-190">
-                          <h2 className="mb-3 text-sm font-medium">Connect your agent</h2>
-                          <McpInstallInstructions
-                            endpoint={connection.url}
-                            docs={docs}
-                            next="show me which apps and tools this connection can use"
-                          />
-                        </section>
-                      </>
-                    );
-                  }}
-                </QueryView>
+                <StartedQueryView
+                  source={query.source}
+                  handle={query.handle}
+                  claim={query.claim}
+                  Failure={Failure}
+                >
+                  {(inventory) => (
+                    <ConnectionDetail
+                      connection={connection}
+                      inventory={inventory}
+                      docs={docs}
+                      EditLink={EditLink}
+                      onRevoke={() => setRevoking(connection)}
+                    />
+                  )}
+                </StartedQueryView>
               );
             }}
-          </QueryView>
+          </StartedQueryView>
         )}
       </div>
       <Dialog
@@ -327,7 +377,7 @@ export function ScopedConnectionsPage<E, EL extends E, ES extends E, ER extends 
                 const result = await submitRevoke(revoking.id);
                 if (Exit.isSuccess(result)) {
                   setRevoking(undefined);
-                  back();
+                  onRevoked();
                 }
               }}
             >
@@ -337,6 +387,72 @@ export function ScopedConnectionsPage<E, EL extends E, ES extends E, ER extends 
         </DialogContent>
       </Dialog>
     </PageFrame>
+  );
+}
+
+/** The create page chooses one id for this visit, so a retried submit returns the same connection. */
+function NewConnection({
+  inventory,
+  render,
+}: {
+  readonly inventory: Inventory;
+  readonly render: (inventory: Inventory, initial: ConnectionDraft) => ReactNode;
+}) {
+  const [draft] = useState(newDraft);
+  return render(inventory, draft);
+}
+
+/** The edit page starts from the saved connection and keeps that draft while the page stays open. */
+function EditConnection({
+  connection,
+  inventory,
+  render,
+}: {
+  readonly connection: ConnectionView;
+  readonly inventory: Inventory;
+  readonly render: (inventory: Inventory, initial: ConnectionDraft) => ReactNode;
+}) {
+  const [draft] = useState(() => connectionDraft(connection, inventoryChoices(inventory)));
+  return render(inventory, draft);
+}
+
+function ConnectionDetail({
+  connection,
+  inventory,
+  docs,
+  EditLink,
+  onRevoke,
+}: {
+  readonly connection: ConnectionView;
+  readonly inventory: Inventory;
+  readonly docs: string;
+  readonly EditLink: ScopedConnectionLinks["EditLink"];
+  readonly onRevoke: () => void;
+}) {
+  const draft = connectionDraft(connection, inventoryChoices(inventory));
+  return (
+    <>
+      <PageHeader
+        title={connection.name}
+        description={`${plural(connection.policy.apps.length, "app")}. Every other app is excluded. Approval rules come from each app’s code.`}
+      >
+        <Button asChild variant="outline">
+          <EditLink connection={connection.id}>Edit access</EditLink>
+        </Button>
+        <Button variant="ghost" className="text-destructive" onClick={onRevoke}>
+          Revoke
+        </Button>
+      </PageHeader>
+      <ConnectionAccessList apps={draft.apps} inventory={inventory} />
+      <section className="mt-8 max-w-190">
+        <h2 className="mb-3 text-sm font-medium">Connect your agent</h2>
+        <McpInstallInstructions
+          endpoint={connection.url}
+          docs={docs}
+          next="show me which apps and tools this connection can use"
+        />
+      </section>
+    </>
   );
 }
 
@@ -367,13 +483,13 @@ function ConnectionListSkeleton() {
 function ConnectionList<E>({
   items,
   query,
-  onOpen,
+  DetailLink,
 }: {
   readonly items: readonly ConnectionView[];
-  readonly query: Query<Inventory, E>;
-  readonly onOpen: (connection: ConnectionId) => void;
+  readonly query: StartedRead<Inventory, E>;
+  readonly DetailLink: ScopedConnectionLinks["DetailLink"];
 }) {
-  const inventory = useAtomValue(query);
+  const inventory = useAtomResult(query.source, query.handle);
   const names = new Map<AppId, string>(
     AsyncResult.isSuccess(inventory) ? inventory.value.apps.map((app) => [app.id, app.name]) : [],
   );
@@ -382,10 +498,9 @@ function ConnectionList<E>({
       {items.map((item) => {
         const apps = item.policy.apps.map((app) => names.get(app.app) ?? "Unavailable app");
         return (
-          <button
+          <DetailLink
             key={item.id}
-            type="button"
-            onClick={() => onOpen(item.id)}
+            connection={item.id}
             className="flex w-full items-center gap-4 px-1 py-3 text-left transition-colors hover:bg-muted/40"
           >
             <span className="min-w-0 flex-1">
@@ -401,7 +516,7 @@ function ConnectionList<E>({
               {plural(item.policy.apps.length, "app")}
             </span>
             <HugeiconsIcon icon={ArrowRight02Icon} size={15} className="text-muted-foreground" />
-          </button>
+          </DetailLink>
         );
       })}
     </div>
@@ -557,18 +672,24 @@ function ConnectionEditor<E, ES extends E>({
   existing,
   inventory,
   renderTools,
+  toolsApp,
+  onToolsApp,
   save,
   Failure,
-  onCancel,
+  links,
   onSaved,
 }: {
   readonly initial: ConnectionDraft;
   readonly existing: boolean;
   readonly inventory: Inventory;
   readonly renderTools: (props: ConnectionToolPickerProps) => ReactNode;
+  readonly toolsApp: AppId | undefined;
+  readonly onToolsApp: (
+    next: { readonly id: AppId; readonly version: VersionId | null } | undefined,
+  ) => void;
   readonly save: ScopedConnectionBindings<never, ES, never>["save"];
   readonly Failure: ComponentType<FailureProps<E>>;
-  readonly onCancel: () => void;
+  readonly links: ScopedConnectionLinks;
   readonly onSaved: (connection: ConnectionView) => void;
 }) {
   const submit = useAtomSet(save, { mode: "promiseExit" });
@@ -576,7 +697,6 @@ function ConnectionEditor<E, ES extends E>({
   const [draft, setDraft] = useState(initial);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>(initial.apps.length > 0 ? "selected" : "all");
-  const [expanded, setExpanded] = useState<AppId>();
   const query = useDeferredValue(search.trim().toLowerCase());
   const nameId = useId();
   // Apps already in the connection come first; the order is fixed so rows never jump on toggle.
@@ -745,8 +865,12 @@ function ConnectionEditor<E, ES extends E>({
               key={choice.app.id}
               choices={choice}
               selection={selections.get(choice.app.id)}
-              expanded={expanded === choice.app.id}
-              onExpandedChange={(open) => setExpanded(open ? choice.app.id : undefined)}
+              expanded={toolsApp === choice.app.id}
+              onExpandedChange={(open) =>
+                onToolsApp(
+                  open ? { id: choice.app.id, version: choice.app.activeVersion } : undefined,
+                )
+              }
               onChange={(next) => setSelection(choice.app.id, next)}
               renderTools={renderTools}
             />
@@ -789,8 +913,19 @@ function ConnectionEditor<E, ES extends E>({
           )}
         </p>
         <div className="flex gap-2">
-          <Button type="button" variant="outline" disabled={saving.waiting} onClick={onCancel}>
-            Cancel
+          <Button
+            asChild
+            variant="outline"
+            aria-disabled={saving.waiting || undefined}
+            onClick={(event) => {
+              if (saving.waiting) event.preventDefault();
+            }}
+          >
+            {existing ? (
+              <links.DetailLink connection={initial.id}>Cancel</links.DetailLink>
+            ) : (
+              <links.ListLink>Cancel</links.ListLink>
+            )}
           </Button>
           <Button type="submit" disabled={!valid || saving.waiting} loading={saving.waiting}>
             {existing ? "Save changes" : "Create connection"}

@@ -1,9 +1,11 @@
-import { createContext, useContext, type ReactNode } from "react";
-import { RegistryContext, useAtomValue, useAtomRefresh } from "@effect/atom-react";
-import { type Cause, Option } from "effect";
+import { Suspense, createContext, useContext, type ReactNode } from "react";
+import { RegistryContext, useAtomRefresh, useAtomValue } from "@effect/atom-react";
+import { Hydration, useAtomResult, useHandleValue, useWaterfall } from "raf-effect-atom";
+import { Cause, Option } from "effect";
 import { Skeleton } from "../components/skeleton.tsx";
-import { AsyncResult, type Atom } from "effect/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 import type { DashboardBindings, Query, QueryProps } from "../../contracts/dashboard.ts";
+import type { StartedRead } from "../../contracts/started-read.ts";
 
 const Context = createContext<DashboardBindings | null>(null);
 /** Bind product navigation and icon metadata, without an HTTP client or an auth context. */
@@ -28,21 +30,329 @@ export function useQuery<A, E>(atom: Query<A, E>) {
   return { result, data: AsyncResult.value(result), refresh };
 }
 
+/**
+ * Start a query whose key exists only in this render, then read the settled result. The caller
+ * suspends until it settles, so it needs a Suspense boundary.
+ */
+export function useWaterfallQuery<A, E>(query: Query<A, E>) {
+  const handle = useWaterfall(query);
+  const result = useAtomResult(query, handle);
+  const refresh = useAtomRefresh(query);
+  return { result, data: AsyncResult.value(result), refresh };
+}
+
+const serverWaits = new WeakMap<object, WeakMap<object, Promise<void>>>();
+const refreshingFailures = new WeakMap<object, WeakMap<object, Promise<void>>>();
+
+/**
+ * On the server, wait until an initial read settles so the document contains it. The browser
+ * keeps the current result, including the page's own pending state while a refresh is in flight.
+ */
+export function suspendIfUnsettled<A, E>(
+  registry: {
+    readonly subscribe: (
+      atom: Atom.Atom<AsyncResult.AsyncResult<A, E>>,
+      onResult: (result: AsyncResult.AsyncResult<A, E>) => void,
+    ) => () => void;
+  },
+  atom: Atom.Atom<AsyncResult.AsyncResult<A, E>>,
+  result: AsyncResult.AsyncResult<A, E>,
+) {
+  if (typeof window !== "undefined" || !AsyncResult.isInitial(result)) return;
+  let atoms = serverWaits.get(registry);
+  if (atoms === undefined) {
+    atoms = new WeakMap();
+    serverWaits.set(registry, atoms);
+  }
+  let promise = atoms.get(atom);
+  if (promise === undefined) {
+    promise = new Promise<void>((resolve) => {
+      const dispose = registry.subscribe(atom, (next) => {
+        if (AsyncResult.isInitial(next)) return;
+        dispose();
+        resolve();
+      });
+    });
+    atoms.set(atom, promise);
+  }
+  throw promise;
+}
+
+/**
+ * A handler's reset refreshes a failed atom and leaves the old failure marked waiting.
+ * Suspending until that refresh settles keeps the handler from painting the old failure again.
+ */
+function suspendWhileRefreshingFailure<A, E>(
+  registry: {
+    readonly subscribe: (
+      atom: Atom.Atom<AsyncResult.AsyncResult<A, E>>,
+      onResult: (result: AsyncResult.AsyncResult<A, E>) => void,
+    ) => () => void;
+  },
+  atom: Atom.Atom<AsyncResult.AsyncResult<A, E>>,
+  result: AsyncResult.AsyncResult<A, E>,
+) {
+  if (!(AsyncResult.isFailure(result) && result.waiting)) return;
+  let found = refreshingFailures.get(registry);
+  if (found === undefined) {
+    found = new WeakMap();
+    refreshingFailures.set(registry, found);
+  }
+  const atoms = found;
+  let promise = atoms.get(atom);
+  if (promise === undefined) {
+    promise = new Promise<void>((resolve) => {
+      const dispose = registry.subscribe(atom, (next) => {
+        if (AsyncResult.isFailure(next) && next.waiting) return;
+        dispose();
+        atoms.delete(atom);
+        resolve();
+      });
+    });
+    atoms.set(atom, promise);
+  }
+  throw promise;
+}
+
+/**
+ * The atom the server sent, or `source` when it has no serializable value of its own.
+ * A revalidated view points at that value with `initialValueTarget`.
+ */
+function hydratedRead<A>(source: Atom.Atom<A>): {
+  readonly pin: Atom.Atom<unknown>;
+  readonly read: Atom.Atom<A>;
+} {
+  let serializable: Atom.Atom<unknown> | undefined;
+  for (
+    let target: Atom.Atom<unknown> | undefined = source;
+    target !== undefined;
+    target = target.initialValueTarget
+  ) {
+    if (Atom.isSerializable(target)) {
+      serializable = target;
+      break;
+    }
+  }
+  if (serializable === undefined) return { pin: source, read: source };
+  const kept = Hydration.hydrated(serializable);
+  return { pin: kept, read: serializable === source ? (kept as Atom.Atom<A>) : source };
+}
+
+/**
+ * Build the serializable node from the value the server sent before anything reads a derived
+ * view of it. The derived view is not itself serializable, so reading it first would run the
+ * request again.
+ */
+export function pinHydratedValue<A>(
+  registry: { readonly get: (atom: Atom.Atom<unknown>) => unknown },
+  source: Atom.Atom<A>,
+) {
+  const kept = hydratedRead(source);
+  if (kept.pin !== kept.read) registry.get(kept.pin);
+}
+
+/**
+ * Read a handle the route loader started. The server suspends until a prefetch settles. The
+ * browser renders the current result, so a pending read stays on the page and a refresh keeps
+ * that page mounted. The read keeps the value the server sent and ends the loader lease once it
+ * is subscribed. A browser-only read is not waited on: the server has no result for it. A failure
+ * the boundary claims still suspends in `useClaimedResult` while that failure refreshes. An
+ * unclaimed failure stays on the page.
+ */
+export function useStartedQuery<A, E>(read: StartedRead<A, E>) {
+  const registry = useContext(RegistryContext);
+  // Mounts the atom, keeps the value the server sent, and ends the loader lease after it
+  // subscribes. It never suspends: every `Initial` is the loading state, a waiting failure stays
+  // in the result, and a defect is a failure instead of a throw.
+  const result = useHandleValue(read.source, read.handle);
+  const refresh = useAtomRefresh(read.source);
+  if (read.handle.inBrowser !== true) suspendIfUnsettled(registry, read.source, result);
+  return { result, data: AsyncResult.value(result), refresh };
+}
+
+/**
+ * Run a boundary hook on a read. A failure with no typed error is a transport defect the page
+ * renders itself, so the hook sees an initial result and this returns the defect. A failure the
+ * boundary claims is thrown by the hook: while that failure is still refreshing, this read
+ * suspends until the refresh settles, which keeps the handler from painting the old failure
+ * again. A failure the boundary does not claim is returned as it is, including while it
+ * refreshes, so the page keeps its own error and retry control mounted.
+ */
+export function useClaimedResult<A, E>(
+  source: Atom.Atom<AsyncResult.AsyncResult<A, E>>,
+  result: AsyncResult.AsyncResult<A, E>,
+  useClaim: NonNullable<StartedRead<A, E>["claim"]>,
+): AsyncResult.AsyncResult<A, E> {
+  const registry = useContext(RegistryContext);
+  const refreshing = AsyncResult.isFailure(result) && result.waiting;
+  const defect =
+    AsyncResult.isFailure(result) && Option.isNone(Cause.findErrorOption(result.cause));
+  // The hook throws the errors its boundary owns. Catching that throw is what distinguishes a
+  // claimed failure from one the page renders: only the claimed one suspends while it refreshes.
+  try {
+    const claimed = useClaim(defect ? AsyncResult.initial<A, E>(false) : result);
+    return defect ? result : (claimed as AsyncResult.AsyncResult<A, E>);
+  } catch (error) {
+    if (refreshing) suspendWhileRefreshingFailure(registry, source, result);
+    throw error;
+  }
+}
+
+/** Apply `claim` where this result is read. Without one, the result is unchanged. */
+export function ClaimResult<A, E>({
+  source,
+  result,
+  claim,
+  children,
+}: {
+  readonly source: Atom.Atom<AsyncResult.AsyncResult<A, E>>;
+  readonly result: AsyncResult.AsyncResult<A, E>;
+  readonly claim: StartedRead<A, E>["claim"];
+  readonly children: (result: AsyncResult.AsyncResult<A, E>) => ReactNode;
+}) {
+  if (claim === undefined) return children(result);
+  return (
+    <ClaimedResultBody source={source} result={result} claim={claim}>
+      {children}
+    </ClaimedResultBody>
+  );
+}
+
+function ClaimedResultBody<A, E>({
+  source,
+  result,
+  claim,
+  children,
+}: {
+  readonly source: Atom.Atom<AsyncResult.AsyncResult<A, E>>;
+  readonly result: AsyncResult.AsyncResult<A, E>;
+  readonly claim: NonNullable<StartedRead<A, E>["claim"]>;
+  readonly children: (result: AsyncResult.AsyncResult<A, E>) => ReactNode;
+}) {
+  return children(useClaimedResult(source, result, claim));
+}
+
 /** Loading/failure rendering follows the same source lifetime in every host. */
 export function QueryView<A, E>({
   query,
+  read,
   Failure,
   children,
   pending = <LoadingRows />,
 }: QueryProps<A, E> & {
+  readonly read?: StartedRead<A, E> | undefined;
   readonly children: (value: A) => ReactNode;
   readonly pending?: ReactNode;
 }) {
-  const { result, refresh } = useQuery(query);
+  if (read !== undefined)
+    return (
+      <StartedQueryView
+        source={read.source}
+        handle={read.handle}
+        claim={read.claim}
+        Failure={Failure}
+        pending={pending}
+      >
+        {children}
+      </StartedQueryView>
+    );
+  return (
+    <QueryViewQuery query={query} Failure={Failure} pending={pending}>
+      {children}
+    </QueryViewQuery>
+  );
+}
+
+function QueryViewQuery<A, E>({
+  query,
+  Failure,
+  children,
+  pending,
+}: QueryProps<A, E> & {
+  readonly children: (value: A) => ReactNode;
+  readonly pending: ReactNode;
+}) {
+  return (
+    <Suspense fallback={pending}>
+      <QueryViewWaterfall query={query} Failure={Failure} pending={pending}>
+        {children}
+      </QueryViewWaterfall>
+    </Suspense>
+  );
+}
+
+function QueryViewWaterfall<A, E>({
+  query,
+  Failure,
+  children,
+  pending,
+}: QueryProps<A, E> & {
+  readonly children: (value: A) => ReactNode;
+  readonly pending: ReactNode;
+}) {
+  const { result, refresh } = useWaterfallQuery(query);
   return (
     <QueryResult result={result} Failure={Failure} retry={refresh} pending={pending}>
       {children}
     </QueryResult>
+  );
+}
+
+function StartedQueryBody<A, E>({
+  source,
+  handle,
+  claim,
+  Failure,
+  children,
+  pending,
+}: {
+  readonly source: StartedRead<A, E>["source"];
+  readonly handle: StartedRead<A, E>["handle"];
+  readonly claim: StartedRead<A, E>["claim"];
+  readonly Failure: QueryProps<A, E>["Failure"];
+  readonly children: (value: A) => ReactNode;
+  readonly pending: ReactNode;
+}) {
+  const { result, refresh } = useStartedQuery({ source, handle });
+  return (
+    <ClaimResult source={source} result={result} claim={claim}>
+      {(claimed) => (
+        <QueryResult result={claimed} Failure={Failure} retry={refresh} pending={pending}>
+          {children}
+        </QueryResult>
+      )}
+    </ClaimResult>
+  );
+}
+
+/** Read a handle the route loader started. Suspense covers the wait; claimed errors throw to their boundaries. */
+export function StartedQueryView<A, E>({
+  source,
+  handle,
+  claim,
+  Failure,
+  children,
+  pending = <LoadingRows />,
+}: {
+  readonly source: StartedRead<A, E>["source"];
+  readonly handle: StartedRead<A, E>["handle"];
+  readonly claim?: StartedRead<A, E>["claim"];
+  readonly Failure: QueryProps<A, E>["Failure"];
+  readonly children: (value: A) => ReactNode;
+  readonly pending?: ReactNode;
+}) {
+  return (
+    <Suspense fallback={pending}>
+      <StartedQueryBody
+        source={source}
+        handle={handle}
+        claim={claim}
+        Failure={Failure}
+        pending={pending}
+      >
+        {children}
+      </StartedQueryBody>
+    </Suspense>
   );
 }
 

@@ -1,7 +1,7 @@
 /** Browser navigation only. No OAuth code, client secret, or token is persisted here. */
 import { Effect, Option, Redacted, Schema } from "effect";
 import { OAuthCallbackPath } from "@executor-js/local-server/contracts";
-import { OAuthReturn } from "../contracts/oauth.ts";
+import { OAuthReturn, stashOAuthCallback } from "../contracts/oauth.ts";
 import type { AccountId } from "@executor-js/sdk";
 
 const returnKey = "executor.oauth.return";
@@ -19,8 +19,10 @@ export const oauthCallbackUrl = (location: URL) => {
 export const readOAuthCallback = Effect.sync(() => {
   const url = new URL(window.location.href);
   if (url.pathname !== OAuthCallbackPath || !url.searchParams.has("state")) return undefined;
+  const callback = oauthCallbackUrl(url);
+  stashOAuthCallback(callback);
   window.history.replaceState(null, "", OAuthCallbackPath);
-  return oauthCallbackUrl(url);
+  return callback;
 });
 /** Remember only the app page to resume after provider consent. */
 export const openOAuth = (

@@ -1,4 +1,6 @@
-import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import type { Handle } from "raf-effect-atom";
+import { useStartedQuery } from "@executor-js/ui/dashboard/context";
 import { Exit } from "effect";
 import { AsyncResult } from "effect/reactivity";
 import { useState } from "react";
@@ -35,9 +37,11 @@ export function PasskeysPending() {
 }
 
 /** Cloud sign-in passkeys. Registration starts the WebAuthn ceremony only after a click. */
-export function Passkeys() {
-  const passkeys = useAtomValue(passkeysAtom);
-  const retry = useAtomRefresh(passkeysAtom);
+export function Passkeys({ passkeys: handle }: { readonly passkeys: Handle<typeof passkeysAtom> }) {
+  const { result: passkeys, refresh: retry } = useStartedQuery({
+    source: passkeysAtom,
+    handle,
+  });
   const add = useAtomSet(addPasskeyAtom, { mode: "promiseExit" });
   const adding = useAtomValue(addPasskeyAtom);
   const [error, setError] = useState<string>();

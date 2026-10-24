@@ -1,5 +1,5 @@
 import { AppView, AppViewFromUrl } from "@executor-js/ui/contracts/dashboard";
-import { AccountId } from "@executor-js/sdk";
+import { AccountId, AppId, VersionId } from "@executor-js/sdk";
 import { Option, Schema } from "effect";
 
 /** Dashboard areas used by route metadata to highlight the sidebar. */
@@ -9,6 +9,8 @@ export type NavigationSection = "apps" | "accounts" | "connect" | "approvals";
 export interface AppSearch {
   readonly view?: AppView | undefined;
   readonly tool?: string | undefined;
+  /** The version this page reads. Links that already know it put it here. */
+  readonly version?: VersionId | undefined;
 }
 
 /** The account list marks a linked account, which has no page of its own. */
@@ -22,9 +24,22 @@ const text = Schema.decodeUnknownOption(Schema.NonEmptyString);
 export function parseAppSearch(search: Record<string, unknown>): AppSearch {
   const view = Schema.decodeUnknownOption(AppViewFromUrl)(search.view);
   const tool = text(search.tool);
+  const version = Schema.decodeUnknownOption(VersionId)(search.version);
   return {
     view: Option.getOrUndefined(view),
     tool: Option.getOrUndefined(tool),
+    version: Option.getOrUndefined(version),
+  };
+}
+
+/** The connection editor's open tool list. The version is the app's active version. */
+export function parseConnectSearch(search: Record<string, unknown>): {
+  readonly app?: AppId | undefined;
+  readonly version?: VersionId | undefined;
+} {
+  return {
+    app: Option.getOrUndefined(Schema.decodeUnknownOption(AppId)(search.app)),
+    version: Option.getOrUndefined(Schema.decodeUnknownOption(VersionId)(search.version)),
   };
 }
 
@@ -51,7 +66,11 @@ export function localPageTitle(pathname: string): string {
   if (section === "mcp" && item === "approve") return "Review request";
   if (section === "app-auth") return "Sign in to app";
   if (section === "approvals") return item ? "Review request" : "Approvals";
-  if (section === "connect") return "Connections";
+  if (section === "connect") {
+    if (item === "new") return "New connection";
+    if (action === "edit") return "Edit connection";
+    return item ? "Connection" : "Connections";
+  }
   if (section === "account-connect") return "Connect account";
   if (section === "api" && item === "oauth") return "Connecting account";
   if (section === "apps") {

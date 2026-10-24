@@ -8,7 +8,7 @@ from initialization, uses that version. Only an invalid or unsupported header
 must be rejected. Its other transport rejections also had empty bodies, which
 clients such as the MCP TypeScript SDK print as a bare `Error POSTing to endpoint:`.
 
-`effect@4.0.1.patch` changes `ai/internal/mcpRuntime` and `ai/McpServer` in source
+`effect@4.0.6.patch` changes `ai/internal/mcpRuntime` and `ai/McpServer` in source
 and distributed JavaScript:
 
 - A session request without the header uses the session's negotiated version.

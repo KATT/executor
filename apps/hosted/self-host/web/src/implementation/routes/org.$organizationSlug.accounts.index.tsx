@@ -1,10 +1,15 @@
 import { parseAccountsSearch } from "@executor-js/hosted-web/contracts/navigation";
+import { startAfterAccess } from "@executor-js/hosted-web/contracts/guarded-read";
 import { createFileRoute } from "@tanstack/react-router";
-import { AccountsPage } from "@executor-js/hosted-web/pages/accounts";
+import { AccountsPage, loadAccounts } from "@executor-js/hosted-web/pages/accounts";
 
 /** Hosted account inventory. */
 export const Route = createFileRoute("/org/$organizationSlug/accounts/")({
   validateSearch: parseAccountsSearch,
+  loader: ({ context, params }) =>
+    startAfterAccess(context.atoms, params.organizationSlug, (organization) =>
+      loadAccounts(context.atoms, organization),
+    ),
   component: Page,
 });
 
@@ -23,6 +28,7 @@ function Page() {
           });
         },
       }}
+      reads={Route.useLoaderData()}
     />
   );
 }
