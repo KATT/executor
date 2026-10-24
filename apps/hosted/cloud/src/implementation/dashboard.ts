@@ -1,5 +1,9 @@
 /** Cloud's dashboard document adapter. Static assets stay on Cloudflare's asset server. */
-import { dashboardDocument, type DashboardServer } from "@executor-js/dashboard-start/document";
+import {
+  dashboardDocument,
+  signInLocation,
+  type DashboardServer,
+} from "@executor-js/dashboard-start/document";
 import type { DocumentApi } from "@executor-js/dashboard-start/document-api";
 import { hostedDocumentContext } from "@executor-js/hosted-server/document";
 import type { ResourceOrigins } from "@executor-js/hosted-server";
@@ -61,7 +65,17 @@ export const cloudDashboard = (renderer: DashboardRenderer, hosts: CloudPageHost
   );
   /** Render one dashboard document for the current request. */
   return (entry: CloudEntryPage | null) =>
-    dashboardDocument({ server, context: cloudDocumentContext(hosts)(entry) });
+    dashboardDocument({
+      server,
+      context: cloudDocumentContext(hosts)(entry),
+      // The same pages the root route renders without a session.
+      signedOut: (context) =>
+        signInLocation(context, new URL(context.path, "http://localhost").pathname, [
+          "/login",
+          "/login/sso",
+          "/email/unsubscribe",
+        ]),
+    });
 };
 
 /**

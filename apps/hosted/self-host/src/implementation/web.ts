@@ -1,5 +1,5 @@
 /** Dashboard serving for both self-host runtimes. Only file access differs between them. */
-import { dashboardDocument } from "@executor-js/dashboard-start/document";
+import { dashboardDocument, signInLocation } from "@executor-js/dashboard-start/document";
 import type { DocumentApi } from "@executor-js/dashboard-start/document-api";
 import { hostedDocumentContext } from "@executor-js/hosted-server/document";
 import { SignInSettings } from "@executor-js/hosted-self-host-web/document";
@@ -48,6 +48,10 @@ const document = dashboardDocument({
     Config.String("BETTER_AUTH_URL").pipe(
       Effect.flatMap((origin) => selfHostDocumentContext(singleResourceOrigin(origin))(api)),
     ),
+  // The same pages the root route renders without a session. Decided here so a search rewrite
+  // cannot replace the sign-in redirect.
+  signedOut: (context) =>
+    signInLocation(context, new URL(context.path, "http://localhost").pathname, ["/login"]),
 });
 
 /** Hashed build output never changes; everything else revalidates. */
