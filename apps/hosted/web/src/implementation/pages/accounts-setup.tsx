@@ -164,8 +164,8 @@ function AccountsSetup({ reads }: { readonly reads: AccountsSetupReads }) {
   const sequence = useSetupSequence();
   useSetupViewed("setup_accounts");
   const dashboard = useDashboard();
-  // The setup layout starts the catalog in the browser. Reading that handle with
-  // `useAtomResult` throws on the server, and throws a transport defect out of the list.
+  // The setup layout starts the catalog in the browser. `useHandleValue` keeps a
+  // transport defect in this list, so Skip for now stays mounted.
   const catalogQuery = useStartedQuery({
     source: catalogAtom,
     handle: dashboard.catalogHandle,

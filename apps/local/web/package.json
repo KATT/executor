@@ -32,7 +32,7 @@
     "@tanstack/react-start": "1.169.4",
     "effect": "4.0.6",
     "effect-atom-boundary": "0.3.0",
-    "raf-effect-atom": "0.3.2",
+    "raf-effect-atom": "0.3.3",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "scheduler": "0.27.0"
