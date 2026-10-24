@@ -7,6 +7,7 @@ import {
   organizationSlugMaxLength,
 } from "@executor-js/hosted-server/organization";
 import { organizationTargetAtom } from "../../contracts/organization-reference.ts";
+import { Hydration } from "raf-effect-atom";
 import { type Atom, AsyncResult } from "effect/reactivity";
 import { EmptyState } from "@executor-js/ui/dashboard/empty-state";
 import { RegistryContext, useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
@@ -385,7 +386,9 @@ export function OrganizationBoundary({
     paint.mark();
   }, [paint]);
   usePreload(accessAtom(reference), organizationsAtom);
-  const access = useAtomValue(accessAtom(reference));
+  // The first browser read must keep the value the server sent. Reading the query directly runs
+  // its effect again and the frame renders a different tree than the document.
+  const access = useAtomValue(Hydration.hydrated(accessAtom(reference)));
   const accessSucceeded = AsyncResult.isSuccess(access);
   // The verdict itself is the snapshot, so a document whose check succeeded does not re-render
   // here after hydration; that update would reach regions still waiting to hydrate.
@@ -394,11 +397,11 @@ export function OrganizationBoundary({
     () => true,
     () => accessSucceeded,
   );
-  const session = useAtomValue(sessionAtom);
-  const snapshot = useAtomValue(organizationPresentation(reference));
+  const session = useAtomValue(Hydration.hydrated(sessionAtom));
+  const snapshot = useAtomValue(Hydration.hydrated(organizationPresentation(reference)));
   const registry = useContext(RegistryContext);
-  const target = useAtomValue(organizationTargetAtom(reference));
-  const organizations = useAtomValue(organizationsAtom);
+  const target = useAtomValue(Hydration.hydrated(organizationTargetAtom(reference)));
+  const organizations = useAtomValue(Hydration.hydrated(organizationsAtom));
   const refreshAccess = useAtomRefresh(accessAtom(reference));
   const refreshOrganizations = useAtomRefresh(organizationsAtom);
   const router = useRouter();

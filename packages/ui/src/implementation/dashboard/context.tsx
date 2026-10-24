@@ -1,8 +1,9 @@
 import { Suspense, createContext, useContext, type ReactNode } from "react";
 import { RegistryContext, useAtomMount, useAtomRefresh, useAtomValue } from "@effect/atom-react";
+import { Hydration } from "raf-effect-atom";
 import { Cause, Option, Predicate } from "effect";
 import { Skeleton } from "../components/skeleton.tsx";
-import { AsyncResult, type Atom } from "effect/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 import type { DashboardBindings, Query, QueryProps } from "../../contracts/dashboard.ts";
 import type { StartedRead } from "../../contracts/started-read.ts";
 
@@ -90,17 +91,47 @@ export function suspendIfUnsettled<A, E>(
 }
 
 /**
+ * The atom the server sent, or `source` when it has no serializable value of its own.
+ * A derived atom such as an error-boundary wrapper points at that value with `initialValueTarget`.
+ */
+function hydratedRead<A>(source: Atom.Atom<A>): {
+  readonly pin: Atom.Atom<unknown>;
+  readonly read: Atom.Atom<A>;
+} {
+  let serializable: Atom.Atom<unknown> | undefined;
+  for (
+    let target: Atom.Atom<unknown> | undefined = source;
+    target !== undefined;
+    target = target.initialValueTarget
+  ) {
+    if (Atom.isSerializable(target)) {
+      serializable = target;
+      break;
+    }
+  }
+  if (serializable === undefined) return { pin: source, read: source };
+  const kept = Hydration.hydrated(serializable);
+  return { pin: kept, read: serializable === source ? (kept as Atom.Atom<A>) : source };
+}
+
+/**
  * Read a handle the route loader started. The server suspends until a prefetch settles. The
  * browser renders the current result, so a pending read stays on the page and a refresh keeps
- * that page mounted. A settled failure whose tag a named boundary claims is thrown so that
- * boundary can render it. A browser-only read is not waited on: the server has no result for it.
+ * that page mounted. The first browser read keeps the value the server sent; reading the atom
+ * directly would run its effect again and replace that HTML. A settled failure whose tag a named
+ * boundary claims is thrown so that boundary can render it. A browser-only read is not waited on:
+ * the server has no result for it.
  */
 export function useStartedQuery<A, E>(read: StartedRead<A, E>) {
-  useAtomMount(read.source);
   const registry = useContext(RegistryContext);
-  const result = useAtomValue(read.source);
-  const refresh = useAtomRefresh(read.source);
-  if (read.handle.inBrowser !== true) suspendIfUnsettled(registry, read.source, result);
+  const kept = hydratedRead(read.source);
+  // Pin the serializable atom before anything reads the raw one, or its effect replaces the
+  // hydrated value during this render.
+  if (kept.pin !== kept.read) registry.get(kept.pin);
+  useAtomMount(kept.read);
+  const result = useAtomValue(kept.read);
+  const refresh = useAtomRefresh(kept.read);
+  if (read.handle.inBrowser !== true) suspendIfUnsettled(registry, kept.read, result);
   if (AsyncResult.isFailure(result) && !result.waiting) {
     const claimed = claimedDefect(result.cause);
     if (claimed !== undefined) throw claimed;
